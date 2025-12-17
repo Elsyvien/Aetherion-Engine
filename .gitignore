@@ -1,0 +1,19 @@
+# Build artifacts
+/build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Testing/
+Makefile
+*.cmake
+*.cbp
+*.user
+*.user.*
+
+# IDE/OS
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log

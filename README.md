@@ -33,6 +33,13 @@ The build produces:
 - `AetherionRuntime` (static library)
 - `AetherionEditor` (Qt 6 Widgets executable)
 
+## Dependencies
+
+- CMake 3.21+ and a C++20 compiler
+- Qt 6 (Widgets module) development packages
+- **Future rendering work**: Vulkan SDK (headers, loader, validation layers, shader tools like `glslc`/`glslangValidator`; on macOS also MoltenVK)
+- Optional future modules: Box2D/Chipmunk2D (physics), OpenAL Soft/SDL_mixer/FMOD/Wwise (audio), Lua/Python (scripting)
+
 ## Notes
 
 - All systems are placeholders with TODO markers for future implementation.
