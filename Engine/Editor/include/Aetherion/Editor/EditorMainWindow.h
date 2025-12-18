@@ -3,11 +3,14 @@
 #include <memory>
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QMainWindow>
+#include <QSize>
 
 namespace Aetherion::Rendering
 {
 class VulkanViewport;
+struct RenderView;
 } // namespace Aetherion::Rendering
 
 namespace Aetherion::Runtime
@@ -28,6 +31,7 @@ class EditorHierarchyPanel;
 class EditorInspectorPanel;
 class EditorAssetBrowser;
 class EditorConsole;
+class EditorSelection;
 
 class EditorMainWindow : public QMainWindow
 {
@@ -42,10 +46,16 @@ private:
     std::shared_ptr<Runtime::EngineApplication> m_runtimeApp;
 
     std::shared_ptr<Scene::Scene> m_scene;
-    std::shared_ptr<Scene::Entity> m_selectedEntity;
+    EditorSelection* m_selection = nullptr;
+    Rendering::RenderView m_renderView{};
+    bool m_validationEnabled{true};
 
     std::unique_ptr<Rendering::VulkanViewport> m_vulkanViewport;
+    WId m_surfaceHandle{0};
+    QSize m_surfaceSize{};
+    bool m_surfaceInitialized{false};
     class QTimer* m_renderTimer = nullptr;
+    QElapsedTimer m_frameTimer;
 
     EditorViewport* m_viewport = nullptr;
     EditorHierarchyPanel* m_hierarchyPanel = nullptr;
@@ -58,5 +68,7 @@ private:
     void CreateToolBarContent();
     void CreateDockPanels();
     void ConfigureStatusBar();
+    void RefreshRenderView();
+    void RecreateRuntimeAndRenderer(bool enableValidation);
 };
 } // namespace Aetherion::Editor

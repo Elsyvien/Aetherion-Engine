@@ -20,17 +20,19 @@ public:
     EngineApplication(const EngineApplication&) = delete;
     EngineApplication& operator=(const EngineApplication&) = delete;
 
-    void Initialize();
+    void Initialize(bool enableValidationLayers);
     void Shutdown();
 
     [[nodiscard]] std::shared_ptr<EngineContext> GetContext() const noexcept;
 
     [[nodiscard]] std::shared_ptr<Scene::Scene> GetActiveScene() const noexcept;
+    [[nodiscard]] bool IsValidationEnabled() const noexcept { return m_enableValidationLayers; }
 
     // TODO: Add scene management and runtime loop orchestration.
 private:
     std::shared_ptr<EngineContext> m_context;
     std::shared_ptr<Scene::Scene> m_activeScene;
+    bool m_enableValidationLayers{true};
 
     void RegisterPlaceholderSystems();
     // TODO: Register systems when subsystems become available.

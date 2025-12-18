@@ -23,6 +23,7 @@ public:
 private:
     std::unique_ptr<QApplication> m_qtApp;
     std::unique_ptr<EditorMainWindow> m_mainWindow;
+    bool m_enableValidationLayers{true};
 
     void InitializeUi();
 };

@@ -8,6 +8,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include "Aetherion/Rendering/RenderView.h"
+
 namespace Aetherion::Rendering
 {
 class VulkanContext;
@@ -23,20 +25,14 @@ public:
 
     void Initialize(void* nativeHandle, int width, int height);
     void Resize(int width, int height);
-    void RenderFrame();
+    void RenderFrame(float deltaTimeSeconds, const RenderView& view);
     void Shutdown();
-
-    void SetObjectTransform(float posX, float posY, float rotDegZ, float scaleX, float scaleY);
 
     [[nodiscard]] bool IsReady() const noexcept { return m_ready; }
 
 private:
     static constexpr uint32_t kMaxFramesInFlight = 2;
-
-    std::shared_ptr<VulkanContext> m_context;
-    bool m_ready{false};
-
-    struct ObjectTransform
+    struct TransformData
     {
         float posX = 0.0f;
         float posY = 0.0f;
@@ -45,7 +41,10 @@ private:
         float scaleY = 1.0f;
     };
 
-    ObjectTransform m_objectTransform{};
+    std::shared_ptr<VulkanContext> m_context;
+    bool m_ready{false};
+    float m_timeSeconds{0.0f};
+    bool m_waitingForValidExtent{false};
 
     VkSurfaceKHR m_surface{VK_NULL_HANDLE};
     VkSwapchainKHR m_swapchain{VK_NULL_HANDLE};
@@ -96,10 +95,11 @@ private:
     void CreateFramebuffers();
 
     void CreateCommandPoolAndBuffers();
-    void RecordCommandBuffer(uint32_t imageIndex);
-    void UpdateUniformBuffer(uint32_t frameIndex);
+    void RecordCommandBuffer(uint32_t imageIndex, bool drawGeometry);
+    void UpdateUniformBuffer(uint32_t frameIndex, const TransformData& transform);
 
     void CreateSyncObjects();
+    [[nodiscard]] TransformData TransformFromView(const RenderView& view, float timeSeconds) const;
 
     [[nodiscard]] std::string ShaderPath(const char* filename) const;
     [[nodiscard]] std::vector<char> ReadFileBinary(const std::string& path) const;

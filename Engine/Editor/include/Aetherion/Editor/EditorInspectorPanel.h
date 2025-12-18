@@ -45,6 +45,10 @@ private:
     QDoubleSpinBox* m_rotZ = nullptr;
     QDoubleSpinBox* m_scaleX = nullptr;
     QDoubleSpinBox* m_scaleY = nullptr;
+    QDoubleSpinBox* m_colorR = nullptr;
+    QDoubleSpinBox* m_colorG = nullptr;
+    QDoubleSpinBox* m_colorB = nullptr;
+    QDoubleSpinBox* m_meshRotationSpeed = nullptr;
 
     bool m_buildingUi = false;
 };

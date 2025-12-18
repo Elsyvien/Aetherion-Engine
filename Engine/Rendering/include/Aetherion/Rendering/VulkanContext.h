@@ -21,12 +21,37 @@ public:
     void Shutdown();
 
     [[nodiscard]] bool IsInitialized() const noexcept { return m_initialized; }
+    [[nodiscard]] bool IsValidationEnabled() const noexcept { return m_enableValidation; }
 
     [[nodiscard]] VkInstance GetInstance() const noexcept { return m_instance; }
     [[nodiscard]] VkPhysicalDevice GetPhysicalDevice() const noexcept { return m_physicalDevice; }
     [[nodiscard]] VkDevice GetDevice() const noexcept { return m_device; }
     [[nodiscard]] VkQueue GetGraphicsQueue() const noexcept { return m_graphicsQueue; }
     [[nodiscard]] uint32_t GetGraphicsQueueFamilyIndex() const noexcept { return m_graphicsQueueFamilyIndex; }
+    [[nodiscard]] VkQueue GetPresentQueue() const noexcept { return m_presentQueue; }
+    [[nodiscard]] uint32_t GetPresentQueueFamilyIndex() const noexcept { return m_presentQueueFamilyIndex; }
+
+    struct QueueFamilyIndices
+    {
+        std::optional<uint32_t> graphicsFamily;
+        std::optional<uint32_t> presentFamily;
+
+        [[nodiscard]] bool IsComplete() const noexcept
+        {
+            return graphicsFamily.has_value() && presentFamily.has_value();
+        }
+    };
+
+    struct SwapchainSupportDetails
+    {
+        VkSurfaceCapabilitiesKHR capabilities{};
+        std::vector<VkSurfaceFormatKHR> formats;
+        std::vector<VkPresentModeKHR> presentModes;
+    };
+
+    void EnsureSurfaceCompatibility(VkSurfaceKHR surface);
+    [[nodiscard]] SwapchainSupportDetails QuerySwapchainSupport(VkSurfaceKHR surface) const;
+    [[nodiscard]] QueueFamilyIndices GetQueueFamilyIndices() const noexcept { return m_queueFamilyIndices; }
 
     void LogDeviceInfo() const;
 
@@ -37,7 +62,10 @@ private:
     VkPhysicalDevice m_physicalDevice{VK_NULL_HANDLE};
     VkDevice m_device{VK_NULL_HANDLE};
     VkQueue m_graphicsQueue{VK_NULL_HANDLE};
+    VkQueue m_presentQueue{VK_NULL_HANDLE};
     uint32_t m_graphicsQueueFamilyIndex{0};
+    uint32_t m_presentQueueFamilyIndex{0};
+    QueueFamilyIndices m_queueFamilyIndices{};
     VkDebugUtilsMessengerEXT m_debugMessenger{VK_NULL_HANDLE};
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
@@ -48,12 +76,14 @@ private:
 
     void CreateInstance();
     void SetupDebugMessenger();
-    void PickPhysicalDevice();
+    void PickPhysicalDevice(VkSurfaceKHR surface);
     void CreateLogicalDevice();
 
     [[nodiscard]] bool CheckValidationLayerSupport() const;
+    [[nodiscard]] bool CheckDeviceExtensionSupport(VkPhysicalDevice device) const;
     [[nodiscard]] std::vector<const char*> GetRequiredInstanceLayers() const;
     [[nodiscard]] std::vector<const char*> GetRequiredInstanceExtensions() const;
-    [[nodiscard]] std::optional<uint32_t> FindGraphicsQueueFamily(VkPhysicalDevice device) const;
+    [[nodiscard]] QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface) const;
+    [[nodiscard]] SwapchainSupportDetails QuerySwapchainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) const;
 };
 } // namespace Aetherion::Rendering

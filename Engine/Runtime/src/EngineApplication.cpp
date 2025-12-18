@@ -4,6 +4,7 @@
 
 #include "Aetherion/Rendering/VulkanContext.h"
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
 
@@ -17,12 +18,14 @@ EngineApplication::EngineApplication()
 
 EngineApplication::~EngineApplication() = default;
 
-void EngineApplication::Initialize()
+void EngineApplication::Initialize(bool enableValidationLayers)
 {
+    m_enableValidationLayers = enableValidationLayers;
+
     auto vulkanContext = std::make_shared<Rendering::VulkanContext>();
     try
     {
-        vulkanContext->Initialize(true);
+        vulkanContext->Initialize(m_enableValidationLayers);
     }
     catch (const std::exception& ex)
     {
@@ -37,6 +40,9 @@ void EngineApplication::Initialize()
 
     auto viewportEntity = std::make_shared<Scene::Entity>(1, "Viewport Quad");
     viewportEntity->AddComponent(std::make_shared<Scene::TransformComponent>());
+    auto mesh = std::make_shared<Scene::MeshRendererComponent>();
+    mesh->SetRotationSpeedDegPerSec(15.0f);
+    viewportEntity->AddComponent(mesh);
     m_activeScene->AddEntity(viewportEntity);
 
     RegisterPlaceholderSystems();
@@ -51,6 +57,7 @@ void EngineApplication::Shutdown()
         m_context->SetVulkanContext(nullptr);
     }
 
+    m_activeScene.reset();
     // TODO: Flush pending tasks, persist state, and tear down systems.
     m_context.reset();
 }

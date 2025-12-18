@@ -77,6 +77,7 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/Entity.cpp
     Engine/Scene/src/Component.cpp
     Engine/Scene/src/TransformComponent.cpp
+    Engine/Scene/src/MeshRendererComponent.cpp
     Engine/Scene/src/System.cpp
     Engine/Assets/src/AssetRegistry.cpp
     Engine/Platform/src/PlatformAbstraction.cpp
@@ -140,6 +141,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorViewport.cpp
     Engine/Editor/src/EditorHierarchyPanel.cpp
     Engine/Editor/src/EditorInspectorPanel.cpp
+    Engine/Editor/src/EditorSelection.cpp
     Engine/Editor/src/EditorAssetBrowser.cpp
     Engine/Editor/src/EditorConsole.cpp
 )
@@ -152,6 +154,7 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/EditorViewport.h
         Engine/Editor/include/Aetherion/Editor/EditorHierarchyPanel.h
         Engine/Editor/include/Aetherion/Editor/EditorInspectorPanel.h
+        Engine/Editor/include/Aetherion/Editor/EditorSelection.h
         Engine/Editor/include/Aetherion/Editor/EditorAssetBrowser.h
         Engine/Editor/include/Aetherion/Editor/EditorConsole.h
 )

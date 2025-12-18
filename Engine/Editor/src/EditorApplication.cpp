@@ -1,6 +1,8 @@
 #include "Aetherion/Editor/EditorApplication.h"
 
 #include <QApplication>
+#include <cstdlib>
+#include <string_view>
 
 #include "Aetherion/Editor/EditorMainWindow.h"
 #include "Aetherion/Runtime/EngineApplication.h"
@@ -10,6 +12,11 @@ namespace Aetherion::Editor
 EditorApplication::EditorApplication(int& argc, char** argv)
     : m_qtApp(std::make_unique<QApplication>(argc, argv))
 {
+    if (const char* env = std::getenv("AETHERION_ENABLE_VK_VALIDATION"))
+    {
+        std::string_view value(env);
+        m_enableValidationLayers = !(value == "0" || value == "false" || value == "False");
+    }
 }
 
 EditorApplication::~EditorApplication() = default;
@@ -23,7 +30,7 @@ int EditorApplication::Run()
 void EditorApplication::InitializeUi()
 {
     auto runtimeApp = std::make_shared<Runtime::EngineApplication>();
-    runtimeApp->Initialize();
+    runtimeApp->Initialize(m_enableValidationLayers);
 
     m_mainWindow = std::make_unique<EditorMainWindow>(runtimeApp);
     m_mainWindow->show();

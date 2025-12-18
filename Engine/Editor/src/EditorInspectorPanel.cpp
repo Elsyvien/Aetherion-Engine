@@ -7,6 +7,7 @@
 #include <QVBoxLayout>
 
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/TransformComponent.h"
 
 namespace Aetherion::Editor
@@ -62,6 +63,10 @@ void EditorInspectorPanel::RebuildUi()
     m_rotZ = nullptr;
     m_scaleX = nullptr;
     m_scaleY = nullptr;
+    m_colorR = nullptr;
+    m_colorG = nullptr;
+    m_colorB = nullptr;
+    m_meshRotationSpeed = nullptr;
 
     if (!m_entity)
     {
@@ -78,82 +83,141 @@ void EditorInspectorPanel::RebuildUi()
     m_contentLayout->addWidget(title);
 
     auto transform = m_entity->GetComponent<Scene::TransformComponent>();
-    if (!transform)
+    auto mesh = m_entity->GetComponent<Scene::MeshRendererComponent>();
+
+    if (!transform && !mesh)
     {
-        auto* noTransform = new QLabel(tr("No Transform component on selected entity."), m_content);
-        noTransform->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-        m_contentLayout->addWidget(noTransform);
+        auto* noEditable = new QLabel(tr("No editable components on selected entity."), m_content);
+        noEditable->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+        m_contentLayout->addWidget(noEditable);
         m_contentLayout->addStretch(1);
         m_buildingUi = false;
         return;
     }
 
-    auto* formHost = new QWidget(m_content);
-    auto* form = new QFormLayout(formHost);
-    form->setLabelAlignment(Qt::AlignLeft);
-
-    auto makeSpin = [formHost](double min, double max, double step) {
-        auto* s = new QDoubleSpinBox(formHost);
+    auto makeSpin = [this](double min, double max, double step) {
+        auto* s = new QDoubleSpinBox(m_content);
         s->setRange(min, max);
         s->setSingleStep(step);
         s->setDecimals(3);
         return s;
     };
 
-    m_posX = makeSpin(-10.0, 10.0, 0.01);
-    m_posY = makeSpin(-10.0, 10.0, 0.01);
-    m_rotZ = makeSpin(-180.0, 180.0, 1.0);
-    m_scaleX = makeSpin(0.001, 10.0, 0.01);
-    m_scaleY = makeSpin(0.001, 10.0, 0.01);
+    if (transform)
+    {
+        auto* transformLabel = new QLabel(tr("Transform"), m_content);
+        transformLabel->setStyleSheet("font-weight: bold;");
+        m_contentLayout->addWidget(transformLabel);
 
-    m_posX->setValue(transform->GetPositionX());
-    m_posY->setValue(transform->GetPositionY());
-    m_rotZ->setValue(transform->GetRotationZDegrees());
-    m_scaleX->setValue(transform->GetScaleX());
-    m_scaleY->setValue(transform->GetScaleY());
+        auto* formHost = new QWidget(m_content);
+        auto* form = new QFormLayout(formHost);
+        form->setLabelAlignment(Qt::AlignLeft);
 
-    form->addRow(tr("Position X"), m_posX);
-    form->addRow(tr("Position Y"), m_posY);
-    form->addRow(tr("Rotation Z (deg)"), m_rotZ);
-    form->addRow(tr("Scale X"), m_scaleX);
-    form->addRow(tr("Scale Y"), m_scaleY);
+        m_posX = makeSpin(-10.0, 10.0, 0.01);
+        m_posY = makeSpin(-10.0, 10.0, 0.01);
+        m_rotZ = makeSpin(-180.0, 180.0, 1.0);
+        m_scaleX = makeSpin(0.001, 10.0, 0.01);
+        m_scaleY = makeSpin(0.001, 10.0, 0.01);
 
-    auto applyAndEmit = [this, transform]() {
-        if (m_buildingUi || !m_entity)
-        {
-            return;
-        }
+        m_posX->setValue(transform->GetPositionX());
+        m_posY->setValue(transform->GetPositionY());
+        m_rotZ->setValue(transform->GetRotationZDegrees());
+        m_scaleX->setValue(transform->GetScaleX());
+        m_scaleY->setValue(transform->GetScaleY());
 
-        transform->SetPosition(static_cast<float>(m_posX->value()), static_cast<float>(m_posY->value()));
-        transform->SetRotationZDegrees(static_cast<float>(m_rotZ->value()));
-        transform->SetScale(static_cast<float>(m_scaleX->value()), static_cast<float>(m_scaleY->value()));
+        form->addRow(tr("Position X"), m_posX);
+        form->addRow(tr("Position Y"), m_posY);
+        form->addRow(tr("Rotation Z (deg)"), m_rotZ);
+        form->addRow(tr("Scale X"), m_scaleX);
+        form->addRow(tr("Scale Y"), m_scaleY);
 
+        auto applyAndEmit = [this, transform]() {
+            if (m_buildingUi || !m_entity)
+            {
+                return;
+            }
+
+            transform->SetPosition(static_cast<float>(m_posX->value()), static_cast<float>(m_posY->value()));
+            transform->SetRotationZDegrees(static_cast<float>(m_rotZ->value()));
+            transform->SetScale(static_cast<float>(m_scaleX->value()), static_cast<float>(m_scaleY->value()));
+
+            emit transformChanged(m_entity->GetId(),
+                                  static_cast<float>(m_posX->value()),
+                                  static_cast<float>(m_posY->value()),
+                                  static_cast<float>(m_rotZ->value()),
+                                  static_cast<float>(m_scaleX->value()),
+                                  static_cast<float>(m_scaleY->value()));
+        };
+
+        connect(m_posX, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
+        connect(m_posY, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
+        connect(m_rotZ, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
+        connect(m_scaleX, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
+        connect(m_scaleY, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
+
+        formHost->setLayout(form);
+        m_contentLayout->addWidget(formHost);
+    }
+
+    if (mesh)
+    {
+        auto* meshLabel = new QLabel(tr("Mesh Renderer"), m_content);
+        meshLabel->setStyleSheet("font-weight: bold;");
+        m_contentLayout->addWidget(meshLabel);
+
+        auto* formHost = new QWidget(m_content);
+        auto* form = new QFormLayout(formHost);
+        form->setLabelAlignment(Qt::AlignLeft);
+
+        m_colorR = makeSpin(0.0, 1.0, 0.01);
+        m_colorG = makeSpin(0.0, 1.0, 0.01);
+        m_colorB = makeSpin(0.0, 1.0, 0.01);
+        m_meshRotationSpeed = makeSpin(-720.0, 720.0, 1.0);
+
+        auto color = mesh->GetColor();
+        m_colorR->setValue(color[0]);
+        m_colorG->setValue(color[1]);
+        m_colorB->setValue(color[2]);
+        m_meshRotationSpeed->setValue(mesh->GetRotationSpeedDegPerSec());
+
+        form->addRow(tr("Color R"), m_colorR);
+        form->addRow(tr("Color G"), m_colorG);
+        form->addRow(tr("Color B"), m_colorB);
+        form->addRow(tr("Rotation Speed (deg/s)"), m_meshRotationSpeed);
+
+        auto updateMesh = [this, mesh]() {
+            if (m_buildingUi || !m_entity)
+            {
+                return;
+            }
+
+            mesh->SetColor(static_cast<float>(m_colorR->value()),
+                           static_cast<float>(m_colorG->value()),
+                           static_cast<float>(m_colorB->value()));
+            mesh->SetRotationSpeedDegPerSec(static_cast<float>(m_meshRotationSpeed->value()));
+        };
+
+        connect(m_colorR, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateMesh](double) { updateMesh(); });
+        connect(m_colorG, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateMesh](double) { updateMesh(); });
+        connect(m_colorB, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateMesh](double) { updateMesh(); });
+        connect(m_meshRotationSpeed, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateMesh](double) { updateMesh(); });
+
+        formHost->setLayout(form);
+        m_contentLayout->addWidget(formHost);
+    }
+
+    m_contentLayout->addStretch(1);
+    m_buildingUi = false;
+
+    if (transform)
+    {
+        // Push initial values out to listeners (renderer).
         emit transformChanged(m_entity->GetId(),
                               static_cast<float>(m_posX->value()),
                               static_cast<float>(m_posY->value()),
                               static_cast<float>(m_rotZ->value()),
                               static_cast<float>(m_scaleX->value()),
                               static_cast<float>(m_scaleY->value()));
-    };
-
-    connect(m_posX, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
-    connect(m_posY, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
-    connect(m_rotZ, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
-    connect(m_scaleX, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
-    connect(m_scaleY, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
-
-    formHost->setLayout(form);
-    m_contentLayout->addWidget(formHost);
-    m_contentLayout->addStretch(1);
-
-    m_buildingUi = false;
-
-    // Push initial values out to listeners (renderer).
-    emit transformChanged(m_entity->GetId(),
-                          static_cast<float>(m_posX->value()),
-                          static_cast<float>(m_posY->value()),
-                          static_cast<float>(m_rotZ->value()),
-                          static_cast<float>(m_scaleX->value()),
-                          static_cast<float>(m_scaleY->value()));
+    }
 }
 } // namespace Aetherion::Editor
