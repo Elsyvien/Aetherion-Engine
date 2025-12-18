@@ -3,9 +3,18 @@
 #include "Aetherion/Rendering/VulkanContext.h"
 
 #include <fstream>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <stdexcept>
 
+#include <iostream>
+
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <vulkan/vulkan_win32.h>
 #endif
@@ -14,6 +23,130 @@ namespace Aetherion::Rendering
 {
 namespace
 {
+struct Vertex
+{
+    float pos[2];
+    float color[3];
+};
+
+struct UniformBufferObject
+{
+    // Column-major mat4 for GLSL.
+    float mvp[16];
+};
+
+void Mat4Identity(float out[16])
+{
+    std::memset(out, 0, sizeof(float) * 16);
+    out[0] = 1.0f;
+    out[5] = 1.0f;
+    out[10] = 1.0f;
+    out[15] = 1.0f;
+}
+
+void Mat4Mul(float out[16], const float a[16], const float b[16])
+{
+    // out = a * b (column-major)
+    float r[16];
+    for (int c = 0; c < 4; ++c)
+    {
+        for (int rIdx = 0; rIdx < 4; ++rIdx)
+        {
+            r[c * 4 + rIdx] = a[0 * 4 + rIdx] * b[c * 4 + 0] + a[1 * 4 + rIdx] * b[c * 4 + 1] +
+                              a[2 * 4 + rIdx] * b[c * 4 + 2] + a[3 * 4 + rIdx] * b[c * 4 + 3];
+        }
+    }
+    std::memcpy(out, r, sizeof(r));
+}
+
+void Mat4RotationZ(float out[16], float radians)
+{
+    Mat4Identity(out);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out[0] = c;
+    out[4] = -s;
+    out[1] = s;
+    out[5] = c;
+}
+
+void Mat4Translation(float out[16], float x, float y, float z)
+{
+    Mat4Identity(out);
+    out[12] = x;
+    out[13] = y;
+    out[14] = z;
+}
+
+void Mat4Scale(float out[16], float x, float y, float z)
+{
+    Mat4Identity(out);
+    out[0] = x;
+    out[5] = y;
+    out[10] = z;
+}
+
+void Mat4Ortho(float out[16], float left, float right, float bottom, float top, float zNear, float zFar)
+{
+    Mat4Identity(out);
+    out[0] = 2.0f / (right - left);
+    out[5] = 2.0f / (top - bottom);
+    out[10] = -2.0f / (zFar - zNear);
+    out[12] = -(right + left) / (right - left);
+    out[13] = -(top + bottom) / (top - bottom);
+    out[14] = -(zFar + zNear) / (zFar - zNear);
+}
+
+uint32_t FindMemoryType(VkPhysicalDevice gpu, uint32_t typeFilter, VkMemoryPropertyFlags properties)
+{
+    VkPhysicalDeviceMemoryProperties memProps{};
+    vkGetPhysicalDeviceMemoryProperties(gpu, &memProps);
+
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i)
+    {
+        if ((typeFilter & (1u << i)) && ((memProps.memoryTypes[i].propertyFlags & properties) == properties))
+        {
+            return i;
+        }
+    }
+    throw std::runtime_error("Failed to find suitable memory type");
+}
+
+void CreateBuffer(VkPhysicalDevice gpu,
+                  VkDevice device,
+                  VkDeviceSize size,
+                  VkBufferUsageFlags usage,
+                  VkMemoryPropertyFlags properties,
+                  VkBuffer& outBuffer,
+                  VkDeviceMemory& outMemory)
+{
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &outBuffer) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create buffer");
+    }
+
+    VkMemoryRequirements memReq{};
+    vkGetBufferMemoryRequirements(device, outBuffer, &memReq);
+
+    VkMemoryAllocateInfo alloc{};
+    alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc.allocationSize = memReq.size;
+    alloc.memoryTypeIndex = FindMemoryType(gpu, memReq.memoryTypeBits, properties);
+
+    if (vkAllocateMemory(device, &alloc, nullptr, &outMemory) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate buffer memory");
+    }
+
+    vkBindBufferMemory(device, outBuffer, outMemory, 0);
+}
+
 VkSurfaceFormatKHR ChooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats)
 {
     for (const auto& f : formats)
@@ -67,6 +200,15 @@ VulkanViewport::~VulkanViewport()
     Shutdown();
 }
 
+void VulkanViewport::SetObjectTransform(float posX, float posY, float rotDegZ, float scaleX, float scaleY)
+{
+    m_objectTransform.posX = posX;
+    m_objectTransform.posY = posY;
+    m_objectTransform.rotDegZ = rotDegZ;
+    m_objectTransform.scaleX = scaleX;
+    m_objectTransform.scaleY = scaleY;
+}
+
 void VulkanViewport::Initialize(void* nativeHandle, int width, int height)
 {
     if (!m_context || !m_context->IsInitialized())
@@ -82,6 +224,10 @@ void VulkanViewport::Initialize(void* nativeHandle, int width, int height)
     CreateSurface(nativeHandle);
     CreateSwapchain(width, height);
     CreateRenderPass();
+    CreateDescriptorSetLayout();
+    CreateMeshBuffers();
+    CreateUniformBuffers();
+    CreateDescriptorPoolAndSets();
     CreatePipeline();
     CreateFramebuffers();
     CreateCommandPoolAndBuffers();
@@ -102,6 +248,61 @@ void VulkanViewport::Shutdown()
     if (device != VK_NULL_HANDLE)
     {
         vkDeviceWaitIdle(device);
+    }
+
+    for (uint32_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        if (m_uniformMemories[i] != VK_NULL_HANDLE && m_uniformMapped[i] != nullptr)
+        {
+            vkUnmapMemory(device, m_uniformMemories[i]);
+            m_uniformMapped[i] = nullptr;
+        }
+
+        if (m_uniformBuffers[i] != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(device, m_uniformBuffers[i], nullptr);
+            m_uniformBuffers[i] = VK_NULL_HANDLE;
+        }
+
+        if (m_uniformMemories[i] != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device, m_uniformMemories[i], nullptr);
+            m_uniformMemories[i] = VK_NULL_HANDLE;
+        }
+    }
+
+    if (m_indexBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, m_indexBuffer, nullptr);
+        m_indexBuffer = VK_NULL_HANDLE;
+    }
+    if (m_indexMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, m_indexMemory, nullptr);
+        m_indexMemory = VK_NULL_HANDLE;
+    }
+
+    if (m_vertexBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, m_vertexBuffer, nullptr);
+        m_vertexBuffer = VK_NULL_HANDLE;
+    }
+    if (m_vertexMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, m_vertexMemory, nullptr);
+        m_vertexMemory = VK_NULL_HANDLE;
+    }
+
+    if (m_descriptorPool != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorPool(device, m_descriptorPool, nullptr);
+        m_descriptorPool = VK_NULL_HANDLE;
+    }
+
+    if (m_descriptorSetLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, m_descriptorSetLayout, nullptr);
+        m_descriptorSetLayout = VK_NULL_HANDLE;
     }
 
     for (auto fence : m_inFlight)
@@ -246,6 +447,8 @@ void VulkanViewport::RenderFrame()
     {
         m_imagesInFlight[imageIndex] = inFlight;
     }
+
+    UpdateUniformBuffer(m_frameIndex);
 
     vkResetCommandBuffer(m_commandBuffers[m_frameIndex], 0);
     RecordCommandBuffer(imageIndex);
@@ -504,6 +707,142 @@ void VulkanViewport::CreateRenderPass()
     }
 }
 
+void VulkanViewport::CreateDescriptorSetLayout()
+{
+    VkDescriptorSetLayoutBinding ubo{};
+    ubo.binding = 0;
+    ubo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    ubo.descriptorCount = 1;
+    ubo.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    info.bindingCount = 1;
+    info.pBindings = &ubo;
+
+    if (vkCreateDescriptorSetLayout(m_context->GetDevice(), &info, nullptr, &m_descriptorSetLayout) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create descriptor set layout");
+    }
+}
+
+void VulkanViewport::CreateMeshBuffers()
+{
+    const std::array<Vertex, 4> vertices = {
+        Vertex{{-0.5f, -0.5f}, {1.0f, 0.2f, 0.2f}},
+        Vertex{{ 0.5f, -0.5f}, {0.2f, 1.0f, 0.2f}},
+        Vertex{{ 0.5f,  0.5f}, {0.2f, 0.2f, 1.0f}},
+        Vertex{{-0.5f,  0.5f}, {1.0f, 1.0f, 0.2f}},
+    };
+
+    const std::array<uint16_t, 6> indices = {0, 1, 2, 2, 3, 0};
+
+    VkDevice device = m_context->GetDevice();
+    VkPhysicalDevice gpu = m_context->GetPhysicalDevice();
+
+    CreateBuffer(gpu,
+                 device,
+                 sizeof(vertices),
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 m_vertexBuffer,
+                 m_vertexMemory);
+
+    void* vData = nullptr;
+    vkMapMemory(device, m_vertexMemory, 0, sizeof(vertices), 0, &vData);
+    std::memcpy(vData, vertices.data(), sizeof(vertices));
+    vkUnmapMemory(device, m_vertexMemory);
+
+    CreateBuffer(gpu,
+                 device,
+                 sizeof(indices),
+                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 m_indexBuffer,
+                 m_indexMemory);
+
+    void* iData = nullptr;
+    vkMapMemory(device, m_indexMemory, 0, sizeof(indices), 0, &iData);
+    std::memcpy(iData, indices.data(), sizeof(indices));
+    vkUnmapMemory(device, m_indexMemory);
+}
+
+void VulkanViewport::CreateUniformBuffers()
+{
+    VkDevice device = m_context->GetDevice();
+    VkPhysicalDevice gpu = m_context->GetPhysicalDevice();
+
+    const VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    m_uniformMapped.fill(nullptr);
+
+    for (uint32_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        CreateBuffer(gpu,
+                     device,
+                     bufferSize,
+                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     m_uniformBuffers[i],
+                     m_uniformMemories[i]);
+
+        vkMapMemory(device, m_uniformMemories[i], 0, bufferSize, 0, &m_uniformMapped[i]);
+    }
+}
+
+void VulkanViewport::CreateDescriptorPoolAndSets()
+{
+    VkDevice device = m_context->GetDevice();
+
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize.descriptorCount = kMaxFramesInFlight;
+
+    VkDescriptorPoolCreateInfo pool{};
+    pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool.poolSizeCount = 1;
+    pool.pPoolSizes = &poolSize;
+    pool.maxSets = kMaxFramesInFlight;
+
+    if (vkCreateDescriptorPool(device, &pool, nullptr, &m_descriptorPool) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create descriptor pool");
+    }
+
+    std::array<VkDescriptorSetLayout, kMaxFramesInFlight> layouts{};
+    layouts.fill(m_descriptorSetLayout);
+
+    VkDescriptorSetAllocateInfo alloc{};
+    alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc.descriptorPool = m_descriptorPool;
+    alloc.descriptorSetCount = kMaxFramesInFlight;
+    alloc.pSetLayouts = layouts.data();
+
+    if (vkAllocateDescriptorSets(device, &alloc, m_descriptorSets.data()) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate descriptor sets");
+    }
+
+    for (uint32_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        VkDescriptorBufferInfo buf{};
+        buf.buffer = m_uniformBuffers[i];
+        buf.offset = 0;
+        buf.range = sizeof(UniformBufferObject);
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = m_descriptorSets[i];
+        write.dstBinding = 0;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        write.descriptorCount = 1;
+        write.pBufferInfo = &buf;
+
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
+}
+
 void VulkanViewport::CreatePipeline()
 {
     auto vert = ReadFileBinary(ShaderPath("viewport_triangle.vert.spv"));
@@ -526,8 +865,28 @@ void VulkanViewport::CreatePipeline()
 
     VkPipelineShaderStageCreateInfo stages[] = {vs, fs};
 
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(Vertex);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 2> attrs{};
+    attrs[0].location = 0;
+    attrs[0].binding = 0;
+    attrs[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[0].offset = offsetof(Vertex, pos);
+
+    attrs[1].location = 1;
+    attrs[1].binding = 0;
+    attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[1].offset = offsetof(Vertex, color);
+
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrs.size());
+    vertexInput.pVertexAttributeDescriptions = attrs.data();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -569,6 +928,8 @@ void VulkanViewport::CreatePipeline()
 
     VkPipelineLayoutCreateInfo layout{};
     layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layout.setLayoutCount = 1;
+    layout.pSetLayouts = &m_descriptorSetLayout;
 
     if (vkCreatePipelineLayout(m_context->GetDevice(), &layout, nullptr, &m_pipelineLayout) != VK_SUCCESS)
     {
@@ -679,8 +1040,8 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex)
     }
 
     VkClearValue clear{};
-    // Very visible debug clear color.
-    clear.color = {{0.9f, 0.0f, 0.8f, 1.0f}};
+    // Default neutral background.
+    clear.color = {{0.20f, 0.20f, 0.20f, 1.0f}};
 
     VkRenderPassBeginInfo rp{};
     rp.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -708,7 +1069,12 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex)
     vkCmdSetScissor(cb, 0, 1, &scissor);
 
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-    vkCmdDraw(cb, 3, 1, 0, 0);
+
+    const VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cb, 0, 1, &m_vertexBuffer, offsets);
+    vkCmdBindIndexBuffer(cb, m_indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_frameIndex], 0, nullptr);
+    vkCmdDrawIndexed(cb, 6, 1, 0, 0, 0);
 
     vkCmdEndRenderPass(cb);
 
@@ -716,6 +1082,48 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex)
     {
         throw std::runtime_error("vkEndCommandBuffer failed");
     }
+}
+
+void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex)
+{
+    if (frameIndex >= kMaxFramesInFlight)
+    {
+        return;
+    }
+
+    const float aspect = (m_swapchainExtent.height > 0)
+                             ? (static_cast<float>(m_swapchainExtent.width) / static_cast<float>(m_swapchainExtent.height))
+                             : 1.0f;
+
+    // Camera: simple ortho that keeps object visible.
+    float proj[16];
+    Mat4Ortho(proj, -aspect, aspect, -1.0f, 1.0f, -1.0f, 1.0f);
+
+    const float radians = (m_objectTransform.rotDegZ * 3.14159265358979323846f) / 180.0f;
+
+    float t[16];
+    Mat4Translation(t, m_objectTransform.posX, m_objectTransform.posY, 0.0f);
+
+    float r[16];
+    Mat4RotationZ(r, radians);
+
+    float s[16];
+    Mat4Scale(s, m_objectTransform.scaleX, m_objectTransform.scaleY, 1.0f);
+
+    // Model = T * R * S
+    float tr[16];
+    Mat4Mul(tr, t, r);
+
+    float model[16];
+    Mat4Mul(model, tr, s);
+
+    float mvp[16];
+    Mat4Mul(mvp, proj, model);
+
+    UniformBufferObject ubo{};
+    std::memcpy(ubo.mvp, mvp, sizeof(mvp));
+
+    std::memcpy(m_uniformMapped[frameIndex], &ubo, sizeof(ubo));
 }
 
 void VulkanViewport::CreateSyncObjects()

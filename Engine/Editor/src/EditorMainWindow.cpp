@@ -19,6 +19,10 @@
 #include "Aetherion/Rendering/VulkanViewport.h"
 #include "Aetherion/Runtime/EngineApplication.h"
 
+#include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/Scene.h"
+#include "Aetherion/Scene/TransformComponent.h"
+
 namespace Aetherion::Editor
 {
 EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> runtimeApp, QWidget* parent)
@@ -53,6 +57,19 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
 
         m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk);
         m_vulkanViewport->Initialize(reinterpret_cast<void*>(nativeHandle), width, height);
+
+        if (m_selectedEntity)
+        {
+            if (auto transform = m_selectedEntity->GetComponent<Scene::TransformComponent>())
+            {
+                m_vulkanViewport->SetObjectTransform(transform->GetPositionX(),
+                                                     transform->GetPositionY(),
+                                                     transform->GetRotationZDegrees(),
+                                                     transform->GetScaleX(),
+                                                     transform->GetScaleY());
+            }
+        }
+
         m_renderTimer->start();
         statusBar()->showMessage(tr("Viewport Vulkan renderer active"));
     });
@@ -82,6 +99,52 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     CreateToolBarContent();
     ConfigureStatusBar();
     m_defaultLayoutState = saveState();
+
+    m_scene = m_runtimeApp ? m_runtimeApp->GetActiveScene() : nullptr;
+    if (m_scene && m_hierarchyPanel)
+    {
+        m_hierarchyPanel->BindScene(m_scene);
+    }
+
+    connect(m_hierarchyPanel, &EditorHierarchyPanel::entitySelected, this, [this](Aetherion::Core::EntityId id) {
+        if (!m_scene)
+        {
+            return;
+        }
+
+        m_selectedEntity = m_scene->FindEntityById(id);
+        if (m_inspectorPanel)
+        {
+            m_inspectorPanel->SetSelectedEntity(m_selectedEntity);
+        }
+
+        if (m_vulkanViewport && m_vulkanViewport->IsReady() && m_selectedEntity)
+        {
+            if (auto transform = m_selectedEntity->GetComponent<Scene::TransformComponent>())
+            {
+                m_vulkanViewport->SetObjectTransform(transform->GetPositionX(),
+                                                     transform->GetPositionY(),
+                                                     transform->GetRotationZDegrees(),
+                                                     transform->GetScaleX(),
+                                                     transform->GetScaleY());
+            }
+        }
+    });
+
+    connect(m_inspectorPanel,
+            &EditorInspectorPanel::transformChanged,
+            this,
+            [this](Aetherion::Core::EntityId entityId, float posX, float posY, float rotDegZ, float scaleX, float scaleY) {
+                if (!m_selectedEntity || m_selectedEntity->GetId() != entityId)
+                {
+                    return;
+                }
+
+                if (m_vulkanViewport && m_vulkanViewport->IsReady())
+                {
+                    m_vulkanViewport->SetObjectTransform(posX, posY, rotDegZ, scaleX, scaleY);
+                }
+            });
 }
 
 EditorMainWindow::~EditorMainWindow() = default;

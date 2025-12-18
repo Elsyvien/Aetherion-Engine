@@ -5,8 +5,9 @@
 
 namespace Aetherion::Scene
 {
-Entity::Entity(Core::EntityId id)
+Entity::Entity(Core::EntityId id, std::string name)
     : m_id(id)
+    , m_name(std::move(name))
 {
     // TODO: Integrate with centralized entity registry.
 }
@@ -14,6 +15,16 @@ Entity::Entity(Core::EntityId id)
 Core::EntityId Entity::GetId() const noexcept
 {
     return m_id;
+}
+
+const std::string& Entity::GetName() const noexcept
+{
+    return m_name;
+}
+
+void Entity::SetName(std::string name)
+{
+    m_name = std::move(name);
 }
 
 void Entity::AddComponent(std::shared_ptr<Component> component)

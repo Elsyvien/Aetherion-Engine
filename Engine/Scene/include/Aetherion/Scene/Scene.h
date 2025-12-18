@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "Aetherion/Core/Types.h"
+
 namespace Aetherion::Runtime
 {
 class EngineContext;
@@ -26,6 +28,7 @@ public:
 
     void AddEntity(std::shared_ptr<Entity> entity);
     [[nodiscard]] const std::vector<std::shared_ptr<Entity>>& GetEntities() const noexcept;
+    [[nodiscard]] std::shared_ptr<Entity> FindEntityById(Core::EntityId id) const noexcept;
 
     void AddSystem(std::shared_ptr<System> system);
     [[nodiscard]] const std::vector<std::shared_ptr<System>>& GetSystems() const noexcept;

@@ -15,6 +15,12 @@ namespace Aetherion::Runtime
 class EngineApplication;
 } // namespace Aetherion::Runtime
 
+namespace Aetherion::Scene
+{
+class Scene;
+class Entity;
+} // namespace Aetherion::Scene
+
 namespace Aetherion::Editor
 {
 class EditorViewport;
@@ -34,6 +40,9 @@ public:
     // TODO: Add menu actions for projects, play/pause, and layout management.
 private:
     std::shared_ptr<Runtime::EngineApplication> m_runtimeApp;
+
+    std::shared_ptr<Scene::Scene> m_scene;
+    std::shared_ptr<Scene::Entity> m_selectedEntity;
 
     std::unique_ptr<Rendering::VulkanViewport> m_vulkanViewport;
     class QTimer* m_renderTimer = nullptr;

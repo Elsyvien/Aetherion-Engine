@@ -27,6 +27,18 @@ const std::vector<std::shared_ptr<Entity>>& Scene::GetEntities() const noexcept
     return m_entities;
 }
 
+std::shared_ptr<Entity> Scene::FindEntityById(Core::EntityId id) const noexcept
+{
+    for (const auto& entity : m_entities)
+    {
+        if (entity && entity->GetId() == id)
+        {
+            return entity;
+        }
+    }
+    return nullptr;
+}
+
 void Scene::AddSystem(std::shared_ptr<System> system)
 {
     // TODO: Integrate with scheduler and dependency graph once available.
