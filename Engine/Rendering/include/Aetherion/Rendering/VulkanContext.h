@@ -28,6 +28,8 @@ public:
     [[nodiscard]] VkQueue GetGraphicsQueue() const noexcept { return m_graphicsQueue; }
     [[nodiscard]] uint32_t GetGraphicsQueueFamilyIndex() const noexcept { return m_graphicsQueueFamilyIndex; }
 
+    void LogDeviceInfo() const;
+
 private:
     bool m_initialized{false};
     bool m_enableValidation{false};
@@ -36,8 +38,16 @@ private:
     VkDevice m_device{VK_NULL_HANDLE};
     VkQueue m_graphicsQueue{VK_NULL_HANDLE};
     uint32_t m_graphicsQueueFamilyIndex{0};
+    VkDebugUtilsMessengerEXT m_debugMessenger{VK_NULL_HANDLE};
+
+    static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+        VkDebugUtilsMessageTypeFlagsEXT type,
+        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData);
 
     void CreateInstance();
+    void SetupDebugMessenger();
     void PickPhysicalDevice();
     void CreateLogicalDevice();
 

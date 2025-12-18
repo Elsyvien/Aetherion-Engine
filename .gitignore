@@ -18,3 +18,5 @@ Makefile
 # Logs
 *.log
 /build-mingw
+/.cache
+compile_commands.json

@@ -45,6 +45,27 @@ elseif(APPLE)
     endif()
 endif()
 
+# Vulkan SDK path hints
+if(WIN32)
+    if(NOT Vulkan_DIR AND NOT VULKAN_SDK)
+        if(EXISTS "C:/VulkanSDK")
+            file(GLOB VULKAN_VERSIONS RELATIVE "C:/VulkanSDK" "C:/VulkanSDK/*")
+            list(SORT VULKAN_VERSIONS)
+            list(REVERSE VULKAN_VERSIONS)
+            list(GET VULKAN_VERSIONS 0 LATEST_VULKAN)
+            set(VULKAN_SDK "C:/VulkanSDK/${LATEST_VULKAN}")
+        endif()
+    endif()
+elseif(APPLE)
+    if(NOT VULKAN_SDK)
+        # Vulkan from Homebrew on macOS
+        execute_process(COMMAND brew --prefix vulkan OUTPUT_VARIABLE BREW_VULKAN OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(BREW_VULKAN)
+            set(VULKAN_SDK "${BREW_VULKAN}")
+        endif()
+    endif()
+endif()
+
 find_package(Qt6 6.2 COMPONENTS Widgets REQUIRED)
 find_package(Vulkan REQUIRED)
 
@@ -79,10 +100,10 @@ target_include_directories(AetherionRuntime
         Engine/Scripting/include
 )
 target_compile_features(AetherionRuntime PRIVATE cxx_std_20)
-    target_link_libraries(AetherionRuntime
-        PUBLIC
+target_link_libraries(AetherionRuntime
+    PUBLIC
         Vulkan::Vulkan
-    )
+)
 
 set(EDITOR_SOURCES
     Engine/Editor/src/main.cpp
@@ -119,7 +140,7 @@ target_link_libraries(AetherionEditor
     PRIVATE
         AetherionRuntime
         Qt6::Widgets
-    Vulkan::Vulkan
+        Vulkan::Vulkan
 )
 
 target_compile_features(AetherionEditor PRIVATE cxx_std_20)

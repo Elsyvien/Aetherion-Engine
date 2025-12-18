@@ -1,5 +1,6 @@
 #include "Aetherion/Rendering/VulkanContext.h"
 
+#include <iostream>
 #include <stdexcept>
 
 namespace
@@ -31,14 +32,28 @@ void VulkanContext::Initialize(bool enableValidation)
     }
 
     CreateInstance();
+    SetupDebugMessenger();
     PickPhysicalDevice();
     CreateLogicalDevice();
+    LogDeviceInfo();
 
     m_initialized = true;
 }
 
 void VulkanContext::Shutdown()
 {
+    if (m_debugMessenger != VK_NULL_HANDLE && m_instance != VK_NULL_HANDLE)
+    {
+        auto vkDestroyDebugUtilsMessengerEXT =
+            reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+                vkGetInstanceProcAddr(m_instance, "vkDestroyDebugUtilsMessengerEXT"));
+        if (vkDestroyDebugUtilsMessengerEXT)
+        {
+            vkDestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
+        }
+        m_debugMessenger = VK_NULL_HANDLE;
+    }
+
     if (m_device != VK_NULL_HANDLE)
     {
         vkDeviceWaitIdle(m_device);
@@ -114,7 +129,6 @@ std::vector<const char*> VulkanContext::GetRequiredInstanceLayers() const
 std::vector<const char*> VulkanContext::GetRequiredInstanceExtensions() const
 {
     std::vector<const char*> extensions;
-    // No surface requested yet; add debug utils when validation is enabled.
     if (m_enableValidation)
     {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -188,5 +202,71 @@ void VulkanContext::CreateLogicalDevice()
     }
 
     vkGetDeviceQueue(m_device, m_graphicsQueueFamilyIndex, 0, &m_graphicsQueue);
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::DebugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT type,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+    void* pUserData)
+{
+    const char* severityStr = "";
+    if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+        severityStr = "[ERROR]";
+    else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+        severityStr = "[WARN]";
+    else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
+        severityStr = "[INFO]";
+    else
+        severityStr = "[VERBOSE]";
+
+    std::cerr << "Vulkan " << severityStr << ": " << pCallbackData->pMessage << std::endl;
+    return VK_FALSE;
+}
+
+void VulkanContext::SetupDebugMessenger()
+{
+    if (!m_enableValidation)
+    {
+        return;
+    }
+
+    auto vkCreateDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+        vkGetInstanceProcAddr(m_instance, "vkCreateDebugUtilsMessengerEXT"));
+    if (!vkCreateDebugUtilsMessengerEXT)
+    {
+        return;
+    }
+
+    VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo.pfnUserCallback = DebugCallback;
+
+    if (vkCreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr, &m_debugMessenger) !=
+        VK_SUCCESS)
+    {
+        std::cerr << "Failed to set up debug messenger" << std::endl;
+    }
+}
+
+void VulkanContext::LogDeviceInfo() const
+{
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
+
+    std::cout << "\n=== Vulkan Device Info ===" << std::endl;
+    std::cout << "Device: " << props.deviceName << std::endl;
+    std::cout << "API Version: " << VK_VERSION_MAJOR(props.apiVersion) << "."
+              << VK_VERSION_MINOR(props.apiVersion) << "." << VK_VERSION_PATCH(props.apiVersion)
+              << std::endl;
+    std::cout << "Driver Version: " << props.driverVersion << std::endl;
+    std::cout << "Vendor ID: " << props.vendorID << std::endl;
+    std::cout << "========================\n" << std::endl;
 }
 } // namespace Aetherion::Rendering
