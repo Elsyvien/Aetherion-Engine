@@ -7,10 +7,11 @@
 #include <QMainWindow>
 #include <QSize>
 
+#include "Aetherion/Rendering/RenderView.h"
+
 namespace Aetherion::Rendering
 {
 class VulkanViewport;
-struct RenderView;
 } // namespace Aetherion::Rendering
 
 namespace Aetherion::Runtime
