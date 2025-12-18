@@ -1,5 +1,7 @@
 #include "Aetherion/Runtime/EngineContext.h"
 
+#include "Aetherion/Rendering/VulkanContext.h"
+
 #include <utility>
 
 namespace Aetherion::Runtime
@@ -16,5 +18,15 @@ void EngineContext::SetProjectName(std::string name)
 const std::string& EngineContext::GetProjectName() const noexcept
 {
     return m_projectName;
+}
+
+void EngineContext::SetVulkanContext(std::shared_ptr<Rendering::VulkanContext> context)
+{
+    m_vulkanContext = std::move(context);
+}
+
+std::shared_ptr<Rendering::VulkanContext> EngineContext::GetVulkanContext() const noexcept
+{
+    return m_vulkanContext;
 }
 } // namespace Aetherion::Runtime

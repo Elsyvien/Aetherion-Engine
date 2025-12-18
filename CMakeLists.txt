@@ -18,7 +18,35 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 include(CMake/ProjectOptions.cmake OPTIONAL)
 
+# Platform-specific Qt configuration
+if(WIN32)
+    # Windows: Add Qt installation paths
+    if(NOT Qt6_DIR)
+        # Check common Qt installation paths
+        if(EXISTS "C:/Qt/6.9.1/mingw_64/lib/cmake/Qt6")
+            set(Qt6_DIR "C:/Qt/6.9.1/mingw_64/lib/cmake/Qt6")
+        elseif(EXISTS "C:/Qt/6.9.1/msvc2022_64/lib/cmake/Qt6")
+            set(Qt6_DIR "C:/Qt/6.9.1/msvc2022_64/lib/cmake/Qt6")
+        elseif(EXISTS "C:/Qt/6.9/mingw_64/lib/cmake/Qt6")
+            set(Qt6_DIR "C:/Qt/6.9/mingw_64/lib/cmake/Qt6")
+        elseif(EXISTS "C:/Qt/6.9/msvc2022_64/lib/cmake/Qt6")
+            set(Qt6_DIR "C:/Qt/6.9/msvc2022_64/lib/cmake/Qt6")
+        endif()
+    endif()
+elseif(APPLE)
+    # macOS: Qt is typically found via Homebrew or standard paths
+    if(NOT Qt6_DIR)
+        # Homebrew installation path
+        if(EXISTS "/opt/homebrew/opt/qt/lib/cmake/Qt6")
+            set(Qt6_DIR "/opt/homebrew/opt/qt/lib/cmake/Qt6")
+        elseif(EXISTS "/usr/local/opt/qt/lib/cmake/Qt6")
+            set(Qt6_DIR "/usr/local/opt/qt/lib/cmake/Qt6")
+        endif()
+    endif()
+endif()
+
 find_package(Qt6 6.2 COMPONENTS Widgets REQUIRED)
+find_package(Vulkan REQUIRED)
 
 set(RUNTIME_SOURCES
     Engine/Core/src/Core.cpp
@@ -31,6 +59,7 @@ set(RUNTIME_SOURCES
     Engine/Assets/src/AssetRegistry.cpp
     Engine/Platform/src/PlatformAbstraction.cpp
     Engine/Rendering/src/RenderingPlaceholder.cpp
+    Engine/Rendering/src/VulkanContext.cpp
     Engine/Physics/src/PhysicsPlaceholder.cpp
     Engine/Audio/src/AudioPlaceholder.cpp
     Engine/Scripting/src/ScriptingPlaceholder.cpp
@@ -50,6 +79,10 @@ target_include_directories(AetherionRuntime
         Engine/Scripting/include
 )
 target_compile_features(AetherionRuntime PRIVATE cxx_std_20)
+    target_link_libraries(AetherionRuntime
+        PUBLIC
+        Vulkan::Vulkan
+    )
 
 set(EDITOR_SOURCES
     Engine/Editor/src/main.cpp
@@ -86,6 +119,7 @@ target_link_libraries(AetherionEditor
     PRIVATE
         AetherionRuntime
         Qt6::Widgets
+    Vulkan::Vulkan
 )
 
 target_compile_features(AetherionEditor PRIVATE cxx_std_20)

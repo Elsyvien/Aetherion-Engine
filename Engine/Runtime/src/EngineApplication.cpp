@@ -1,5 +1,9 @@
 #include "Aetherion/Runtime/EngineApplication.h"
 
+#include <stdexcept>
+
+#include "Aetherion/Rendering/VulkanContext.h"
+
 namespace Aetherion::Runtime
 {
 EngineApplication::EngineApplication()
@@ -12,12 +16,30 @@ EngineApplication::~EngineApplication() = default;
 
 void EngineApplication::Initialize()
 {
+    auto vulkanContext = std::make_shared<Rendering::VulkanContext>();
+    try
+    {
+        vulkanContext->Initialize(true);
+    }
+    catch (const std::exception& ex)
+    {
+        throw std::runtime_error(std::string("Failed to initialize Vulkan: ") + ex.what());
+    }
+
+    m_context->SetVulkanContext(vulkanContext);
+
     RegisterPlaceholderSystems();
     // TODO: Bootstrap runtime subsystems and load initial scenes.
 }
 
 void EngineApplication::Shutdown()
 {
+    if (auto ctx = m_context->GetVulkanContext())
+    {
+        ctx->Shutdown();
+        m_context->SetVulkanContext(nullptr);
+    }
+
     // TODO: Flush pending tasks, persist state, and tear down systems.
     m_context.reset();
 }

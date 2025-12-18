@@ -24,9 +24,40 @@ Aetherion is a modular, editor-driven 2D engine scaffold built with modern C++ a
 
 ## Building
 
+This project uses CMake and Qt 6 (Widgets). Below are platform-specific steps.
+
+### Windows (MinGW)
+
+Prerequisites:
+- Qt 6 MinGW (e.g. installed under `C:/Qt/6.9.1/mingw_64`)
+- MinGW toolchain from Qt Tools (e.g. `C:/Qt/Tools/mingw1310_64`)
+
+Build and run:
+
+```powershell
+$env:PATH = "C:\\Qt\\Tools\\mingw1310_64\\bin;C:\\Qt\\6.9.1\\mingw_64\\bin;" + $env:PATH
+cmake -S . -B build-mingw -G "MinGW Makefiles" -DQt6_DIR="C:/Qt/6.9.1/mingw_64/lib/cmake/Qt6" -DCMAKE_CXX_COMPILER="C:/Qt/Tools/mingw1310_64/bin/g++.exe"
+cmake --build build-mingw -- -j 8
+./build-mingw/AetherionEditor.exe
+```
+
+### Windows (MSVC)
+
+Install Qt for `msvc2022_64` and use Visual Studio generator:
+
+```powershell
+cmake -S . -B build-msvc -G "Visual Studio 17 2022" -DQt6_DIR="C:/Qt/6.9.1/msvc2022_64/lib/cmake/Qt6"
+cmake --build build-msvc --config Debug
+./build-msvc/Debug/AetherionEditor.exe
+```
+
+### macOS (Homebrew)
+
 ```bash
-cmake -S . -B build
-cmake --build build
+brew install qt
+cmake -S . -B build -DQt6_DIR="$(brew --prefix qt)/lib/cmake/Qt6"
+cmake --build build -- -j 8
+./build/AetherionEditor
 ```
 
 The build produces:

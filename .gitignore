@@ -17,3 +17,4 @@ Makefile
 
 # Logs
 *.log
+/build-mingw
