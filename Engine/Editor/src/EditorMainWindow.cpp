@@ -6,6 +6,7 @@
 #include <QMenuBar>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <utility>
@@ -15,6 +16,7 @@
 #include "Aetherion/Editor/EditorHierarchyPanel.h"
 #include "Aetherion/Editor/EditorInspectorPanel.h"
 #include "Aetherion/Editor/EditorViewport.h"
+#include "Aetherion/Rendering/VulkanViewport.h"
 #include "Aetherion/Runtime/EngineApplication.h"
 
 namespace Aetherion::Editor
@@ -31,6 +33,36 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
 
     m_viewport = new EditorViewport(centerSplit);
     centerSplit->addWidget(m_viewport);
+
+    m_renderTimer = new QTimer(this);
+    m_renderTimer->setInterval(16);
+    connect(m_renderTimer, &QTimer::timeout, this, [this] {
+        if (m_vulkanViewport && m_vulkanViewport->IsReady())
+        {
+            m_vulkanViewport->RenderFrame();
+        }
+    });
+
+    connect(m_viewport, &EditorViewport::surfaceReady, this, [this](WId nativeHandle, int width, int height) {
+        auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+        auto vk = ctx ? ctx->GetVulkanContext() : nullptr;
+        if (!vk)
+        {
+            return;
+        }
+
+        m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk);
+        m_vulkanViewport->Initialize(reinterpret_cast<void*>(nativeHandle), width, height);
+        m_renderTimer->start();
+        statusBar()->showMessage(tr("Viewport Vulkan renderer active"));
+    });
+
+    connect(m_viewport, &EditorViewport::surfaceResized, this, [this](int width, int height) {
+        if (m_vulkanViewport && m_vulkanViewport->IsReady())
+        {
+            m_vulkanViewport->Resize(width, height);
+        }
+    });
 
     auto* secondaryPlaceholder = new QWidget(centerSplit);
     secondaryPlaceholder->setMinimumWidth(220);

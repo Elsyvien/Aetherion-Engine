@@ -81,10 +81,37 @@ set(RUNTIME_SOURCES
     Engine/Platform/src/PlatformAbstraction.cpp
     Engine/Rendering/src/RenderingPlaceholder.cpp
     Engine/Rendering/src/VulkanContext.cpp
+    Engine/Rendering/src/VulkanViewport.cpp
     Engine/Physics/src/PhysicsPlaceholder.cpp
     Engine/Audio/src/AudioPlaceholder.cpp
     Engine/Scripting/src/ScriptingPlaceholder.cpp
 )
+
+# Compile Vulkan shaders to SPIR-V (output: <build>/shaders/*.spv)
+set(AETHERION_SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Rendering/shaders)
+set(AETHERION_SHADER_OUT_DIR ${CMAKE_BINARY_DIR}/shaders)
+
+file(MAKE_DIRECTORY ${AETHERION_SHADER_OUT_DIR})
+
+set(AETHERION_SHADER_SOURCES
+    ${AETHERION_SHADER_DIR}/viewport_triangle.vert
+    ${AETHERION_SHADER_DIR}/viewport_triangle.frag
+)
+
+set(AETHERION_SHADER_SPV
+    ${AETHERION_SHADER_OUT_DIR}/viewport_triangle.vert.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_triangle.frag.spv
+)
+
+add_custom_command(
+    OUTPUT ${AETHERION_SHADER_SPV}
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_triangle.vert -o ${AETHERION_SHADER_OUT_DIR}/viewport_triangle.vert.spv
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_triangle.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_triangle.frag.spv
+    DEPENDS ${AETHERION_SHADER_SOURCES}
+    VERBATIM
+)
+
+add_custom_target(AetherionShaders ALL DEPENDS ${AETHERION_SHADER_SPV})
 
 add_library(AetherionRuntime STATIC ${RUNTIME_SOURCES})
 target_include_directories(AetherionRuntime
@@ -142,5 +169,7 @@ target_link_libraries(AetherionEditor
         Qt6::Widgets
         Vulkan::Vulkan
 )
+
+add_dependencies(AetherionEditor AetherionShaders)
 
 target_compile_features(AetherionEditor PRIVATE cxx_std_20)

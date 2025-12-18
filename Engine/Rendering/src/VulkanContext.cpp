@@ -129,6 +129,13 @@ std::vector<const char*> VulkanContext::GetRequiredInstanceLayers() const
 std::vector<const char*> VulkanContext::GetRequiredInstanceExtensions() const
 {
     std::vector<const char*> extensions;
+
+    // Required for creating a presentation surface + swapchain.
+    extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+#ifdef _WIN32
+    extensions.push_back("VK_KHR_win32_surface");
+#endif
+
     if (m_enableValidation)
     {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -195,6 +202,12 @@ void VulkanContext::CreateLogicalDevice()
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueInfo;
     createInfo.pEnabledFeatures = &features;
+
+    const std::vector<const char*> deviceExtensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    };
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
     if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS)
     {

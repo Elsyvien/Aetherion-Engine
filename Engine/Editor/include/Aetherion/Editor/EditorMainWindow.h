@@ -5,6 +5,11 @@
 #include <QByteArray>
 #include <QMainWindow>
 
+namespace Aetherion::Rendering
+{
+class VulkanViewport;
+} // namespace Aetherion::Rendering
+
 namespace Aetherion::Runtime
 {
 class EngineApplication;
@@ -29,6 +34,9 @@ public:
     // TODO: Add menu actions for projects, play/pause, and layout management.
 private:
     std::shared_ptr<Runtime::EngineApplication> m_runtimeApp;
+
+    std::unique_ptr<Rendering::VulkanViewport> m_vulkanViewport;
+    class QTimer* m_renderTimer = nullptr;
 
     EditorViewport* m_viewport = nullptr;
     EditorHierarchyPanel* m_hierarchyPanel = nullptr;
