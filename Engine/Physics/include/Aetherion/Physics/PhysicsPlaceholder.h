@@ -2,6 +2,16 @@
 
 namespace Aetherion::Physics
 {
+class PhysicsWorldStub
+{
+public:
+    PhysicsWorldStub() = default;
+    ~PhysicsWorldStub() = default;
+
+    void Initialize() {}
+    void Shutdown() {}
+};
+
 // ===============================
 // TODO: Physics System Placeholder
 // ===============================

@@ -1,8 +1,11 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
+#include <vector>
 
 #include "Aetherion/Runtime/EngineContext.h"
+#include "Aetherion/Runtime/RuntimeSystem.h"
 
 namespace Aetherion::Scene
 {
@@ -23,6 +26,12 @@ public:
     void Initialize(bool enableValidationLayers, bool enableVerboseLogging);
     void Shutdown();
 
+    void Run();
+    void Tick();
+    void RequestShutdown() noexcept { m_running = false; }
+
+    void RegisterSystem(std::shared_ptr<IRuntimeSystem> system);
+
     [[nodiscard]] std::shared_ptr<EngineContext> GetContext() const noexcept;
 
     [[nodiscard]] std::shared_ptr<Scene::Scene> GetActiveScene() const noexcept;
@@ -33,11 +42,18 @@ public:
 private:
     std::shared_ptr<EngineContext> m_context;
     std::shared_ptr<Scene::Scene> m_activeScene;
+    std::vector<std::shared_ptr<IRuntimeSystem>> m_runtimeSystems;
+    std::chrono::steady_clock::time_point m_lastFrameTime{};
+    bool m_running{false};
     bool m_enableValidationLayers{true};
     bool m_enableVerboseLogging{true};
     bool m_initialized{false};
+    bool m_sceneSystemsConfigured{false};
 
     void RegisterPlaceholderSystems();
-    // TODO: Register systems when subsystems become available.
+    void UpdateRuntimeSystems(float deltaTime);
+    void UpdateSceneSystems(float deltaTime);
+    void ProcessInput();
+    void PumpEvents();
 };
 } // namespace Aetherion::Runtime

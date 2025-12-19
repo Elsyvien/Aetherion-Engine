@@ -81,6 +81,7 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/TransformComponent.cpp
     Engine/Scene/src/MeshRendererComponent.cpp
     Engine/Scene/src/System.cpp
+    Engine/Scene/src/SceneSerializer.cpp
     Engine/Assets/src/AssetRegistry.cpp
     Engine/Platform/src/PlatformAbstraction.cpp
     Engine/Rendering/src/RenderingPlaceholder.cpp
