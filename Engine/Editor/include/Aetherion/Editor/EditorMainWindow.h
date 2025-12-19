@@ -6,12 +6,12 @@
 #include <QElapsedTimer>
 #include <QMainWindow>
 #include <QSize>
-#include <QTabBar>
 
 #include "Aetherion/Editor/EditorSettings.h"
 #include "Aetherion/Rendering/RenderView.h"
 
 class QAction;
+class QActionGroup;
 class QLabel;
 class QDockWidget;
 
@@ -57,7 +57,25 @@ private:
     std::shared_ptr<Scene::Scene> m_scene;
     EditorSelection* m_selection = nullptr;
     Rendering::RenderView m_renderView{};
-    QTabBar* m_modeTabBar = nullptr;
+    QActionGroup* m_modeActionGroup = nullptr;
+    QAction* m_modeEditAction = nullptr;
+    QAction* m_modePlaytestAction = nullptr;
+    QAction* m_modeUILayoutAction = nullptr;
+    enum class GizmoMode
+    {
+        Translate,
+        Rotate,
+        Scale
+    };
+    GizmoMode m_gizmoMode{GizmoMode::Translate};
+    QActionGroup* m_gizmoActionGroup = nullptr;
+    QAction* m_gizmoTranslateAction = nullptr;
+    QAction* m_gizmoRotateAction = nullptr;
+    QAction* m_gizmoScaleAction = nullptr;
+    QAction* m_snapToggleAction = nullptr;
+    float m_snapTranslateStep{0.25f};
+    float m_snapRotateStep{15.0f};
+    float m_snapScaleStep{0.05f};
     EditorSettings m_settings{};
     bool m_validationEnabled{true};
     bool m_renderLoggingEnabled{true};
@@ -115,8 +133,13 @@ private:
     void TogglePauseSession();
     void StepSimulationOnce();
     void ActivateModeTab(int index);
+    void ApplyTranslationDelta(float dx, float dy);
+    void ApplyRotationDelta(float deltaDeg);
+    void ApplyScaleDelta(float deltaUniform);
+    void RefreshSelectedEntityUi();
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 };
 } // namespace Aetherion::Editor

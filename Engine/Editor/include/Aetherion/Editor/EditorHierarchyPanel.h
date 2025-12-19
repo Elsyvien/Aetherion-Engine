@@ -5,8 +5,9 @@
 
 #include "Aetherion/Core/Types.h"
 
-class QTreeWidget;
 class QTreeWidgetItem;
+
+class HierarchyTreeWidget;
 
 namespace Aetherion::Scene
 {
@@ -32,9 +33,10 @@ public:
 signals:
     void entitySelected(Aetherion::Core::EntityId id);
     void entityActivated(Aetherion::Core::EntityId id);
+    void entityReparentRequested(Aetherion::Core::EntityId childId, Aetherion::Core::EntityId newParentId);
 
 private:
-    QTreeWidget* m_tree = nullptr;
+    HierarchyTreeWidget* m_tree = nullptr;
     std::shared_ptr<Scene::Scene> m_scene;
     EditorSelection* m_selection = nullptr;
     QHash<qulonglong, QTreeWidgetItem*> m_itemLookup;

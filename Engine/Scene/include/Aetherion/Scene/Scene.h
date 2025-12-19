@@ -30,6 +30,8 @@ public:
     [[nodiscard]] const std::vector<std::shared_ptr<Entity>>& GetEntities() const noexcept;
     [[nodiscard]] std::shared_ptr<Entity> FindEntityById(Core::EntityId id) const noexcept;
 
+    bool SetParent(Core::EntityId childId, Core::EntityId newParentId);
+
     void AddSystem(std::shared_ptr<System> system);
     [[nodiscard]] const std::vector<std::shared_ptr<System>>& GetSystems() const noexcept;
 

@@ -13,6 +13,8 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <functional>
 
 #include <iostream>
 
@@ -1554,6 +1556,84 @@ std::vector<VulkanViewport::InstancePushConstants> VulkanViewport::InstancesFrom
     std::vector<InstancePushConstants> instances;
     instances.reserve(view.instances.size());
 
+    std::unordered_map<Core::EntityId, const Scene::TransformComponent*> transformLookup = view.transforms;
+    if (transformLookup.empty())
+    {
+        for (const auto& instance : view.instances)
+        {
+            if (instance.transform)
+            {
+                transformLookup.emplace(instance.entityId, instance.transform);
+            }
+        }
+    }
+
+    std::unordered_map<Core::EntityId, const Scene::MeshRendererComponent*> meshLookup = view.meshes;
+    if (meshLookup.empty())
+    {
+        for (const auto& instance : view.instances)
+        {
+            if (instance.mesh)
+            {
+                meshLookup.emplace(instance.entityId, instance.mesh);
+            }
+        }
+    }
+
+    std::unordered_map<Core::EntityId, std::array<float, 16>> worldCache;
+    std::function<const std::array<float, 16>&(Core::EntityId)> modelFor = [&](Core::EntityId id)
+    {
+        auto cached = worldCache.find(id);
+        if (cached != worldCache.end())
+        {
+            return cached->second;
+        }
+
+        std::array<float, 16> identity{};
+        Mat4Identity(identity.data());
+
+        auto it = transformLookup.find(id);
+        if (it == transformLookup.end() || it->second == nullptr)
+        {
+            return worldCache.emplace(id, identity).first->second;
+        }
+
+        const auto* transform = it->second;
+        const auto meshIt = meshLookup.find(id);
+        const float spinDeg =
+            (meshIt != meshLookup.end() && meshIt->second) ? meshIt->second->GetRotationSpeedDegPerSec() * timeSeconds : 0.0f;
+        const float radians = (transform->GetRotationZDegrees() + spinDeg) * (3.14159265358979323846f / 180.0f);
+
+        float t[16];
+        Mat4Translation(t, transform->GetPositionX(), transform->GetPositionY(), 0.0f);
+
+        float r[16];
+        Mat4RotationZ(r, radians);
+
+        float s[16];
+        Mat4Scale(s, transform->GetScaleX(), transform->GetScaleY(), 1.0f);
+
+        float tr[16];
+        Mat4Mul(tr, t, r);
+
+        float localModel[16];
+        Mat4Mul(localModel, tr, s);
+
+        if (transform->HasParent())
+        {
+            const auto& parentModel = modelFor(transform->GetParentId());
+            float world[16];
+            Mat4Mul(world, parentModel.data(), localModel);
+            std::array<float, 16> stored{};
+            std::memcpy(stored.data(), world, sizeof(world));
+            return worldCache.emplace(id, stored).first->second;
+        }
+
+        std::array<float, 16> stored{};
+        std::memcpy(stored.data(), localModel, sizeof(localModel));
+        return worldCache.emplace(id, stored).first->second;
+    };
+
     auto appendInstances = [&](const std::vector<RenderInstance>& source) {
         for (const auto& instance : source)
         {
@@ -1564,27 +1644,8 @@ std::vector<VulkanViewport::InstancePushConstants> VulkanViewport::InstancesFrom
 
             InstancePushConstants data{};
 
-            const float radians =
-                (instance.transform->GetRotationZDegrees() +
-                 instance.mesh->GetRotationSpeedDegPerSec() * timeSeconds) *
-                (3.14159265358979323846f / 180.0f);
-
-            float t[16];
-            Mat4Translation(t, instance.transform->GetPositionX(), instance.transform->GetPositionY(), 0.0f);
-
-            float r[16];
-            Mat4RotationZ(r, radians);
-
-            float s[16];
-            Mat4Scale(s, instance.transform->GetScaleX(), instance.transform->GetScaleY(), 1.0f);
-
-            float tr[16];
-            Mat4Mul(tr, t, r);
-
-            float model[16];
-            Mat4Mul(model, tr, s);
-
-            std::memcpy(data.model, model, sizeof(model));
+            const auto& model = modelFor(instance.entityId);
+            std::memcpy(data.model, model.data(), sizeof(data.model));
 
             const auto color = instance.mesh->GetColor();
             data.color[0] = color[0];

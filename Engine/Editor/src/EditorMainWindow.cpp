@@ -12,14 +12,19 @@
 #include <QStatusBar>
 #include <QSysInfo>
 #include <QCloseEvent>
-#include <QTabBar>
+#include <QActionGroup>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
+#include <QKeyEvent>
 #include <algorithm>
+#include <array>
 #include <unordered_map>
 #include <string>
 #include <utility>
+#include <cstring>
+#include <cmath>
+#include <functional>
 
 #include "Aetherion/Editor/EditorAssetBrowser.h"
 #include "Aetherion/Editor/EditorConsole.h"
@@ -62,6 +67,57 @@ void AppendConsole(EditorConsole* console, const QString& message, ConsoleSeveri
         console->AppendMessage(message, severity);
     }
 }
+
+void Mat4Identity(float out[16])
+{
+    std::memset(out, 0, sizeof(float) * 16);
+    out[0] = 1.0f;
+    out[5] = 1.0f;
+    out[10] = 1.0f;
+    out[15] = 1.0f;
+}
+
+void Mat4Mul(float out[16], const float a[16], const float b[16])
+{
+    float r[16];
+    for (int c = 0; c < 4; ++c)
+    {
+        for (int rIdx = 0; rIdx < 4; ++rIdx)
+        {
+            r[c * 4 + rIdx] = a[0 * 4 + rIdx] * b[c * 4 + 0] + a[1 * 4 + rIdx] * b[c * 4 + 1] +
+                              a[2 * 4 + rIdx] * b[c * 4 + 2] + a[3 * 4 + rIdx] * b[c * 4 + 3];
+        }
+    }
+    std::memcpy(out, r, sizeof(r));
+}
+
+void Mat4RotationZ(float out[16], float radians)
+{
+    Mat4Identity(out);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out[0] = c;
+    out[4] = -s;
+    out[1] = s;
+    out[5] = c;
+}
+
+void Mat4Translation(float out[16], float x, float y, float z)
+
+{
+    Mat4Identity(out);
+    out[12] = x;
+    out[13] = y;
+    out[14] = z;
+}
+
+void Mat4Scale(float out[16], float x, float y, float z)
+{
+    Mat4Identity(out);
+    out[0] = x;
+    out[5] = y;
+    out[10] = z;
+}
 } // namespace
 
 EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> runtimeApp,
@@ -86,6 +142,8 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     centerSplit->setChildrenCollapsible(false);
 
     m_viewport = new EditorViewport(centerSplit);
+    m_viewport->setFocusPolicy(Qt::StrongFocus);
+    m_viewport->installEventFilter(this);
     centerSplit->addWidget(m_viewport);
 
     m_renderTimer = new QTimer(this);
@@ -274,6 +332,56 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                 m_inspectorDock->raise();
             }
         });
+
+        connect(m_hierarchyPanel,
+                &EditorHierarchyPanel::entityReparentRequested,
+                this,
+                [this](Aetherion::Core::EntityId childId, Aetherion::Core::EntityId newParentId) {
+                    if (!m_scene)
+                    {
+                        return;
+                    }
+
+                    const bool success = m_scene->SetParent(childId, newParentId);
+                    if (!success)
+                    {
+                        if (m_console)
+                        {
+                            m_console->AppendMessage(tr("Reparent blocked (invalid target)"), ConsoleSeverity::Warning);
+                        }
+                        if (m_hierarchyPanel)
+                        {
+                            m_hierarchyPanel->BindScene(m_scene);
+                        }
+                        return;
+                    }
+
+                    if (m_console)
+                    {
+                        const QString msg = (newParentId == 0)
+                                                ? tr("Entity %1 unparented").arg(childId)
+                                                : tr("Entity %1 parented to %2").arg(childId).arg(newParentId);
+                        m_console->AppendMessage(msg, ConsoleSeverity::Info);
+                    }
+                    if (m_hierarchyPanel)
+                    {
+                        m_hierarchyPanel->BindScene(m_scene);
+                        m_hierarchyPanel->SetSelectedEntity(childId);
+                    }
+                });
+    }
+
+    if (m_inspectorPanel)
+    {
+        connect(m_inspectorPanel,
+                &EditorInspectorPanel::transformChanged,
+                this,
+                [this](Aetherion::Core::EntityId,
+                       float,
+                       float,
+                       float,
+                       float,
+                       float) { RefreshRenderView(); });
     }
 
     if (m_assetBrowser)
@@ -435,7 +543,10 @@ void EditorMainWindow::CreateMenuBarContent()
 void EditorMainWindow::CreateToolBarContent()
 {
     auto* toolBar = addToolBar(tr("Main"));
-    toolBar->setMovable(true);
+    toolBar->setObjectName("MainToolBar");
+    toolBar->setMovable(false);
+    toolBar->setAllowedAreas(Qt::TopToolBarArea);
+    addToolBar(Qt::TopToolBarArea, toolBar);
 
     m_playAction = toolBar->addAction(tr("Play"));
     m_pauseAction = toolBar->addAction(tr("Pause"));
@@ -450,16 +561,57 @@ void EditorMainWindow::CreateToolBarContent()
 
     toolBar->addSeparator();
 
-    m_modeTabBar = new QTabBar(toolBar);
-    m_modeTabBar->addTab(tr("Edit"));
-    m_modeTabBar->addTab(tr("Playtest"));
-    m_modeTabBar->addTab(tr("UI Layout"));
-    m_modeTabBar->setDrawBase(false);
-    m_modeTabBar->setExpanding(false);
-    toolBar->addWidget(m_modeTabBar);
-    connect(m_modeTabBar, &QTabBar::currentChanged, this, [this](int index) { ActivateModeTab(index); });
+    m_modeActionGroup = new QActionGroup(toolBar);
+    m_modeActionGroup->setExclusive(true);
+
+    m_modeEditAction = toolBar->addAction(tr("Edit"));
+    m_modePlaytestAction = toolBar->addAction(tr("Playtest"));
+    m_modeUILayoutAction = toolBar->addAction(tr("UI Layout"));
+
+    m_modeEditAction->setCheckable(true);
+    m_modePlaytestAction->setCheckable(true);
+    m_modeUILayoutAction->setCheckable(true);
+
+    m_modeEditAction->setActionGroup(m_modeActionGroup);
+    m_modePlaytestAction->setActionGroup(m_modeActionGroup);
+    m_modeUILayoutAction->setActionGroup(m_modeActionGroup);
+
+    connect(m_modeEditAction, &QAction::triggered, this, [this] { ActivateModeTab(0); });
+    connect(m_modePlaytestAction, &QAction::triggered, this, [this] { ActivateModeTab(1); });
+    connect(m_modeUILayoutAction, &QAction::triggered, this, [this] { ActivateModeTab(2); });
+
+    toolBar->addSeparator();
+
+    m_gizmoActionGroup = new QActionGroup(toolBar);
+    m_gizmoActionGroup->setExclusive(true);
+
+    m_gizmoTranslateAction = toolBar->addAction(tr("Move"));
+    m_gizmoRotateAction = toolBar->addAction(tr("Rotate"));
+    m_gizmoScaleAction = toolBar->addAction(tr("Scale"));
+
+    m_gizmoTranslateAction->setShortcut(QKeySequence(Qt::Key_W));
+    m_gizmoRotateAction->setShortcut(QKeySequence(Qt::Key_E));
+    m_gizmoScaleAction->setShortcut(QKeySequence(Qt::Key_R));
+
+    m_gizmoTranslateAction->setCheckable(true);
+    m_gizmoRotateAction->setCheckable(true);
+    m_gizmoScaleAction->setCheckable(true);
+
+    m_gizmoTranslateAction->setActionGroup(m_gizmoActionGroup);
+    m_gizmoRotateAction->setActionGroup(m_gizmoActionGroup);
+    m_gizmoScaleAction->setActionGroup(m_gizmoActionGroup);
+
+    connect(m_gizmoTranslateAction, &QAction::triggered, this, [this] { m_gizmoMode = GizmoMode::Translate; });
+    connect(m_gizmoRotateAction, &QAction::triggered, this, [this] { m_gizmoMode = GizmoMode::Rotate; });
+    connect(m_gizmoScaleAction, &QAction::triggered, this, [this] { m_gizmoMode = GizmoMode::Scale; });
+
+    m_snapToggleAction = toolBar->addAction(tr("Snap"));
+    m_snapToggleAction->setCheckable(true);
+    m_snapToggleAction->setChecked(true);
+    m_snapToggleAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_S));
 
     ActivateModeTab(0);
+    m_gizmoTranslateAction->setChecked(true);
     UpdateRuntimeControlStates();
 }
 
@@ -549,6 +701,77 @@ void EditorMainWindow::RefreshRenderView()
 
     std::unordered_map<const Scene::MeshRendererComponent*, size_t> batchLookup;
 
+    std::unordered_map<Core::EntityId, const Scene::TransformComponent*> transformLookup;
+    std::unordered_map<Core::EntityId, const Scene::MeshRendererComponent*> meshLookup;
+    for (const auto& entity : m_scene->GetEntities())
+    {
+        if (!entity)
+        {
+            continue;
+        }
+
+        if (auto transform = entity->GetComponent<Scene::TransformComponent>())
+        {
+            transformLookup.emplace(entity->GetId(), transform.get());
+        }
+
+        if (auto mesh = entity->GetComponent<Scene::MeshRendererComponent>())
+        {
+            meshLookup.emplace(entity->GetId(), mesh.get());
+        }
+    }
+
+    std::unordered_map<Core::EntityId, std::array<float, 16>> worldCache;
+    std::function<const std::array<float, 16>&(Core::EntityId)> modelFor = [&](Core::EntityId id)
+    {
+        auto cached = worldCache.find(id);
+        if (cached != worldCache.end())
+        {
+            return cached->second;
+        }
+
+        std::array<float, 16> identity{};
+        Mat4Identity(identity.data());
+
+        auto it = transformLookup.find(id);
+        if (it == transformLookup.end() || it->second == nullptr)
+        {
+            return worldCache.emplace(id, identity).first->second;
+        }
+
+        const auto* transform = it->second;
+        const float radians = transform->GetRotationZDegrees() * (3.14159265358979323846f / 180.0f);
+
+        float t[16];
+        Mat4Translation(t, transform->GetPositionX(), transform->GetPositionY(), 0.0f);
+
+        float r[16];
+        Mat4RotationZ(r, radians);
+
+        float s[16];
+        Mat4Scale(s, transform->GetScaleX(), transform->GetScaleY(), 1.0f);
+
+        float tr[16];
+        Mat4Mul(tr, t, r);
+
+        float localModel[16];
+        Mat4Mul(localModel, tr, s);
+
+        if (transform->HasParent())
+        {
+            const auto& parentModel = modelFor(transform->GetParentId());
+            float world[16];
+            Mat4Mul(world, parentModel.data(), localModel);
+            std::array<float, 16> stored{};
+            std::memcpy(stored.data(), world, sizeof(world));
+            return worldCache.emplace(id, stored).first->second;
+        }
+
+        std::array<float, 16> stored{};
+        std::memcpy(stored.data(), localModel, sizeof(localModel));
+        return worldCache.emplace(id, stored).first->second;
+    };
+
     for (const auto& entity : m_scene->GetEntities())
     {
         if (!entity)
@@ -567,6 +790,9 @@ void EditorMainWindow::RefreshRenderView()
         instance.entityId = entity->GetId();
         instance.transform = transform.get();
         instance.mesh = mesh.get();
+        const auto& model = modelFor(instance.entityId);
+        std::memcpy(instance.model, model.data(), sizeof(instance.model));
+        instance.hasModel = true;
         m_renderView.instances.push_back(instance);
 
         size_t batchIndex = 0;
@@ -584,6 +810,9 @@ void EditorMainWindow::RefreshRenderView()
 
         m_renderView.batches[batchIndex].instances.push_back(instance);
     }
+
+    m_renderView.transforms = transformLookup;
+    m_renderView.meshes = meshLookup;
 }
 
 void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
@@ -908,18 +1137,26 @@ void EditorMainWindow::StepSimulationOnce()
 
 void EditorMainWindow::ActivateModeTab(int index)
 {
-    if (!m_modeTabBar)
+    if (index < 0 || index > 2)
     {
         return;
     }
 
-    if (index < 0 || index >= m_modeTabBar->count())
+    // Reflect checked state on actions
+    if (m_modeEditAction && m_modePlaytestAction && m_modeUILayoutAction)
     {
-        return;
+        m_modeEditAction->blockSignals(true);
+        m_modePlaytestAction->blockSignals(true);
+        m_modeUILayoutAction->blockSignals(true);
+        m_modeEditAction->setChecked(index == 0);
+        m_modePlaytestAction->setChecked(index == 1);
+        m_modeUILayoutAction->setChecked(index == 2);
+        m_modeEditAction->blockSignals(false);
+        m_modePlaytestAction->blockSignals(false);
+        m_modeUILayoutAction->blockSignals(false);
     }
 
-    m_modeTabBar->setCurrentIndex(index);
-    const QString label = m_modeTabBar->tabText(index);
+    const QString label = (index == 0) ? tr("Edit") : (index == 1) ? tr("Playtest") : tr("UI Layout");
     QString detail;
     if (label == tr("Edit"))
     {
@@ -936,5 +1173,186 @@ void EditorMainWindow::ActivateModeTab(int index)
 
     AppendConsole(m_console, tr("Switched to '%1' tab: %2").arg(label, detail), ConsoleSeverity::Info);
     statusBar()->showMessage(detail, 2500);
+}
+
+bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_viewport && event && event->type() == QEvent::KeyPress)
+    {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->isAutoRepeat())
+        {
+            return false;
+        }
+
+        const bool snapping = m_snapToggleAction ? m_snapToggleAction->isChecked() : false;
+        const float moveStep = snapping ? m_snapTranslateStep : 0.05f;
+        const float rotateStep = snapping ? m_snapRotateStep : 5.0f;
+        const float scaleStep = snapping ? m_snapScaleStep : 0.01f;
+
+        switch (keyEvent->key())
+        {
+        case Qt::Key_W:
+            if (m_gizmoTranslateAction)
+            {
+                m_gizmoTranslateAction->trigger();
+            }
+            return true;
+        case Qt::Key_E:
+            if (m_gizmoRotateAction)
+            {
+                m_gizmoRotateAction->trigger();
+            }
+            return true;
+        case Qt::Key_R:
+            if (m_gizmoScaleAction)
+            {
+                m_gizmoScaleAction->trigger();
+            }
+            return true;
+        case Qt::Key_Left:
+            if (m_gizmoMode == GizmoMode::Translate)
+            {
+                ApplyTranslationDelta(-moveStep, 0.0f);
+            }
+            else if (m_gizmoMode == GizmoMode::Rotate)
+            {
+                ApplyRotationDelta(-rotateStep);
+            }
+            else if (m_gizmoMode == GizmoMode::Scale)
+            {
+                ApplyScaleDelta(-scaleStep);
+            }
+            return true;
+        case Qt::Key_Right:
+            if (m_gizmoMode == GizmoMode::Translate)
+            {
+                ApplyTranslationDelta(moveStep, 0.0f);
+            }
+            else if (m_gizmoMode == GizmoMode::Rotate)
+            {
+                ApplyRotationDelta(rotateStep);
+            }
+            else if (m_gizmoMode == GizmoMode::Scale)
+            {
+                ApplyScaleDelta(scaleStep);
+            }
+            return true;
+        case Qt::Key_Up:
+            if (m_gizmoMode == GizmoMode::Translate)
+            {
+                ApplyTranslationDelta(0.0f, moveStep);
+            }
+            else if (m_gizmoMode == GizmoMode::Scale)
+            {
+                ApplyScaleDelta(scaleStep);
+            }
+            return true;
+        case Qt::Key_Down:
+            if (m_gizmoMode == GizmoMode::Translate)
+            {
+                ApplyTranslationDelta(0.0f, -moveStep);
+            }
+            else if (m_gizmoMode == GizmoMode::Scale)
+            {
+                ApplyScaleDelta(-scaleStep);
+            }
+            return true;
+        default:
+            break;
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
+}
+
+void EditorMainWindow::ApplyTranslationDelta(float dx, float dy)
+{
+    if (!m_selection)
+    {
+        return;
+    }
+
+    auto entity = m_selection->GetSelectedEntity();
+    if (!entity)
+    {
+        return;
+    }
+
+    auto transform = entity->GetComponent<Scene::TransformComponent>();
+    if (!transform)
+    {
+        return;
+    }
+
+    transform->SetPosition(transform->GetPositionX() + dx, transform->GetPositionY() + dy);
+    RefreshRenderView();
+    RefreshSelectedEntityUi();
+}
+
+void EditorMainWindow::ApplyRotationDelta(float deltaDeg)
+{
+    if (!m_selection)
+    {
+        return;
+    }
+
+    auto entity = m_selection->GetSelectedEntity();
+    if (!entity)
+    {
+        return;
+    }
+
+    auto transform = entity->GetComponent<Scene::TransformComponent>();
+    if (!transform)
+    {
+        return;
+    }
+
+    transform->SetRotationZDegrees(transform->GetRotationZDegrees() + deltaDeg);
+    RefreshRenderView();
+    RefreshSelectedEntityUi();
+}
+
+void EditorMainWindow::ApplyScaleDelta(float deltaUniform)
+{
+    if (!m_selection)
+    {
+        return;
+    }
+
+    auto entity = m_selection->GetSelectedEntity();
+    if (!entity)
+    {
+        return;
+    }
+
+    auto transform = entity->GetComponent<Scene::TransformComponent>();
+    if (!transform)
+    {
+        return;
+    }
+
+    const float newScaleX = std::max(0.001f, transform->GetScaleX() + deltaUniform);
+    const float newScaleY = std::max(0.001f, transform->GetScaleY() + deltaUniform);
+    transform->SetScale(newScaleX, newScaleY);
+    RefreshRenderView();
+    RefreshSelectedEntityUi();
+}
+
+void EditorMainWindow::RefreshSelectedEntityUi()
+{
+    if (m_inspectorPanel)
+    {
+        m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
+    }
+    if (m_hierarchyPanel && m_selection)
+    {
+        auto entity = m_selection->GetSelectedEntity();
+        if (entity)
+        {
+            m_hierarchyPanel->SetSelectedEntity(entity->GetId());
+        }
+    }
 }
 } // namespace Aetherion::Editor

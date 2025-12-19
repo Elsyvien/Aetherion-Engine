@@ -182,7 +182,8 @@ bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path
             out << "        \"Transform\": {\n";
             out << "          \"position\": [" << transform->GetPositionX() << ", " << transform->GetPositionY() << "],\n";
             out << "          \"rotationZ\": " << transform->GetRotationZDegrees() << ",\n";
-            out << "          \"scale\": [" << transform->GetScaleX() << ", " << transform->GetScaleY() << "]\n";
+            out << "          \"scale\": [" << transform->GetScaleX() << ", " << transform->GetScaleY() << "],\n";
+            out << "          \"parent\": " << transform->GetParentId() << "\n";
             out << "        }";
         }
 
@@ -235,6 +236,7 @@ std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) 
         const auto position = ExtractFloatArray(block, "position");
         const auto scale = ExtractFloatArray(block, "scale");
         const auto rotation = ExtractFloat(block, "rotationZ");
+        const auto parentId = ExtractUint64(block, "parent").value_or(0);
         if (!position.empty() || !scale.empty() || rotation.has_value())
         {
             auto transform = std::make_shared<TransformComponent>();
@@ -249,6 +251,10 @@ std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) 
             if (scale.size() >= 2)
             {
                 transform->SetScale(scale[0], scale[1]);
+            }
+            if (parentId != 0)
+            {
+                transform->SetParent(parentId);
             }
             entity->AddComponent(transform);
         }
@@ -272,6 +278,37 @@ std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) 
         }
 
         scene->AddEntity(entity);
+    }
+
+    // Rebuild child lists after all entities are present.
+    for (const auto& entity : scene->GetEntities())
+    {
+        if (!entity)
+        {
+            continue;
+        }
+
+        auto transform = entity->GetComponent<TransformComponent>();
+        if (!transform || !transform->HasParent())
+        {
+            continue;
+        }
+
+        auto parent = scene->FindEntityById(transform->GetParentId());
+        if (!parent)
+        {
+            transform->ClearParent();
+            continue;
+        }
+
+        auto parentTransform = parent->GetComponent<TransformComponent>();
+        if (!parentTransform)
+        {
+            transform->ClearParent();
+            continue;
+        }
+
+        parentTransform->AddChild(entity->GetId());
     }
 
     return scene;

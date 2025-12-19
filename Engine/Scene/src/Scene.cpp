@@ -3,6 +3,8 @@
 #include "Aetherion/Runtime/EngineContext.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/System.h"
+#include "Aetherion/Scene/TransformComponent.h"
+
 #include <utility>
 
 namespace Aetherion::Scene
@@ -37,6 +39,84 @@ std::shared_ptr<Entity> Scene::FindEntityById(Core::EntityId id) const noexcept
         }
     }
     return nullptr;
+}
+
+bool Scene::SetParent(Core::EntityId childId, Core::EntityId newParentId)
+{
+    if (childId == 0 || childId == newParentId)
+    {
+        return false;
+    }
+
+    auto child = FindEntityById(childId);
+    if (!child)
+    {
+        return false;
+    }
+
+    auto childTransform = child->GetComponent<TransformComponent>();
+    if (!childTransform)
+    {
+        return false;
+    }
+
+    // Prevent cycles by walking the ancestry chain of the prospective parent.
+    Core::EntityId cursor = newParentId;
+    while (cursor != 0)
+    {
+        if (cursor == childId)
+        {
+            return false;
+        }
+
+        auto ancestor = FindEntityById(cursor);
+        auto ancestorTransform = ancestor ? ancestor->GetComponent<TransformComponent>() : nullptr;
+        cursor = ancestorTransform ? ancestorTransform->GetParentId() : 0;
+    }
+
+    const Core::EntityId oldParentId = childTransform->GetParentId();
+    if (oldParentId == newParentId)
+    {
+        return true;
+    }
+
+    // Detach from old parent list.
+    if (oldParentId != 0)
+    {
+        if (auto oldParent = FindEntityById(oldParentId))
+        {
+            if (auto oldParentTransform = oldParent->GetComponent<TransformComponent>())
+            {
+                oldParentTransform->RemoveChild(childId);
+            }
+        }
+    }
+
+    // Attach to new parent if provided.
+    if (newParentId != 0)
+    {
+        auto newParent = FindEntityById(newParentId);
+        if (!newParent)
+        {
+            childTransform->ClearParent();
+            return false;
+        }
+
+        auto parentTransform = newParent->GetComponent<TransformComponent>();
+        if (!parentTransform)
+        {
+            childTransform->ClearParent();
+            return false;
+        }
+
+        childTransform->SetParent(newParentId);
+        parentTransform->AddChild(childId);
+        return true;
+    }
+
+    // Root-level entity (no parent).
+    childTransform->ClearParent();
+    return true;
 }
 
 void Scene::AddSystem(std::shared_ptr<System> system)

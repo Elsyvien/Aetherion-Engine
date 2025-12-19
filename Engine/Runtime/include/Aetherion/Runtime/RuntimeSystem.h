@@ -9,6 +9,7 @@ class EngineContext;
 class IRuntimeSystem
 {
 public:
+    IRuntimeSystem() = default;
     virtual ~IRuntimeSystem() = default;
 
     IRuntimeSystem(const IRuntimeSystem&) = delete;
