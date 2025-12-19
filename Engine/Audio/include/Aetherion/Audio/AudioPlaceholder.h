@@ -2,6 +2,16 @@
 
 namespace Aetherion::Audio
 {
+class AudioEngineStub
+{
+public:
+    AudioEngineStub() = default;
+    ~AudioEngineStub() = default;
+
+    void Initialize() {}
+    void Shutdown() {}
+};
+
 // ===============================
 // TODO: Audio System Placeholder
 // ===============================

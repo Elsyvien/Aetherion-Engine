@@ -2,6 +2,16 @@
 
 namespace Aetherion::Scripting
 {
+class ScriptingRuntimeStub
+{
+public:
+    ScriptingRuntimeStub() = default;
+    ~ScriptingRuntimeStub() = default;
+
+    void Initialize() {}
+    void Shutdown() {}
+};
+
 // ===============================
 // TODO: Scripting System Placeholder
 // ===============================
