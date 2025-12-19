@@ -17,11 +17,12 @@ public:
     VulkanContext(const VulkanContext&) = delete;
     VulkanContext& operator=(const VulkanContext&) = delete;
 
-    void Initialize(bool enableValidation);
+    void Initialize(bool enableValidation, bool enableLogging);
     void Shutdown();
 
     [[nodiscard]] bool IsInitialized() const noexcept { return m_initialized; }
     [[nodiscard]] bool IsValidationEnabled() const noexcept { return m_enableValidation; }
+    [[nodiscard]] bool IsLoggingEnabled() const noexcept { return m_enableLogging; }
 
     [[nodiscard]] VkInstance GetInstance() const noexcept { return m_instance; }
     [[nodiscard]] VkPhysicalDevice GetPhysicalDevice() const noexcept { return m_physicalDevice; }
@@ -58,6 +59,7 @@ public:
 private:
     bool m_initialized{false};
     bool m_enableValidation{false};
+    bool m_enableLogging{true};
     VkInstance m_instance{VK_NULL_HANDLE};
     VkPhysicalDevice m_physicalDevice{VK_NULL_HANDLE};
     VkDevice m_device{VK_NULL_HANDLE};

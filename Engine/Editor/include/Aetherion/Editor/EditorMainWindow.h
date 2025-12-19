@@ -7,7 +7,10 @@
 #include <QMainWindow>
 #include <QSize>
 
+#include "Aetherion/Editor/EditorSettings.h"
 #include "Aetherion/Rendering/RenderView.h"
+
+class QAction;
 
 namespace Aetherion::Rendering
 {
@@ -39,7 +42,9 @@ class EditorMainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> runtimeApp, QWidget* parent = nullptr);
+    explicit EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> runtimeApp,
+                              const EditorSettings& settings,
+                              QWidget* parent = nullptr);
     ~EditorMainWindow() override;
 
     // TODO: Add menu actions for projects, play/pause, and layout management.
@@ -49,7 +54,11 @@ private:
     std::shared_ptr<Scene::Scene> m_scene;
     EditorSelection* m_selection = nullptr;
     Rendering::RenderView m_renderView{};
+    EditorSettings m_settings{};
     bool m_validationEnabled{true};
+    bool m_renderLoggingEnabled{true};
+    int m_targetFrameIntervalMs{16};
+    int m_headlessSleepMs{50};
 
     std::unique_ptr<Rendering::VulkanViewport> m_vulkanViewport;
     WId m_surfaceHandle{0};
@@ -57,6 +66,8 @@ private:
     bool m_surfaceInitialized{false};
     class QTimer* m_renderTimer = nullptr;
     QElapsedTimer m_frameTimer;
+    QAction* m_validationMenuAction = nullptr;
+    QAction* m_loggingMenuAction = nullptr;
 
     EditorViewport* m_viewport = nullptr;
     EditorHierarchyPanel* m_hierarchyPanel = nullptr;
@@ -69,6 +80,9 @@ private:
     void CreateToolBarContent();
     void CreateDockPanels();
     void ConfigureStatusBar();
+    void ApplySettings(const EditorSettings& settings, bool persist);
+    void UpdateRenderTimerInterval(bool viewportReady);
+    void OpenSettingsDialog();
     void RefreshRenderView();
     void RecreateRuntimeAndRenderer(bool enableValidation);
 };

@@ -9,6 +9,8 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
+#include <algorithm>
+#include <unordered_map>
 #include <utility>
 
 #include "Aetherion/Editor/EditorAssetBrowser.h"
@@ -16,6 +18,7 @@
 #include "Aetherion/Editor/EditorHierarchyPanel.h"
 #include "Aetherion/Editor/EditorSelection.h"
 #include "Aetherion/Editor/EditorInspectorPanel.h"
+#include "Aetherion/Editor/EditorSettingsDialog.h"
 #include "Aetherion/Editor/EditorViewport.h"
 #include "Aetherion/Rendering/RenderView.h"
 #include "Aetherion/Rendering/VulkanViewport.h"
@@ -28,11 +31,18 @@
 
 namespace Aetherion::Editor
 {
-EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> runtimeApp, QWidget* parent)
+EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> runtimeApp,
+                                   const EditorSettings& settings,
+                                   QWidget* parent)
     : QMainWindow(parent)
     , m_runtimeApp(std::move(runtimeApp))
+    , m_settings(settings)
 {
-    m_validationEnabled = m_runtimeApp ? m_runtimeApp->IsValidationEnabled() : true;
+    m_settings.Clamp();
+    m_validationEnabled = m_settings.validationEnabled;
+    m_renderLoggingEnabled = m_settings.verboseLogging;
+    m_targetFrameIntervalMs = std::max(1, 1000 / std::max(1, m_settings.targetFps));
+    m_headlessSleepMs = m_settings.headlessSleepMs;
     m_selection = new EditorSelection(this);
 
     setWindowTitle("Aetherion Editor");
@@ -45,9 +55,15 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     centerSplit->addWidget(m_viewport);
 
     m_renderTimer = new QTimer(this);
-    m_renderTimer->setInterval(16);
+    m_renderTimer->setInterval(m_targetFrameIntervalMs);
     connect(m_renderTimer, &QTimer::timeout, this, [this] {
-        if (!m_vulkanViewport || !m_vulkanViewport->IsReady())
+        const bool viewportReady = m_vulkanViewport && m_vulkanViewport->IsReady();
+        UpdateRenderTimerInterval(viewportReady);
+        if (!viewportReady)
+        {
+            return;
+        }
+        if (isMinimized())
         {
             return;
         }
@@ -72,11 +88,19 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         }
 
         m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk);
+        m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
         m_vulkanViewport->Initialize(reinterpret_cast<void*>(nativeHandle), width, height);
 
-        m_frameTimer.start();
-        m_renderTimer->start();
-        statusBar()->showMessage(tr("Viewport Vulkan renderer active"));
+        if (m_vulkanViewport->IsReady())
+        {
+            m_frameTimer.start();
+            m_renderTimer->start();
+            statusBar()->showMessage(tr("Viewport Vulkan renderer active"));
+        }
+        else
+        {
+            statusBar()->showMessage(tr("Viewport renderer unavailable: swapchain not supported on this adapter"));
+        }
     });
 
     connect(m_viewport, &EditorViewport::surfaceResized, this, [this](int width, int height) {
@@ -146,16 +170,30 @@ void EditorMainWindow::CreateMenuBarContent()
     fileMenu->addAction(tr("Exit"), this, &QWidget::close);
 
     auto* editMenu = menuBar()->addMenu(tr("&Edit"));
-    editMenu->addAction(tr("Preferences"), [] {});
-    auto* validationAction = editMenu->addAction(tr("Enable Vulkan Validation Layers"));
-    validationAction->setCheckable(true);
-    validationAction->setChecked(m_validationEnabled);
-    connect(validationAction, &QAction::toggled, this, [this](bool enabled) {
+    auto* preferences = editMenu->addAction(tr("Preferences"));
+    connect(preferences, &QAction::triggered, this, &EditorMainWindow::OpenSettingsDialog);
+    m_validationMenuAction = editMenu->addAction(tr("Enable Vulkan Validation Layers"));
+    m_validationMenuAction->setCheckable(true);
+    m_validationMenuAction->setChecked(m_validationEnabled);
+    connect(m_validationMenuAction, &QAction::toggled, this, [this](bool enabled) {
         if (enabled == m_validationEnabled)
         {
             return;
         }
-        RecreateRuntimeAndRenderer(enabled);
+        m_settings.validationEnabled = enabled;
+        ApplySettings(m_settings, true);
+    });
+
+    m_loggingMenuAction = editMenu->addAction(tr("Verbose Rendering Logs"));
+    m_loggingMenuAction->setCheckable(true);
+    m_loggingMenuAction->setChecked(m_renderLoggingEnabled);
+    connect(m_loggingMenuAction, &QAction::toggled, this, [this](bool enabled) {
+        if (enabled == m_renderLoggingEnabled)
+        {
+            return;
+        }
+        m_settings.verboseLogging = enabled;
+        ApplySettings(m_settings, true);
     });
 
     auto* viewMenu = menuBar()->addMenu(tr("&View"));
@@ -184,14 +222,83 @@ void EditorMainWindow::CreateToolBarContent()
     // TODO: Wire actions to runtime controls.
 }
 
+void EditorMainWindow::ApplySettings(const EditorSettings& settings, bool persist)
+{
+    const bool validationChanged = settings.validationEnabled != m_validationEnabled;
+    const bool loggingChanged = settings.verboseLogging != m_renderLoggingEnabled;
+
+    m_settings = settings;
+    m_settings.Clamp();
+    m_validationEnabled = m_settings.validationEnabled;
+    m_renderLoggingEnabled = m_settings.verboseLogging;
+    m_targetFrameIntervalMs = std::max(1, 1000 / std::max(1, m_settings.targetFps));
+    m_headlessSleepMs = m_settings.headlessSleepMs;
+
+    if (persist)
+    {
+        m_settings.Save();
+    }
+
+    if (m_validationMenuAction)
+    {
+        m_validationMenuAction->blockSignals(true);
+        m_validationMenuAction->setChecked(m_validationEnabled);
+        m_validationMenuAction->blockSignals(false);
+    }
+    if (m_loggingMenuAction)
+    {
+        m_loggingMenuAction->blockSignals(true);
+        m_loggingMenuAction->setChecked(m_renderLoggingEnabled);
+        m_loggingMenuAction->blockSignals(false);
+    }
+
+    if (validationChanged)
+    {
+        RecreateRuntimeAndRenderer(m_validationEnabled);
+    }
+    else if (m_vulkanViewport)
+    {
+        m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
+    }
+
+    UpdateRenderTimerInterval(m_vulkanViewport && m_vulkanViewport->IsReady());
+}
+
+void EditorMainWindow::UpdateRenderTimerInterval(bool viewportReady)
+{
+    if (!m_renderTimer)
+    {
+        return;
+    }
+
+    const bool headless = !viewportReady || !m_surfaceInitialized || isMinimized();
+    const int desiredInterval = (headless && m_headlessSleepMs > 0) ? m_headlessSleepMs : m_targetFrameIntervalMs;
+    if (desiredInterval > 0 && m_renderTimer->interval() != desiredInterval)
+    {
+        m_renderTimer->setInterval(desiredInterval);
+    }
+}
+
+void EditorMainWindow::OpenSettingsDialog()
+{
+    EditorSettingsDialog dialog(m_settings, this);
+    if (dialog.exec() == QDialog::Accepted)
+    {
+        ApplySettings(dialog.GetSettings(), true);
+    }
+}
+
 void EditorMainWindow::RefreshRenderView()
 {
     m_renderView.instances.clear();
+    m_renderView.batches.clear();
 
     if (!m_scene)
     {
         return;
     }
+
+    std::unordered_map<const Scene::MeshRendererComponent*, size_t> batchLookup;
 
     for (const auto& entity : m_scene->GetEntities())
     {
@@ -212,12 +319,28 @@ void EditorMainWindow::RefreshRenderView()
         instance.transform = transform.get();
         instance.mesh = mesh.get();
         m_renderView.instances.push_back(instance);
+
+        size_t batchIndex = 0;
+        auto found = batchLookup.find(instance.mesh);
+        if (found == batchLookup.end())
+        {
+            batchIndex = m_renderView.batches.size();
+            batchLookup[instance.mesh] = batchIndex;
+            m_renderView.batches.emplace_back();
+        }
+        else
+        {
+            batchIndex = found->second;
+        }
+
+        m_renderView.batches[batchIndex].instances.push_back(instance);
     }
 }
 
 void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
 {
     m_validationEnabled = enableValidation;
+    m_settings.validationEnabled = enableValidation;
 
     if (m_renderTimer)
     {
@@ -236,7 +359,7 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
     }
 
     m_runtimeApp = std::make_shared<Runtime::EngineApplication>();
-    m_runtimeApp->Initialize(m_validationEnabled);
+    m_runtimeApp->Initialize(m_validationEnabled, m_renderLoggingEnabled);
 
     m_scene = m_runtimeApp->GetActiveScene();
     if (m_selection)
@@ -270,17 +393,23 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
         if (vk)
         {
             m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk);
+            m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
             m_vulkanViewport->Initialize(reinterpret_cast<void*>(m_surfaceHandle),
                                          m_surfaceSize.width(),
                                          m_surfaceSize.height());
-            m_frameTimer.restart();
-            m_renderTimer->start();
+            if (m_vulkanViewport->IsReady())
+            {
+                m_frameTimer.restart();
+                m_renderTimer->start();
+            }
         }
     }
 
     RefreshRenderView();
-    statusBar()->showMessage(tr("Renderer reset (%1 validation)")
-                                 .arg(m_validationEnabled ? tr("with") : tr("without")));
+    UpdateRenderTimerInterval(m_vulkanViewport && m_vulkanViewport->IsReady());
+    statusBar()->showMessage(tr("Renderer reset (%1 validation, %2 logging)")
+                                 .arg(m_validationEnabled ? tr("with") : tr("without"))
+                                 .arg(m_renderLoggingEnabled ? tr("verbose") : tr("minimal")));
 }
 
 void EditorMainWindow::CreateDockPanels()

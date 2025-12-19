@@ -18,14 +18,15 @@ EngineApplication::EngineApplication()
 
 EngineApplication::~EngineApplication() = default;
 
-void EngineApplication::Initialize(bool enableValidationLayers)
+void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerboseLogging)
 {
     m_enableValidationLayers = enableValidationLayers;
+    m_enableVerboseLogging = enableVerboseLogging;
 
     auto vulkanContext = std::make_shared<Rendering::VulkanContext>();
     try
     {
-        vulkanContext->Initialize(m_enableValidationLayers);
+        vulkanContext->Initialize(m_enableValidationLayers, m_enableVerboseLogging);
     }
     catch (const std::exception& ex)
     {

@@ -144,6 +144,8 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorSelection.cpp
     Engine/Editor/src/EditorAssetBrowser.cpp
     Engine/Editor/src/EditorConsole.cpp
+    Engine/Editor/src/EditorSettings.cpp
+    Engine/Editor/src/EditorSettingsDialog.cpp
 )
 
 add_executable(AetherionEditor ${EDITOR_SOURCES})
@@ -157,6 +159,8 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/EditorSelection.h
         Engine/Editor/include/Aetherion/Editor/EditorAssetBrowser.h
         Engine/Editor/include/Aetherion/Editor/EditorConsole.h
+        Engine/Editor/include/Aetherion/Editor/EditorSettings.h
+        Engine/Editor/include/Aetherion/Editor/EditorSettingsDialog.h
 )
 target_include_directories(AetherionEditor
     PRIVATE

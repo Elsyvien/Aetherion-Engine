@@ -1,8 +1,10 @@
 #include "Aetherion/Rendering/VulkanContext.h"
 
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <set>
+#include <string_view>
 
 namespace
 {
@@ -21,7 +23,7 @@ VulkanContext::~VulkanContext()
     Shutdown();
 }
 
-void VulkanContext::Initialize(bool enableValidation)
+void VulkanContext::Initialize(bool enableValidation, bool enableLogging)
 {
     if (m_initialized)
     {
@@ -29,6 +31,7 @@ void VulkanContext::Initialize(bool enableValidation)
     }
 
     m_enableValidation = enableValidation;
+    m_enableLogging = enableLogging;
 
     if (m_enableValidation && !CheckValidationLayerSupport())
     {
@@ -226,17 +229,22 @@ void VulkanContext::PickPhysicalDevice(VkSurfaceKHR surface)
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
 
-    for (auto device : devices)
-    {
+    const char* preferredGpuEnv = std::getenv("AETHERION_PREFERRED_GPU");
+    const std::string_view preferredGpu = preferredGpuEnv ? std::string_view(preferredGpuEnv) : std::string_view{};
+    const bool hasPreferredGpu = !preferredGpu.empty();
+
+    bool foundSurfaceButNoSwapchain = false;
+
+    auto trySelectDevice = [&](VkPhysicalDevice device) -> bool {
         if (!CheckDeviceExtensionSupport(device))
         {
-            continue;
+            return false;
         }
 
         auto indices = FindQueueFamilies(device, surface);
         if (!indices.IsComplete())
         {
-            continue;
+            return false;
         }
 
         bool swapchainAdequate = true;
@@ -244,6 +252,10 @@ void VulkanContext::PickPhysicalDevice(VkSurfaceKHR surface)
         {
             auto support = QuerySwapchainSupport(device, surface);
             swapchainAdequate = !support.formats.empty() && !support.presentModes.empty();
+            if (!swapchainAdequate)
+            {
+                foundSurfaceButNoSwapchain = true;
+            }
         }
 
         if (swapchainAdequate)
@@ -252,8 +264,98 @@ void VulkanContext::PickPhysicalDevice(VkSurfaceKHR surface)
             m_queueFamilyIndices = indices;
             m_graphicsQueueFamilyIndex = indices.graphicsFamily.value();
             m_presentQueueFamilyIndex = indices.presentFamily.value();
+
+            if (m_enableLogging)
+            {
+                VkPhysicalDeviceProperties props{};
+                vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
+                std::cout << "VulkanContext: selected GPU '" << props.deviceName << "' (graphics queue "
+                          << m_graphicsQueueFamilyIndex << ", present queue " << m_presentQueueFamilyIndex << ")"
+                          << std::endl;
+            }
+            return true;
+        }
+
+        return false;
+    };
+
+    auto matchesPreference = [&](VkPhysicalDevice device) -> bool {
+        if (!hasPreferredGpu)
+        {
+            return true;
+        }
+
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(device, &props);
+        const std::string_view name(props.deviceName);
+
+        auto toLower = [](char c) {
+            if (c >= 'A' && c <= 'Z')
+            {
+                return static_cast<char>(c - 'A' + 'a');
+            }
+            return c;
+        };
+
+        // Simple ASCII case-insensitive substring match.
+        for (size_t start = 0; start < name.size(); ++start)
+        {
+            size_t i = 0;
+            while (start + i < name.size() && i < preferredGpu.size() &&
+                   toLower(name[start + i]) == toLower(preferredGpu[i]))
+            {
+                ++i;
+            }
+            if (i == preferredGpu.size())
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    if (hasPreferredGpu)
+    {
+        bool foundPreferred = false;
+        for (auto device : devices)
+        {
+            if (!matchesPreference(device))
+            {
+                continue;
+            }
+            foundPreferred = true;
+            if (trySelectDevice(device))
+            {
+                return;
+            }
+        }
+
+        if (m_enableLogging)
+        {
+            if (!foundPreferred)
+            {
+                std::cout << "VulkanContext: preferred GPU '" << preferredGpu
+                          << "' not found; falling back to any compatible adapter" << std::endl;
+            }
+            else
+            {
+                std::cout << "VulkanContext: preferred GPU '" << preferredGpu
+                          << "' found but not compatible; falling back to any compatible adapter" << std::endl;
+            }
+        }
+    }
+
+    for (auto device : devices)
+    {
+        if (trySelectDevice(device))
+        {
             return;
         }
+    }
+
+    if (foundSurfaceButNoSwapchain)
+    {
+        throw std::runtime_error("Found GPU(s) without adequate swapchain support for this surface");
     }
 
     throw std::runtime_error("No suitable GPU with graphics/present/swapchain support found");
@@ -355,6 +457,13 @@ void VulkanContext::EnsureSurfaceCompatibility(VkSurfaceKHR surface)
     const bool queuesChanged = (previousGraphics != m_graphicsQueueFamilyIndex) ||
                                (previousPresent != m_presentQueueFamilyIndex);
 
+    if ((deviceChanged || queuesChanged) && m_enableLogging)
+    {
+        std::cout << "VulkanContext: adapter/queue change detected (graphics " << previousGraphics << " -> "
+                  << m_graphicsQueueFamilyIndex << ", present " << previousPresent << " -> "
+                  << m_presentQueueFamilyIndex << ")" << std::endl;
+    }
+
     if (m_device == VK_NULL_HANDLE || deviceChanged || queuesChanged)
     {
         if (m_device != VK_NULL_HANDLE)
@@ -424,6 +533,11 @@ void VulkanContext::SetupDebugMessenger()
 
 void VulkanContext::LogDeviceInfo() const
 {
+    if (!m_enableLogging)
+    {
+        return;
+    }
+
     VkPhysicalDeviceProperties props{};
     vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
 

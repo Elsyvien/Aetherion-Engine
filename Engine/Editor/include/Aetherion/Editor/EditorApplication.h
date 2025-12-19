@@ -6,6 +6,11 @@ class QApplication;
 
 namespace Aetherion::Editor
 {
+struct EditorSettings;
+}
+
+namespace Aetherion::Editor
+{
 class EditorMainWindow;
 
 class EditorApplication
@@ -23,7 +28,7 @@ public:
 private:
     std::unique_ptr<QApplication> m_qtApp;
     std::unique_ptr<EditorMainWindow> m_mainWindow;
-    bool m_enableValidationLayers{true};
+    std::unique_ptr<EditorSettings> m_settings;
 
     void InitializeUi();
 };

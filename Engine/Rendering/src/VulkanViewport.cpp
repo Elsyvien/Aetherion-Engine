@@ -20,6 +20,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#ifdef IsLoggingEnabled
+#undef IsLoggingEnabled
+#endif
 #include <vulkan/vulkan_win32.h>
 #endif
 
@@ -33,10 +36,10 @@ struct Vertex
     float color[3];
 };
 
-struct UniformBufferObject
+struct FrameUniformObject
 {
-    // Column-major mat4 for GLSL.
-    float mvp[16];
+    // Column-major view-projection matrix for GLSL.
+    float viewProj[16];
 };
 
 void Mat4Identity(float out[16])
@@ -197,6 +200,10 @@ VkExtent2D ChooseExtent(const VkSurfaceCapabilitiesKHR& caps, int width, int hei
 VulkanViewport::VulkanViewport(std::shared_ptr<VulkanContext> context)
     : m_context(std::move(context))
 {
+    if (m_context)
+    {
+        m_verboseLogging = m_context->IsLoggingEnabled();
+    }
 }
 
 VulkanViewport::~VulkanViewport()
@@ -216,8 +223,22 @@ void VulkanViewport::Initialize(void* nativeHandle, int width, int height)
         return;
     }
 
-    CreateSurface(nativeHandle);
-    CreateSwapchain(width, height);
+    try
+    {
+        CreateSurface(nativeHandle);
+    }
+    catch (const std::exception& ex)
+    {
+        std::cerr << "VulkanViewport: surface creation failed - " << ex.what() << std::endl;
+        return;
+    }
+
+    if (!CreateSwapchain(width, height))
+    {
+        std::cerr << "VulkanViewport: swapchain unavailable; rendering paused until a compatible adapter/surface is available"
+                  << std::endl;
+        return;
+    }
     CreateRenderPass();
     CreateDescriptorSetLayout();
     CreateMeshBuffers();
@@ -382,17 +403,28 @@ void VulkanViewport::Resize(int width, int height)
     VkDevice device = m_context->GetDevice();
     vkDeviceWaitIdle(device);
 
-    std::cout << "VulkanViewport: recreating swapchain for " << width << "x" << height << std::endl;
+    if (m_verboseLogging)
+    {
+        std::cout << "VulkanViewport: recreating swapchain for " << width << "x" << height << std::endl;
+    }
     DestroySwapchain();
-    CreateSwapchain(width, height);
-    CreateFramebuffers();
+    if (CreateSwapchain(width, height))
+    {
+        CreateFramebuffers();
+    }
+    else
+    {
+        std::cerr << "VulkanViewport: swapchain recreation failed; waiting for a compatible device/surface"
+                  << std::endl;
+        m_ready = false;
+    }
     m_frameIndex = 0;
     m_waitingForValidExtent = false;
 }
 
 void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
 {
-    if (!m_ready)
+    if (!m_ready || m_swapchain == VK_NULL_HANDLE)
     {
         return;
     }
@@ -401,8 +433,11 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     {
         if (!m_waitingForValidExtent)
         {
-            std::cout << "VulkanViewport: swapchain extent is zero; skipping frame until resize"
-                      << std::endl;
+            if (m_verboseLogging)
+            {
+                std::cout << "VulkanViewport: swapchain extent is zero; skipping frame until resize"
+                          << std::endl;
+            }
             m_waitingForValidExtent = true;
         }
         return;
@@ -410,13 +445,11 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     m_waitingForValidExtent = false;
 
     m_timeSeconds += deltaTimeSeconds;
+    const auto instances = InstancesFromView(view, m_timeSeconds);
 
     VkDevice device = m_context->GetDevice();
     VkQueue graphicsQueue = m_context->GetGraphicsQueue();
     VkQueue presentQueue = m_context->GetPresentQueue();
-
-    const bool hasGeometry = !view.instances.empty();
-    const TransformData transform = TransformFromView(view, m_timeSeconds);
 
     VkFence inFlight = m_inFlight[m_frameIndex];
     vkWaitForFences(device, 1, &inFlight, VK_TRUE, UINT64_MAX);
@@ -425,10 +458,22 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     uint32_t imageIndex = 0;
     VkResult acquire = vkAcquireNextImageKHR(
         device, m_swapchain, UINT64_MAX, m_imageAvailable[m_frameIndex], VK_NULL_HANDLE, &imageIndex);
-    if (acquire == VK_ERROR_OUT_OF_DATE_KHR)
+    if (acquire == VK_ERROR_OUT_OF_DATE_KHR || acquire == VK_ERROR_SURFACE_LOST_KHR)
     {
-        std::cout << "VulkanViewport: swapchain out of date on acquire, waiting for resize"
-                  << std::endl;
+        if (m_verboseLogging)
+        {
+            std::cout << "VulkanViewport: swapchain unavailable on acquire; waiting for resize or device change"
+                      << std::endl;
+        }
+        try
+        {
+            m_context->EnsureSurfaceCompatibility(m_surface);
+        }
+        catch (const std::exception& ex)
+        {
+            std::cerr << "VulkanViewport: device/surface compatibility check failed - " << ex.what() << std::endl;
+            m_ready = false;
+        }
         return;
     }
     if (acquire != VK_SUCCESS && acquire != VK_SUBOPTIMAL_KHR)
@@ -446,10 +491,16 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
         m_imagesInFlight[imageIndex] = inFlight;
     }
 
-    UpdateUniformBuffer(m_frameIndex, transform);
+    if (imageIndex >= m_renderFinishedPerImage.size())
+    {
+        std::cerr << "VulkanViewport: acquired image index out of range for sync objects" << std::endl;
+        return;
+    }
+
+    UpdateUniformBuffer(m_frameIndex);
 
     vkResetCommandBuffer(m_commandBuffers[m_frameIndex], 0);
-    RecordCommandBuffer(imageIndex, hasGeometry);
+    RecordCommandBuffer(imageIndex, instances);
 
     VkSemaphore waitSem = m_imageAvailable[m_frameIndex];
     VkSemaphore signalSem = m_renderFinishedPerImage[imageIndex];
@@ -466,7 +517,15 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     submit.signalSemaphoreCount = 1;
     submit.pSignalSemaphores = &signalSem;
 
-    if (vkQueueSubmit(graphicsQueue, 1, &submit, inFlight) != VK_SUCCESS)
+    const VkResult submitRes = vkQueueSubmit(graphicsQueue, 1, &submit, inFlight);
+    if (submitRes == VK_ERROR_DEVICE_LOST)
+    {
+        std::cerr << "VulkanViewport: device lost during submit; pausing rendering" << std::endl;
+        m_ready = false;
+        return;
+    }
+
+    if (submitRes != VK_SUCCESS)
     {
         throw std::runtime_error("vkQueueSubmit failed");
     }
@@ -482,12 +541,24 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     VkResult pres = vkQueuePresentKHR(presentQueue, &present);
     if (pres == VK_ERROR_OUT_OF_DATE_KHR)
     {
-        std::cout << "VulkanViewport: present reports swapchain out of date, pending recreate"
-                  << std::endl;
+        if (m_verboseLogging)
+        {
+            std::cout << "VulkanViewport: present reports swapchain out of date, pending recreate"
+                      << std::endl;
+        }
     }
     else if (pres == VK_SUBOPTIMAL_KHR)
     {
-        std::cout << "VulkanViewport: swapchain suboptimal; will recreate on resize" << std::endl;
+        if (m_verboseLogging)
+        {
+            std::cout << "VulkanViewport: swapchain suboptimal; will recreate on resize" << std::endl;
+        }
+    }
+    else if (pres == VK_ERROR_SURFACE_LOST_KHR || pres == VK_ERROR_DEVICE_LOST)
+    {
+        std::cerr << "VulkanViewport: surface or device lost during present; pausing rendering" << std::endl;
+        m_ready = false;
+        return;
     }
     else if (pres != VK_SUCCESS)
     {
@@ -523,12 +594,19 @@ void VulkanViewport::CreateSurface(void* nativeHandle)
     m_context->EnsureSurfaceCompatibility(m_surface);
 }
 
-void VulkanViewport::CreateSwapchain(int width, int height)
+bool VulkanViewport::CreateSwapchain(int width, int height)
 {
     auto support = m_context->QuerySwapchainSupport(m_surface);
     if (support.formats.empty() || support.presentModes.empty())
     {
-        throw std::runtime_error("Swapchain support incomplete for this surface");
+        std::cerr << "VulkanViewport: swapchain support incomplete for this surface" << std::endl;
+        m_swapchain = VK_NULL_HANDLE;
+        m_swapchainExtent = {0, 0};
+        m_swapchainImages.clear();
+        m_swapchainImageViews.clear();
+        m_renderFinishedPerImage.clear();
+        m_imagesInFlight.clear();
+        return false;
     }
 
     const VkSurfaceCapabilitiesKHR& caps = support.capabilities;
@@ -536,12 +614,16 @@ void VulkanViewport::CreateSwapchain(int width, int height)
     VkPresentModeKHR presentMode = ChoosePresentMode(support.presentModes);
     VkExtent2D extent = ChooseExtent(caps, width, height);
 
-    std::cout << "VulkanViewport: creating swapchain " << extent.width << "x" << extent.height
-              << " (" << support.formats.size() << " formats, " << support.presentModes.size()
-              << " present modes, min images " << caps.minImageCount
-              << ", max images "
-              << (caps.maxImageCount == 0 ? std::string("unbounded") : std::to_string(caps.maxImageCount))
-              << ")" << std::endl;
+    if (m_verboseLogging)
+    {
+        std::cout << "VulkanViewport: creating swapchain " << extent.width << "x" << extent.height
+                  << " (" << support.formats.size() << " formats, " << support.presentModes.size()
+                  << " present modes, min images " << caps.minImageCount
+                  << ", max images "
+                  << (caps.maxImageCount == 0 ? std::string("unbounded")
+                                              : std::to_string(caps.maxImageCount))
+                  << ")" << std::endl;
+    }
 
     uint32_t imageCount = caps.minImageCount + 1;
     if (caps.maxImageCount > 0 && imageCount > caps.maxImageCount)
@@ -581,7 +663,14 @@ void VulkanViewport::CreateSwapchain(int width, int height)
 
     if (vkCreateSwapchainKHR(m_context->GetDevice(), &create, nullptr, &m_swapchain) != VK_SUCCESS)
     {
-        throw std::runtime_error("Failed to create swapchain");
+        std::cerr << "VulkanViewport: failed to create swapchain for current surface" << std::endl;
+        m_swapchain = VK_NULL_HANDLE;
+        m_swapchainExtent = {0, 0};
+        m_swapchainImages.clear();
+        m_swapchainImageViews.clear();
+        m_renderFinishedPerImage.clear();
+        m_imagesInFlight.clear();
+        return false;
     }
 
     uint32_t actualCount = 0;
@@ -637,6 +726,7 @@ void VulkanViewport::CreateSwapchain(int width, int height)
     }
 
     m_imagesInFlight.assign(m_swapchainImages.size(), VK_NULL_HANDLE);
+    return true;
 }
 
 void VulkanViewport::DestroySwapchain()
@@ -662,11 +752,23 @@ void VulkanViewport::DestroySwapchain()
     m_swapchainImageViews.clear();
     m_swapchainImages.clear();
 
+    for (auto sem : m_renderFinishedPerImage)
+    {
+        if (sem != VK_NULL_HANDLE)
+        {
+            vkDestroySemaphore(device, sem, nullptr);
+        }
+    }
+    m_renderFinishedPerImage.clear();
+    m_imagesInFlight.clear();
+
     if (m_swapchain != VK_NULL_HANDLE)
     {
         vkDestroySwapchainKHR(device, m_swapchain, nullptr);
         m_swapchain = VK_NULL_HANDLE;
     }
+
+    m_swapchainExtent = {0, 0};
 }
 
 void VulkanViewport::CreateRenderPass()
@@ -778,7 +880,7 @@ void VulkanViewport::CreateUniformBuffers()
     VkDevice device = m_context->GetDevice();
     VkPhysicalDevice gpu = m_context->GetPhysicalDevice();
 
-    const VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+    const VkDeviceSize bufferSize = sizeof(FrameUniformObject);
 
     m_uniformMapped.fill(nullptr);
 
@@ -834,7 +936,7 @@ void VulkanViewport::CreateDescriptorPoolAndSets()
         VkDescriptorBufferInfo buf{};
         buf.buffer = m_uniformBuffers[i];
         buf.offset = 0;
-        buf.range = sizeof(UniformBufferObject);
+        buf.range = sizeof(FrameUniformObject);
 
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -932,10 +1034,17 @@ void VulkanViewport::CreatePipeline()
     blend.attachmentCount = 1;
     blend.pAttachments = &blendAttach;
 
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(InstancePushConstants);
+
     VkPipelineLayoutCreateInfo layout{};
     layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layout.setLayoutCount = 1;
     layout.pSetLayouts = &m_descriptorSetLayout;
+    layout.pushConstantRangeCount = 1;
+    layout.pPushConstantRanges = &pushRange;
 
     if (vkCreatePipelineLayout(m_context->GetDevice(), &layout, nullptr, &m_pipelineLayout) != VK_SUCCESS)
     {
@@ -1033,7 +1142,7 @@ void VulkanViewport::CreateCommandPoolAndBuffers()
     }
 }
 
-void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, bool drawGeometry)
+void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, const std::vector<InstancePushConstants>& instances)
 {
     VkCommandBuffer cb = m_commandBuffers[m_frameIndex];
 
@@ -1074,7 +1183,7 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, bool drawGeometry)
     scissor.extent = m_swapchainExtent;
     vkCmdSetScissor(cb, 0, 1, &scissor);
 
-    if (drawGeometry)
+    if (!instances.empty())
     {
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
@@ -1089,7 +1198,16 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, bool drawGeometry)
                                 &m_descriptorSets[m_frameIndex],
                                 0,
                                 nullptr);
-        vkCmdDrawIndexed(cb, 6, 1, 0, 0, 0);
+        for (const auto& instance : instances)
+        {
+            vkCmdPushConstants(cb,
+                               m_pipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0,
+                               sizeof(InstancePushConstants),
+                               &instance);
+            vkCmdDrawIndexed(cb, 6, 1, 0, 0, 0);
+        }
     }
 
     vkCmdEndRenderPass(cb);
@@ -1100,7 +1218,7 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, bool drawGeometry)
     }
 }
 
-void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex, const TransformData& transform)
+void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex)
 {
     if (frameIndex >= kMaxFramesInFlight)
     {
@@ -1115,58 +1233,73 @@ void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex, const TransformDat
     float proj[16];
     Mat4Ortho(proj, -aspect, aspect, -1.0f, 1.0f, -1.0f, 1.0f);
 
-    const float radians = (transform.rotDegZ * 3.14159265358979323846f) / 180.0f;
-
-    float t[16];
-    Mat4Translation(t, transform.posX, transform.posY, 0.0f);
-
-    float r[16];
-    Mat4RotationZ(r, radians);
-
-    float s[16];
-    Mat4Scale(s, transform.scaleX, transform.scaleY, 1.0f);
-
-    // Model = T * R * S
-    float tr[16];
-    Mat4Mul(tr, t, r);
-
-    float model[16];
-    Mat4Mul(model, tr, s);
-
-    float mvp[16];
-    Mat4Mul(mvp, proj, model);
-
-    UniformBufferObject ubo{};
-    std::memcpy(ubo.mvp, mvp, sizeof(mvp));
+    FrameUniformObject ubo{};
+    std::memcpy(ubo.viewProj, proj, sizeof(proj));
 
     std::memcpy(m_uniformMapped[frameIndex], &ubo, sizeof(ubo));
 }
 
-VulkanViewport::TransformData VulkanViewport::TransformFromView(const RenderView& view, float timeSeconds) const
+std::vector<VulkanViewport::InstancePushConstants> VulkanViewport::InstancesFromView(const RenderView& view,
+                                                                                     float timeSeconds) const
 {
-    TransformData transform{};
+    std::vector<InstancePushConstants> instances;
+    instances.reserve(view.instances.size());
 
-    if (view.instances.empty())
+    auto appendInstances = [&](const std::vector<RenderInstance>& source) {
+        for (const auto& instance : source)
+        {
+            if (!instance.transform || !instance.mesh)
+            {
+                continue;
+            }
+
+            InstancePushConstants data{};
+
+            const float radians =
+                (instance.transform->GetRotationZDegrees() +
+                 instance.mesh->GetRotationSpeedDegPerSec() * timeSeconds) *
+                (3.14159265358979323846f / 180.0f);
+
+            float t[16];
+            Mat4Translation(t, instance.transform->GetPositionX(), instance.transform->GetPositionY(), 0.0f);
+
+            float r[16];
+            Mat4RotationZ(r, radians);
+
+            float s[16];
+            Mat4Scale(s, instance.transform->GetScaleX(), instance.transform->GetScaleY(), 1.0f);
+
+            float tr[16];
+            Mat4Mul(tr, t, r);
+
+            float model[16];
+            Mat4Mul(model, tr, s);
+
+            std::memcpy(data.model, model, sizeof(model));
+
+            const auto color = instance.mesh->GetColor();
+            data.color[0] = color[0];
+            data.color[1] = color[1];
+            data.color[2] = color[2];
+            data.color[3] = 1.0f;
+
+            instances.push_back(data);
+        }
+    };
+
+    if (!view.batches.empty())
     {
-        return transform;
+        for (const auto& batch : view.batches)
+        {
+            appendInstances(batch.instances);
+        }
+    }
+    else
+    {
+        appendInstances(view.instances);
     }
 
-    const RenderInstance& instance = view.instances.front();
-    if (instance.transform)
-    {
-        transform.posX = instance.transform->GetPositionX();
-        transform.posY = instance.transform->GetPositionY();
-        transform.rotDegZ = instance.transform->GetRotationZDegrees();
-        transform.scaleX = instance.transform->GetScaleX();
-        transform.scaleY = instance.transform->GetScaleY();
-    }
-
-    if (instance.mesh)
-    {
-        transform.rotDegZ += instance.mesh->GetRotationSpeedDegPerSec() * timeSeconds;
-    }
-
-    return transform;
+    return instances;
 }
 
 void VulkanViewport::CreateSyncObjects()

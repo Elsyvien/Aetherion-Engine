@@ -29,20 +29,24 @@ public:
     void Shutdown();
 
     [[nodiscard]] bool IsReady() const noexcept { return m_ready; }
+    void SetLoggingEnabled(bool enabled) noexcept { m_verboseLogging = enabled; }
 
 private:
     static constexpr uint32_t kMaxFramesInFlight = 2;
-    struct TransformData
+    struct InstancePushConstants
     {
-        float posX = 0.0f;
-        float posY = 0.0f;
-        float rotDegZ = 0.0f;
-        float scaleX = 1.0f;
-        float scaleY = 1.0f;
+        float model[16]{};
+        float color[4]{};
+    };
+
+    struct FrameUniform
+    {
+        float viewProj[16]{};
     };
 
     std::shared_ptr<VulkanContext> m_context;
     bool m_ready{false};
+    bool m_verboseLogging{true};
     float m_timeSeconds{0.0f};
     bool m_waitingForValidExtent{false};
 
@@ -83,7 +87,7 @@ private:
     std::vector<VkFence> m_imagesInFlight;
 
     void CreateSurface(void* nativeHandle);
-    void CreateSwapchain(int width, int height);
+    bool CreateSwapchain(int width, int height);
     void DestroySwapchain();
 
     void CreateRenderPass();
@@ -95,11 +99,11 @@ private:
     void CreateFramebuffers();
 
     void CreateCommandPoolAndBuffers();
-    void RecordCommandBuffer(uint32_t imageIndex, bool drawGeometry);
-    void UpdateUniformBuffer(uint32_t frameIndex, const TransformData& transform);
+    void RecordCommandBuffer(uint32_t imageIndex, const std::vector<InstancePushConstants>& instances);
+    void UpdateUniformBuffer(uint32_t frameIndex);
 
     void CreateSyncObjects();
-    [[nodiscard]] TransformData TransformFromView(const RenderView& view, float timeSeconds) const;
+    [[nodiscard]] std::vector<InstancePushConstants> InstancesFromView(const RenderView& view, float timeSeconds) const;
 
     [[nodiscard]] std::string ShaderPath(const char* filename) const;
     [[nodiscard]] std::vector<char> ReadFileBinary(const std::string& path) const;

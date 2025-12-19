@@ -19,8 +19,14 @@ struct RenderInstance
     const Scene::MeshRendererComponent* mesh{nullptr};
 };
 
+struct RenderBatch
+{
+    std::vector<RenderInstance> instances;
+};
+
 struct RenderView
 {
     std::vector<RenderInstance> instances;
+    std::vector<RenderBatch> batches;
 };
 } // namespace Aetherion::Rendering
