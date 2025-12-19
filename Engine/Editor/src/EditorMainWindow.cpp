@@ -12,6 +12,7 @@
 #include <QStatusBar>
 #include <QSysInfo>
 #include <QCloseEvent>
+#include <QTabBar>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
@@ -436,15 +437,30 @@ void EditorMainWindow::CreateToolBarContent()
     auto* toolBar = addToolBar(tr("Main"));
     toolBar->setMovable(true);
 
-    auto* playAction = toolBar->addAction(tr("Play"));
-    auto* pauseAction = toolBar->addAction(tr("Pause"));
-    auto* stepAction = toolBar->addAction(tr("Step"));
+    m_playAction = toolBar->addAction(tr("Play"));
+    m_pauseAction = toolBar->addAction(tr("Pause"));
+    m_stepAction = toolBar->addAction(tr("Step"));
 
-    playAction->setEnabled(false);
-    pauseAction->setEnabled(false);
-    stepAction->setEnabled(false);
+    m_playAction->setCheckable(true);
+    m_pauseAction->setCheckable(true);
 
-    // TODO: Wire actions to runtime controls.
+    connect(m_playAction, &QAction::triggered, this, [this] { StartOrStopPlaySession(); });
+    connect(m_pauseAction, &QAction::triggered, this, [this] { TogglePauseSession(); });
+    connect(m_stepAction, &QAction::triggered, this, [this] { StepSimulationOnce(); });
+
+    toolBar->addSeparator();
+
+    m_modeTabBar = new QTabBar(toolBar);
+    m_modeTabBar->addTab(tr("Edit"));
+    m_modeTabBar->addTab(tr("Playtest"));
+    m_modeTabBar->addTab(tr("UI Layout"));
+    m_modeTabBar->setDrawBase(false);
+    m_modeTabBar->setExpanding(false);
+    toolBar->addWidget(m_modeTabBar);
+    connect(m_modeTabBar, &QTabBar::currentChanged, this, [this](int index) { ActivateModeTab(index); });
+
+    ActivateModeTab(0);
+    UpdateRuntimeControlStates();
 }
 
 void EditorMainWindow::ApplySettings(const EditorSettings& settings, bool persist)
@@ -817,5 +833,108 @@ void EditorMainWindow::ConfigureStatusBar()
         m_fpsLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         statusBar()->addPermanentWidget(m_fpsLabel);
     }
+}
+
+void EditorMainWindow::UpdateRuntimeControlStates()
+{
+    if (m_playAction)
+    {
+        const bool showStop = m_isPlaying && !m_isPaused;
+        m_playAction->blockSignals(true);
+        m_playAction->setChecked(showStop);
+        m_playAction->setText(showStop ? tr("Stop") : tr("Play"));
+        m_playAction->blockSignals(false);
+    }
+
+    if (m_pauseAction)
+    {
+        m_pauseAction->blockSignals(true);
+        m_pauseAction->setEnabled(m_isPlaying);
+        m_pauseAction->setChecked(m_isPaused);
+        m_pauseAction->setText(m_isPaused ? tr("Resume") : tr("Pause"));
+        m_pauseAction->blockSignals(false);
+    }
+
+    if (m_stepAction)
+    {
+        m_stepAction->setEnabled(m_isPlaying && m_isPaused);
+    }
+}
+
+void EditorMainWindow::StartOrStopPlaySession()
+{
+    if (m_isPlaying && !m_isPaused)
+    {
+        m_isPlaying = false;
+        m_isPaused = false;
+        AppendConsole(m_console, tr("Stopped play session (runtime stub)"), ConsoleSeverity::Info);
+        statusBar()->showMessage(tr("Stopped play session"), 2000);
+        UpdateRuntimeControlStates();
+        return;
+    }
+
+    m_isPlaying = true;
+    m_isPaused = false;
+    AppendConsole(m_console, tr("Started play session (runtime stub)"), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Play session started"), 2000);
+    UpdateRuntimeControlStates();
+}
+
+void EditorMainWindow::TogglePauseSession()
+{
+    if (!m_isPlaying)
+    {
+        statusBar()->showMessage(tr("No active play session"), 2000);
+        return;
+    }
+
+    m_isPaused = !m_isPaused;
+    AppendConsole(m_console, m_isPaused ? tr("Paused session (runtime stub)") : tr("Resumed session (runtime stub)"), ConsoleSeverity::Info);
+    statusBar()->showMessage(m_isPaused ? tr("Session paused") : tr("Session resumed"), 2000);
+    UpdateRuntimeControlStates();
+}
+
+void EditorMainWindow::StepSimulationOnce()
+{
+    if (!m_isPlaying || !m_isPaused)
+    {
+        statusBar()->showMessage(tr("Step is available while paused"), 2500);
+        return;
+    }
+
+    AppendConsole(m_console, tr("Stepped simulation once (placeholder)"), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Stepped simulation (placeholder)"), 2000);
+}
+
+void EditorMainWindow::ActivateModeTab(int index)
+{
+    if (!m_modeTabBar)
+    {
+        return;
+    }
+
+    if (index < 0 || index >= m_modeTabBar->count())
+    {
+        return;
+    }
+
+    m_modeTabBar->setCurrentIndex(index);
+    const QString label = m_modeTabBar->tabText(index);
+    QString detail;
+    if (label == tr("Edit"))
+    {
+        detail = tr("Edit workspace (placeholder) ready for scene tools");
+    }
+    else if (label == tr("Playtest"))
+    {
+        detail = tr("Future in-editor runtime preview will appear here");
+    }
+    else
+    {
+        detail = tr("UI layout customization placeholder");
+    }
+
+    AppendConsole(m_console, tr("Switched to '%1' tab: %2").arg(label, detail), ConsoleSeverity::Info);
+    statusBar()->showMessage(detail, 2500);
 }
 } // namespace Aetherion::Editor
