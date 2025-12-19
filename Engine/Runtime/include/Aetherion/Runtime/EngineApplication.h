@@ -35,6 +35,7 @@ private:
     std::shared_ptr<Scene::Scene> m_activeScene;
     bool m_enableValidationLayers{true};
     bool m_enableVerboseLogging{true};
+    bool m_initialized{false};
 
     void RegisterPlaceholderSystems();
     // TODO: Register systems when subsystems become available.

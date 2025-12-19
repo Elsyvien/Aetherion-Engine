@@ -1,16 +1,20 @@
 #include "Aetherion/Editor/EditorMainWindow.h"
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QDockWidget>
 #include <QLabel>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QSysInfo>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <unordered_map>
+#include <string>
 #include <utility>
 
 #include "Aetherion/Editor/EditorAssetBrowser.h"
@@ -21,6 +25,7 @@
 #include "Aetherion/Editor/EditorSettingsDialog.h"
 #include "Aetherion/Editor/EditorViewport.h"
 #include "Aetherion/Rendering/RenderView.h"
+#include "Aetherion/Rendering/VulkanContext.h"
 #include "Aetherion/Rendering/VulkanViewport.h"
 #include "Aetherion/Runtime/EngineApplication.h"
 
@@ -31,6 +36,30 @@
 
 namespace Aetherion::Editor
 {
+namespace
+{
+ConsoleSeverity ToConsoleSeverity(Rendering::LogSeverity severity)
+{
+    switch (severity)
+    {
+    case Rendering::LogSeverity::Error:
+        return ConsoleSeverity::Error;
+    case Rendering::LogSeverity::Warning:
+        return ConsoleSeverity::Warning;
+    default:
+        return ConsoleSeverity::Info;
+    }
+}
+
+void AppendConsole(EditorConsole* console, const QString& message, ConsoleSeverity severity)
+{
+    if (console)
+    {
+        console->AppendMessage(message, severity);
+    }
+}
+} // namespace
+
 EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> runtimeApp,
                                    const EditorSettings& settings,
                                    QWidget* parent)
@@ -61,10 +90,22 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         UpdateRenderTimerInterval(viewportReady);
         if (!viewportReady)
         {
+            if (m_fpsLabel)
+            {
+                m_fpsLabel->setText(tr("FPS: --"));
+            }
+            m_fpsFrameCounter = 0;
+            m_fpsTimer.invalidate();
             return;
         }
         if (isMinimized())
         {
+            if (m_fpsLabel)
+            {
+                m_fpsLabel->setText(tr("FPS: --"));
+            }
+            m_fpsFrameCounter = 0;
+            m_fpsTimer.invalidate();
             return;
         }
 
@@ -72,7 +113,37 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         const float dt = static_cast<float>(nanos) / 1'000'000'000.0f;
         m_frameTimer.restart();
         RefreshRenderView();
-        m_vulkanViewport->RenderFrame(dt, m_renderView);
+        try
+        {
+            m_vulkanViewport->RenderFrame(dt, m_renderView);
+        }
+        catch (const std::exception& ex)
+        {
+            AppendConsole(m_console, QString::fromStdString(ex.what()), ConsoleSeverity::Error);
+            m_renderTimer->stop();
+            statusBar()->showMessage(tr("Renderer error: %1").arg(QString::fromStdString(ex.what())));
+            return;
+        }
+
+        if (m_fpsLabel)
+        {
+            if (!m_fpsTimer.isValid())
+            {
+                m_fpsTimer.start();
+                m_fpsFrameCounter = 0;
+            }
+
+            ++m_fpsFrameCounter;
+            const qint64 elapsedMs = m_fpsTimer.elapsed();
+            if (elapsedMs >= 1000)
+            {
+                const double fps = (elapsedMs > 0) ? (static_cast<double>(m_fpsFrameCounter) * 1000.0 / static_cast<double>(elapsedMs))
+                                                   : 0.0;
+                m_fpsLabel->setText(tr("FPS: %1").arg(QString::number(fps, 'f', 1)));
+                m_fpsFrameCounter = 0;
+                m_fpsTimer.restart();
+            }
+        }
     });
 
     connect(m_viewport, &EditorViewport::surfaceReady, this, [this](WId nativeHandle, int width, int height) {
@@ -87,14 +158,27 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
             return;
         }
 
-        m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk);
-        m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
-        m_vulkanViewport->Initialize(reinterpret_cast<void*>(nativeHandle), width, height);
+        DestroyViewportRenderer();
+
+        try
+        {
+            m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk);
+            m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
+            m_vulkanViewport->Initialize(reinterpret_cast<void*>(nativeHandle), width, height);
+        }
+        catch (const std::exception& ex)
+        {
+            AppendConsole(m_console, QString::fromStdString(ex.what()), ConsoleSeverity::Error);
+            statusBar()->showMessage(tr("Viewport renderer unavailable: %1").arg(QString::fromStdString(ex.what())));
+            return;
+        }
 
         if (m_vulkanViewport->IsReady())
         {
             m_frameTimer.start();
             m_renderTimer->start();
+            m_fpsFrameCounter = 0;
+            m_fpsTimer.start();
             statusBar()->showMessage(tr("Viewport Vulkan renderer active"));
         }
         else
@@ -107,7 +191,15 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         m_surfaceSize = QSize(width, height);
         if (m_vulkanViewport && m_vulkanViewport->IsReady())
         {
-            m_vulkanViewport->Resize(width, height);
+            try
+            {
+                m_vulkanViewport->Resize(width, height);
+            }
+            catch (const std::exception& ex)
+            {
+                AppendConsole(m_console, QString::fromStdString(ex.what()), ConsoleSeverity::Error);
+                statusBar()->showMessage(tr("Viewport resize failed: %1").arg(QString::fromStdString(ex.what())));
+            }
         }
     });
 
@@ -145,6 +237,8 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         m_hierarchyPanel->BindScene(m_scene);
     }
 
+    AttachVulkanLogSink();
+
     connect(m_selection, &EditorSelection::SelectionChanged, this, [this](Aetherion::Core::EntityId) {
         if (m_inspectorPanel)
         {
@@ -159,7 +253,16 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     });
 }
 
-EditorMainWindow::~EditorMainWindow() = default;
+EditorMainWindow::~EditorMainWindow()
+{
+    DestroyViewportRenderer();
+    DetachVulkanLogSink();
+
+    if (m_runtimeApp)
+    {
+        m_runtimeApp->Shutdown();
+    }
+}
 
 void EditorMainWindow::CreateMenuBarContent()
 {
@@ -203,7 +306,18 @@ void EditorMainWindow::CreateMenuBarContent()
     });
 
     auto* helpMenu = menuBar()->addMenu(tr("&Help"));
-    helpMenu->addAction(tr("About Aetherion"), [] {});
+    auto* aboutAction = helpMenu->addAction(tr("About Aetherion"));
+    connect(aboutAction, &QAction::triggered, this, [this] {
+        const QString version = QCoreApplication::applicationVersion().isEmpty()
+                                    ? tr("dev")
+                                    : QCoreApplication::applicationVersion();
+        const QString text = tr("Aetherion Editor using Aetherion-Engine.\n© Max Staneker 2026\nVersion: %1\nUI: Qt 6\nRenderer: Vulkan\n\nBuild: %2 %3")
+                                 .arg(version)
+                                 .arg(QString::fromLatin1(__DATE__))
+                                 .arg(QString::fromLatin1(__TIME__))
+                             + tr("\nRunning on: %1").arg(QSysInfo::prettyProductName());
+        QMessageBox::about(this, tr("About Aetherion"), text);
+    });
 }
 
 void EditorMainWindow::CreateToolBarContent()
@@ -250,6 +364,14 @@ void EditorMainWindow::ApplySettings(const EditorSettings& settings, bool persis
         m_loggingMenuAction->blockSignals(true);
         m_loggingMenuAction->setChecked(m_renderLoggingEnabled);
         m_loggingMenuAction->blockSignals(false);
+    }
+
+    if (auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr)
+    {
+        if (auto vk = ctx->GetVulkanContext())
+        {
+            vk->SetLoggingEnabled(m_renderLoggingEnabled);
+        }
     }
 
     if (validationChanged)
@@ -342,16 +464,8 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
     m_validationEnabled = enableValidation;
     m_settings.validationEnabled = enableValidation;
 
-    if (m_renderTimer)
-    {
-        m_renderTimer->stop();
-    }
-
-    if (m_vulkanViewport)
-    {
-        m_vulkanViewport->Shutdown();
-        m_vulkanViewport.reset();
-    }
+    DestroyViewportRenderer();
+    DetachVulkanLogSink();
 
     if (m_runtimeApp)
     {
@@ -359,7 +473,18 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
     }
 
     m_runtimeApp = std::make_shared<Runtime::EngineApplication>();
-    m_runtimeApp->Initialize(m_validationEnabled, m_renderLoggingEnabled);
+    try
+    {
+        m_runtimeApp->Initialize(m_validationEnabled, m_renderLoggingEnabled);
+    }
+    catch (const std::exception& ex)
+    {
+        AppendConsole(m_console, QString::fromStdString(ex.what()), ConsoleSeverity::Error);
+        statusBar()->showMessage(tr("Renderer reset failed: %1").arg(QString::fromStdString(ex.what())));
+        m_runtimeApp.reset();
+        m_scene.reset();
+        return;
+    }
 
     m_scene = m_runtimeApp->GetActiveScene();
     if (m_selection)
@@ -386,21 +511,34 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
         m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
     }
 
+    AttachVulkanLogSink();
+
     if (m_surfaceInitialized && m_surfaceHandle != 0)
     {
         auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
         auto vk = ctx ? ctx->GetVulkanContext() : nullptr;
         if (vk)
         {
-            m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk);
-            m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
-            m_vulkanViewport->Initialize(reinterpret_cast<void*>(m_surfaceHandle),
-                                         m_surfaceSize.width(),
-                                         m_surfaceSize.height());
-            if (m_vulkanViewport->IsReady())
+            try
             {
-                m_frameTimer.restart();
-                m_renderTimer->start();
+                DestroyViewportRenderer();
+                m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk);
+                m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
+                m_vulkanViewport->Initialize(reinterpret_cast<void*>(m_surfaceHandle),
+                                             m_surfaceSize.width(),
+                                             m_surfaceSize.height());
+                if (m_vulkanViewport->IsReady())
+                {
+                    m_frameTimer.restart();
+                    m_renderTimer->start();
+                    m_fpsFrameCounter = 0;
+                    m_fpsTimer.start();
+                }
+            }
+            catch (const std::exception& ex)
+            {
+                AppendConsole(m_console, QString::fromStdString(ex.what()), ConsoleSeverity::Error);
+                statusBar()->showMessage(tr("Renderer reset failed: %1").arg(QString::fromStdString(ex.what())));
             }
         }
     }
@@ -410,6 +548,49 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
     statusBar()->showMessage(tr("Renderer reset (%1 validation, %2 logging)")
                                  .arg(m_validationEnabled ? tr("with") : tr("without"))
                                  .arg(m_renderLoggingEnabled ? tr("verbose") : tr("minimal")));
+}
+
+void EditorMainWindow::DestroyViewportRenderer()
+{
+    if (m_renderTimer)
+    {
+        m_renderTimer->stop();
+    }
+
+    if (m_vulkanViewport)
+    {
+        m_vulkanViewport->Shutdown();
+        m_vulkanViewport.reset();
+    }
+
+    m_frameTimer.invalidate();
+    m_fpsTimer.invalidate();
+    m_fpsFrameCounter = 0;
+}
+
+void EditorMainWindow::AttachVulkanLogSink()
+{
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto vk = ctx ? ctx->GetVulkanContext() : nullptr;
+    if (!vk)
+    {
+        return;
+    }
+
+    vk->SetLoggingEnabled(m_renderLoggingEnabled);
+    vk->SetLogCallback([this](Rendering::LogSeverity severity, const std::string& message) {
+        AppendConsole(m_console, QString::fromStdString(message), ToConsoleSeverity(severity));
+    });
+}
+
+void EditorMainWindow::DetachVulkanLogSink()
+{
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto vk = ctx ? ctx->GetVulkanContext() : nullptr;
+    if (vk)
+    {
+        vk->SetLogCallback(nullptr);
+    }
 }
 
 void EditorMainWindow::CreateDockPanels()
@@ -447,6 +628,11 @@ void EditorMainWindow::CreateDockPanels()
 void EditorMainWindow::ConfigureStatusBar()
 {
     statusBar()->showMessage(tr("Aetherion scaffolding - runtime disconnected"));
-    // TODO: Display play state, selection info, and performance metrics.
+    if (!m_fpsLabel)
+    {
+        m_fpsLabel = new QLabel(tr("FPS: --"), this);
+        m_fpsLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        statusBar()->addPermanentWidget(m_fpsLabel);
+    }
 }
 } // namespace Aetherion::Editor

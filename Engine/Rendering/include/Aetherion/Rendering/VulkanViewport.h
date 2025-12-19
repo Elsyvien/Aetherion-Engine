@@ -49,6 +49,11 @@ private:
     bool m_verboseLogging{true};
     float m_timeSeconds{0.0f};
     bool m_waitingForValidExtent{false};
+    bool m_shutdown{false};
+
+    void* m_nativeHandle{nullptr};
+    int m_surfaceWidth{0};
+    int m_surfaceHeight{0};
 
     VkSurfaceKHR m_surface{VK_NULL_HANDLE};
     VkSwapchainKHR m_swapchain{VK_NULL_HANDLE};
@@ -87,8 +92,13 @@ private:
     std::vector<VkFence> m_imagesInFlight;
 
     void CreateSurface(void* nativeHandle);
-    bool CreateSwapchain(int width, int height);
+    void CreateSwapchain(int width, int height);
     void DestroySwapchain();
+    void DestroySwapchainResources();
+    void DestroyDeviceResources();
+    void DestroySurface();
+    void RecreateRenderer(int width, int height);
+    bool TryRecoverSwapchain();
 
     void CreateRenderPass();
     void CreateDescriptorSetLayout();

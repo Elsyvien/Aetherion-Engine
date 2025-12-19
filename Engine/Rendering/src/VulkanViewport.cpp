@@ -218,204 +218,81 @@ void VulkanViewport::Initialize(void* nativeHandle, int width, int height)
         throw std::runtime_error("VulkanViewport: VulkanContext not initialized");
     }
 
-    if (m_ready)
-    {
-        return;
-    }
-
     try
     {
+        m_nativeHandle = nativeHandle;
+        m_surfaceWidth = width;
+        m_surfaceHeight = height;
+        m_shutdown = false;
+
         CreateSurface(nativeHandle);
+        RecreateRenderer(width, height);
+        m_ready = true;
+        m_frameIndex = 0;
+        m_waitingForValidExtent = false;
+        m_timeSeconds = 0.0f;
     }
     catch (const std::exception& ex)
     {
-        std::cerr << "VulkanViewport: surface creation failed - " << ex.what() << std::endl;
-        return;
+        m_context->Log(LogSeverity::Error,
+                       std::string("VulkanViewport: initialization failed - ") + ex.what());
+        Shutdown();
+        throw;
     }
-
-    if (!CreateSwapchain(width, height))
-    {
-        std::cerr << "VulkanViewport: swapchain unavailable; rendering paused until a compatible adapter/surface is available"
-                  << std::endl;
-        return;
-    }
-    CreateRenderPass();
-    CreateDescriptorSetLayout();
-    CreateMeshBuffers();
-    CreateUniformBuffers();
-    CreateDescriptorPoolAndSets();
-    CreatePipeline();
-    CreateFramebuffers();
-    CreateCommandPoolAndBuffers();
-    CreateSyncObjects();
-
-    m_ready = true;
 }
 
 void VulkanViewport::Shutdown()
 {
-    if (!m_context || !m_context->IsInitialized())
+    if (m_shutdown)
     {
         return;
     }
 
-    VkDevice device = m_context->GetDevice();
+    m_shutdown = true;
 
-    if (device != VK_NULL_HANDLE)
-    {
-        vkDeviceWaitIdle(device);
-    }
-
-    for (uint32_t i = 0; i < kMaxFramesInFlight; ++i)
-    {
-        if (m_uniformMemories[i] != VK_NULL_HANDLE && m_uniformMapped[i] != nullptr)
-        {
-            vkUnmapMemory(device, m_uniformMemories[i]);
-            m_uniformMapped[i] = nullptr;
-        }
-
-        if (m_uniformBuffers[i] != VK_NULL_HANDLE)
-        {
-            vkDestroyBuffer(device, m_uniformBuffers[i], nullptr);
-            m_uniformBuffers[i] = VK_NULL_HANDLE;
-        }
-
-        if (m_uniformMemories[i] != VK_NULL_HANDLE)
-        {
-            vkFreeMemory(device, m_uniformMemories[i], nullptr);
-            m_uniformMemories[i] = VK_NULL_HANDLE;
-        }
-    }
-
-    if (m_indexBuffer != VK_NULL_HANDLE)
-    {
-        vkDestroyBuffer(device, m_indexBuffer, nullptr);
-        m_indexBuffer = VK_NULL_HANDLE;
-    }
-    if (m_indexMemory != VK_NULL_HANDLE)
-    {
-        vkFreeMemory(device, m_indexMemory, nullptr);
-        m_indexMemory = VK_NULL_HANDLE;
-    }
-
-    if (m_vertexBuffer != VK_NULL_HANDLE)
-    {
-        vkDestroyBuffer(device, m_vertexBuffer, nullptr);
-        m_vertexBuffer = VK_NULL_HANDLE;
-    }
-    if (m_vertexMemory != VK_NULL_HANDLE)
-    {
-        vkFreeMemory(device, m_vertexMemory, nullptr);
-        m_vertexMemory = VK_NULL_HANDLE;
-    }
-
-    if (m_descriptorPool != VK_NULL_HANDLE)
-    {
-        vkDestroyDescriptorPool(device, m_descriptorPool, nullptr);
-        m_descriptorPool = VK_NULL_HANDLE;
-    }
-
-    if (m_descriptorSetLayout != VK_NULL_HANDLE)
-    {
-        vkDestroyDescriptorSetLayout(device, m_descriptorSetLayout, nullptr);
-        m_descriptorSetLayout = VK_NULL_HANDLE;
-    }
-
-    for (auto fence : m_inFlight)
-    {
-        if (fence != VK_NULL_HANDLE)
-        {
-            vkDestroyFence(device, fence, nullptr);
-        }
-    }
-    m_inFlight.clear();
-
-    for (auto sem : m_renderFinishedPerImage)
-    {
-        if (sem != VK_NULL_HANDLE)
-        {
-            vkDestroySemaphore(device, sem, nullptr);
-        }
-    }
-    m_renderFinishedPerImage.clear();
-
-    for (auto sem : m_imageAvailable)
-    {
-        if (sem != VK_NULL_HANDLE)
-        {
-            vkDestroySemaphore(device, sem, nullptr);
-        }
-    }
-    m_imageAvailable.clear();
-
-    m_imagesInFlight.clear();
-
-    if (m_commandPool != VK_NULL_HANDLE)
-    {
-        vkDestroyCommandPool(device, m_commandPool, nullptr);
-        m_commandPool = VK_NULL_HANDLE;
-    }
-
-    if (m_pipeline != VK_NULL_HANDLE)
-    {
-        vkDestroyPipeline(device, m_pipeline, nullptr);
-        m_pipeline = VK_NULL_HANDLE;
-    }
-
-    if (m_pipelineLayout != VK_NULL_HANDLE)
-    {
-        vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
-        m_pipelineLayout = VK_NULL_HANDLE;
-    }
-
-    if (m_renderPass != VK_NULL_HANDLE)
-    {
-        vkDestroyRenderPass(device, m_renderPass, nullptr);
-        m_renderPass = VK_NULL_HANDLE;
-    }
-
-    DestroySwapchain();
-
-    if (m_surface != VK_NULL_HANDLE)
-    {
-        vkDestroySurfaceKHR(m_context->GetInstance(), m_surface, nullptr);
-        m_surface = VK_NULL_HANDLE;
-    }
+    DestroyDeviceResources();
+    DestroySurface();
 
     m_timeSeconds = 0.0f;
     m_waitingForValidExtent = false;
     m_ready = false;
+    m_nativeHandle = nullptr;
+    m_surfaceWidth = 0;
+    m_surfaceHeight = 0;
 }
 
 void VulkanViewport::Resize(int width, int height)
 {
-    if (!m_ready)
+    m_surfaceWidth = width;
+    m_surfaceHeight = height;
+
+    if (!m_context || !m_context->IsInitialized() || m_surface == VK_NULL_HANDLE)
     {
         return;
     }
 
     if (width <= 0 || height <= 0)
     {
-        std::cout << "VulkanViewport: resize ignored (surface has zero area)" << std::endl;
+        m_context->Log(LogSeverity::Warning, "VulkanViewport: resize ignored (surface has zero area)");
         return;
     }
 
-    VkDevice device = m_context->GetDevice();
-    vkDeviceWaitIdle(device);
-
     if (m_verboseLogging)
     {
-        std::cout << "VulkanViewport: recreating swapchain for " << width << "x" << height << std::endl;
+        m_context->Log(LogSeverity::Info,
+                       "VulkanViewport: recreating renderer for " + std::to_string(width) + "x" +
+                           std::to_string(height));
     }
-    DestroySwapchain();
-    if (CreateSwapchain(width, height))
+
+    try
     {
-        CreateFramebuffers();
+        RecreateRenderer(width, height);
+        m_ready = true;
     }
-    else
+    catch (const std::exception& ex)
     {
-        std::cerr << "VulkanViewport: swapchain recreation failed; waiting for a compatible device/surface"
-                  << std::endl;
+        m_context->Log(LogSeverity::Error,
+                       std::string("VulkanViewport: swapchain recreation failed - ") + ex.what());
         m_ready = false;
     }
     m_frameIndex = 0;
@@ -435,8 +312,8 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
         {
             if (m_verboseLogging)
             {
-                std::cout << "VulkanViewport: swapchain extent is zero; skipping frame until resize"
-                          << std::endl;
+                m_context->Log(LogSeverity::Warning,
+                               "VulkanViewport: swapchain extent is zero; skipping frame until resize");
             }
             m_waitingForValidExtent = true;
         }
@@ -462,18 +339,10 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     {
         if (m_verboseLogging)
         {
-            std::cout << "VulkanViewport: swapchain unavailable on acquire; waiting for resize or device change"
-                      << std::endl;
+            m_context->Log(LogSeverity::Warning,
+                           "VulkanViewport: swapchain unavailable on acquire; attempting to recover");
         }
-        try
-        {
-            m_context->EnsureSurfaceCompatibility(m_surface);
-        }
-        catch (const std::exception& ex)
-        {
-            std::cerr << "VulkanViewport: device/surface compatibility check failed - " << ex.what() << std::endl;
-            m_ready = false;
-        }
+        TryRecoverSwapchain();
         return;
     }
     if (acquire != VK_SUCCESS && acquire != VK_SUBOPTIMAL_KHR)
@@ -493,7 +362,8 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
 
     if (imageIndex >= m_renderFinishedPerImage.size())
     {
-        std::cerr << "VulkanViewport: acquired image index out of range for sync objects" << std::endl;
+        m_context->Log(LogSeverity::Error,
+                       "VulkanViewport: acquired image index out of range for sync objects");
         return;
     }
 
@@ -520,8 +390,10 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     const VkResult submitRes = vkQueueSubmit(graphicsQueue, 1, &submit, inFlight);
     if (submitRes == VK_ERROR_DEVICE_LOST)
     {
-        std::cerr << "VulkanViewport: device lost during submit; pausing rendering" << std::endl;
+        m_context->Log(LogSeverity::Error,
+                       "VulkanViewport: device lost during submit; attempting to recover");
         m_ready = false;
+        TryRecoverSwapchain();
         return;
     }
 
@@ -539,25 +411,23 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     present.pImageIndices = &imageIndex;
 
     VkResult pres = vkQueuePresentKHR(presentQueue, &present);
-    if (pres == VK_ERROR_OUT_OF_DATE_KHR)
+    if (pres == VK_ERROR_OUT_OF_DATE_KHR || pres == VK_SUBOPTIMAL_KHR)
     {
         if (m_verboseLogging)
         {
-            std::cout << "VulkanViewport: present reports swapchain out of date, pending recreate"
-                      << std::endl;
+            m_context->Log(LogSeverity::Warning,
+                           pres == VK_SUBOPTIMAL_KHR
+                               ? "VulkanViewport: swapchain suboptimal after present; scheduling recreate"
+                               : "VulkanViewport: present reports swapchain out of date; scheduling recreate");
         }
-    }
-    else if (pres == VK_SUBOPTIMAL_KHR)
-    {
-        if (m_verboseLogging)
-        {
-            std::cout << "VulkanViewport: swapchain suboptimal; will recreate on resize" << std::endl;
-        }
+        TryRecoverSwapchain();
+        return;
     }
     else if (pres == VK_ERROR_SURFACE_LOST_KHR || pres == VK_ERROR_DEVICE_LOST)
     {
-        std::cerr << "VulkanViewport: surface or device lost during present; pausing rendering" << std::endl;
-        m_ready = false;
+        m_context->Log(LogSeverity::Error,
+                       "VulkanViewport: surface or device lost during present; attempting to recover");
+        TryRecoverSwapchain();
         return;
     }
     else if (pres != VK_SUCCESS)
@@ -566,6 +436,196 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     }
 
     m_frameIndex = (m_frameIndex + 1) % kMaxFramesInFlight;
+}
+
+void VulkanViewport::RecreateRenderer(int width, int height)
+{
+    DestroyDeviceResources();
+
+    try
+    {
+        m_context->EnsureSurfaceCompatibility(m_surface);
+
+        CreateSwapchain(width, height);
+        CreateRenderPass();
+        CreateDescriptorSetLayout();
+        CreateMeshBuffers();
+        CreateUniformBuffers();
+        CreateDescriptorPoolAndSets();
+        CreatePipeline();
+        CreateFramebuffers();
+        CreateCommandPoolAndBuffers();
+        CreateSyncObjects();
+
+        m_ready = true;
+        m_frameIndex = 0;
+        m_waitingForValidExtent = false;
+    }
+    catch (...)
+    {
+        DestroyDeviceResources();
+        throw;
+    }
+}
+
+bool VulkanViewport::TryRecoverSwapchain()
+{
+    if (m_surface == VK_NULL_HANDLE || !m_context || !m_context->IsInitialized())
+    {
+        m_ready = false;
+        return false;
+    }
+
+    if (m_surfaceWidth <= 0 || m_surfaceHeight <= 0)
+    {
+        m_ready = false;
+        return false;
+    }
+
+    try
+    {
+        RecreateRenderer(m_surfaceWidth, m_surfaceHeight);
+        return true;
+    }
+    catch (const std::exception& ex)
+    {
+        m_context->Log(LogSeverity::Error,
+                       std::string("VulkanViewport: failed to recover swapchain - ") + ex.what());
+        m_ready = false;
+        return false;
+    }
+}
+
+void VulkanViewport::DestroyDeviceResources()
+{
+    VkDevice device = (m_context && m_context->IsInitialized()) ? m_context->GetDevice() : VK_NULL_HANDLE;
+
+    if (device != VK_NULL_HANDLE)
+    {
+        vkDeviceWaitIdle(device);
+    }
+
+    DestroySwapchainResources();
+
+    for (uint32_t i = 0; i < kMaxFramesInFlight; ++i)
+    {
+        if (device != VK_NULL_HANDLE && m_uniformMemories[i] != VK_NULL_HANDLE && m_uniformMapped[i] != nullptr)
+        {
+            vkUnmapMemory(device, m_uniformMemories[i]);
+        }
+        m_uniformMapped[i] = nullptr;
+
+        if (device != VK_NULL_HANDLE && m_uniformBuffers[i] != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(device, m_uniformBuffers[i], nullptr);
+        }
+        m_uniformBuffers[i] = VK_NULL_HANDLE;
+
+        if (device != VK_NULL_HANDLE && m_uniformMemories[i] != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device, m_uniformMemories[i], nullptr);
+        }
+        m_uniformMemories[i] = VK_NULL_HANDLE;
+    }
+
+    if (device != VK_NULL_HANDLE && m_indexBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, m_indexBuffer, nullptr);
+    }
+    m_indexBuffer = VK_NULL_HANDLE;
+    if (device != VK_NULL_HANDLE && m_indexMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, m_indexMemory, nullptr);
+    }
+    m_indexMemory = VK_NULL_HANDLE;
+
+    if (device != VK_NULL_HANDLE && m_vertexBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, m_vertexBuffer, nullptr);
+    }
+    m_vertexBuffer = VK_NULL_HANDLE;
+    if (device != VK_NULL_HANDLE && m_vertexMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, m_vertexMemory, nullptr);
+    }
+    m_vertexMemory = VK_NULL_HANDLE;
+
+    if (device != VK_NULL_HANDLE && m_descriptorPool != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorPool(device, m_descriptorPool, nullptr);
+    }
+    m_descriptorPool = VK_NULL_HANDLE;
+    m_descriptorSets.fill(VK_NULL_HANDLE);
+
+    if (device != VK_NULL_HANDLE && m_descriptorSetLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, m_descriptorSetLayout, nullptr);
+    }
+    m_descriptorSetLayout = VK_NULL_HANDLE;
+
+    for (auto fence : m_inFlight)
+    {
+        if (device != VK_NULL_HANDLE && fence != VK_NULL_HANDLE)
+        {
+            vkDestroyFence(device, fence, nullptr);
+        }
+    }
+    m_inFlight.clear();
+
+    for (auto sem : m_imageAvailable)
+    {
+        if (device != VK_NULL_HANDLE && sem != VK_NULL_HANDLE)
+        {
+            vkDestroySemaphore(device, sem, nullptr);
+        }
+    }
+    m_imageAvailable.clear();
+
+    m_imagesInFlight.clear();
+
+    if (device != VK_NULL_HANDLE && m_commandPool != VK_NULL_HANDLE)
+    {
+        vkDestroyCommandPool(device, m_commandPool, nullptr);
+    }
+    m_commandPool = VK_NULL_HANDLE;
+    m_commandBuffers.clear();
+
+    m_ready = false;
+    m_waitingForValidExtent = false;
+}
+
+void VulkanViewport::DestroySwapchainResources()
+{
+    VkDevice device = (m_context && m_context->IsInitialized()) ? m_context->GetDevice() : VK_NULL_HANDLE;
+
+    if (device != VK_NULL_HANDLE && m_pipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, m_pipeline, nullptr);
+    }
+    m_pipeline = VK_NULL_HANDLE;
+
+    if (device != VK_NULL_HANDLE && m_pipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
+    }
+    m_pipelineLayout = VK_NULL_HANDLE;
+
+    if (device != VK_NULL_HANDLE && m_renderPass != VK_NULL_HANDLE)
+    {
+        vkDestroyRenderPass(device, m_renderPass, nullptr);
+    }
+    m_renderPass = VK_NULL_HANDLE;
+
+    DestroySwapchain();
+}
+
+void VulkanViewport::DestroySurface()
+{
+    if (m_surface != VK_NULL_HANDLE && m_context && m_context->GetInstance() != VK_NULL_HANDLE)
+    {
+        vkDestroySurfaceKHR(m_context->GetInstance(), m_surface, nullptr);
+    }
+    m_surface = VK_NULL_HANDLE;
 }
 
 void VulkanViewport::CreateSurface(void* nativeHandle)
@@ -594,19 +654,18 @@ void VulkanViewport::CreateSurface(void* nativeHandle)
     m_context->EnsureSurfaceCompatibility(m_surface);
 }
 
-bool VulkanViewport::CreateSwapchain(int width, int height)
+void VulkanViewport::CreateSwapchain(int width, int height)
 {
     auto support = m_context->QuerySwapchainSupport(m_surface);
     if (support.formats.empty() || support.presentModes.empty())
     {
-        std::cerr << "VulkanViewport: swapchain support incomplete for this surface" << std::endl;
         m_swapchain = VK_NULL_HANDLE;
         m_swapchainExtent = {0, 0};
         m_swapchainImages.clear();
         m_swapchainImageViews.clear();
         m_renderFinishedPerImage.clear();
         m_imagesInFlight.clear();
-        return false;
+        throw std::runtime_error("VulkanViewport: swapchain support incomplete for this surface");
     }
 
     const VkSurfaceCapabilitiesKHR& caps = support.capabilities;
@@ -616,13 +675,14 @@ bool VulkanViewport::CreateSwapchain(int width, int height)
 
     if (m_verboseLogging)
     {
-        std::cout << "VulkanViewport: creating swapchain " << extent.width << "x" << extent.height
-                  << " (" << support.formats.size() << " formats, " << support.presentModes.size()
-                  << " present modes, min images " << caps.minImageCount
-                  << ", max images "
-                  << (caps.maxImageCount == 0 ? std::string("unbounded")
-                                              : std::to_string(caps.maxImageCount))
-                  << ")" << std::endl;
+        m_context->Log(LogSeverity::Info,
+                       "VulkanViewport: creating swapchain " + std::to_string(extent.width) + "x" +
+                           std::to_string(extent.height) + " (" + std::to_string(support.formats.size()) +
+                           " formats, " + std::to_string(support.presentModes.size()) +
+                           " present modes, min images " + std::to_string(caps.minImageCount) + ", max images " +
+                           (caps.maxImageCount == 0 ? std::string("unbounded")
+                                                    : std::to_string(caps.maxImageCount)) +
+                           ")");
     }
 
     uint32_t imageCount = caps.minImageCount + 1;
@@ -663,14 +723,13 @@ bool VulkanViewport::CreateSwapchain(int width, int height)
 
     if (vkCreateSwapchainKHR(m_context->GetDevice(), &create, nullptr, &m_swapchain) != VK_SUCCESS)
     {
-        std::cerr << "VulkanViewport: failed to create swapchain for current surface" << std::endl;
         m_swapchain = VK_NULL_HANDLE;
         m_swapchainExtent = {0, 0};
         m_swapchainImages.clear();
         m_swapchainImageViews.clear();
         m_renderFinishedPerImage.clear();
         m_imagesInFlight.clear();
-        return false;
+        throw std::runtime_error("VulkanViewport: failed to create swapchain for current surface");
     }
 
     uint32_t actualCount = 0;
@@ -707,7 +766,7 @@ bool VulkanViewport::CreateSwapchain(int width, int height)
     VkDevice device = m_context->GetDevice();
     for (auto sem : m_renderFinishedPerImage)
     {
-        if (sem != VK_NULL_HANDLE)
+        if (device != VK_NULL_HANDLE && sem != VK_NULL_HANDLE)
         {
             vkDestroySemaphore(device, sem, nullptr);
         }
@@ -726,16 +785,15 @@ bool VulkanViewport::CreateSwapchain(int width, int height)
     }
 
     m_imagesInFlight.assign(m_swapchainImages.size(), VK_NULL_HANDLE);
-    return true;
 }
 
 void VulkanViewport::DestroySwapchain()
 {
-    VkDevice device = m_context->GetDevice();
+    VkDevice device = (m_context && m_context->IsInitialized()) ? m_context->GetDevice() : VK_NULL_HANDLE;
 
     for (auto fb : m_framebuffers)
     {
-        if (fb != VK_NULL_HANDLE)
+        if (device != VK_NULL_HANDLE && fb != VK_NULL_HANDLE)
         {
             vkDestroyFramebuffer(device, fb, nullptr);
         }
@@ -762,11 +820,11 @@ void VulkanViewport::DestroySwapchain()
     m_renderFinishedPerImage.clear();
     m_imagesInFlight.clear();
 
-    if (m_swapchain != VK_NULL_HANDLE)
+    if (device != VK_NULL_HANDLE && m_swapchain != VK_NULL_HANDLE)
     {
         vkDestroySwapchainKHR(device, m_swapchain, nullptr);
-        m_swapchain = VK_NULL_HANDLE;
     }
+    m_swapchain = VK_NULL_HANDLE;
 
     m_swapchainExtent = {0, 0};
 }

@@ -20,6 +20,11 @@ EngineApplication::~EngineApplication() = default;
 
 void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerboseLogging)
 {
+    if (m_initialized)
+    {
+        Shutdown();
+    }
+
     m_enableValidationLayers = enableValidationLayers;
     m_enableVerboseLogging = enableVerboseLogging;
 
@@ -48,11 +53,12 @@ void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerbo
 
     RegisterPlaceholderSystems();
     // TODO: Bootstrap runtime subsystems and load initial scenes.
+    m_initialized = true;
 }
 
 void EngineApplication::Shutdown()
 {
-    if (auto ctx = m_context->GetVulkanContext())
+    if (auto ctx = m_context ? m_context->GetVulkanContext() : nullptr)
     {
         ctx->Shutdown();
         m_context->SetVulkanContext(nullptr);
@@ -61,6 +67,7 @@ void EngineApplication::Shutdown()
     m_activeScene.reset();
     // TODO: Flush pending tasks, persist state, and tear down systems.
     m_context.reset();
+    m_initialized = false;
 }
 
 std::shared_ptr<EngineContext> EngineApplication::GetContext() const noexcept

@@ -1,7 +1,9 @@
 #include "Aetherion/Editor/EditorApplication.h"
 
 #include <QApplication>
+#include <QMessageBox>
 #include <cstdlib>
+#include <string>
 #include <string_view>
 
 #include "Aetherion/Editor/EditorMainWindow.h"
@@ -38,7 +40,18 @@ void EditorApplication::InitializeUi()
 {
     auto runtimeApp = std::make_shared<Runtime::EngineApplication>();
     const EditorSettings activeSettings = m_settings ? *m_settings : EditorSettings{};
-    runtimeApp->Initialize(activeSettings.validationEnabled, activeSettings.verboseLogging);
+    try
+    {
+        runtimeApp->Initialize(activeSettings.validationEnabled, activeSettings.verboseLogging);
+    }
+    catch (const std::exception& ex)
+    {
+        QMessageBox::critical(
+            nullptr,
+            QObject::tr("Aetherion Editor"),
+            QObject::tr("Failed to initialize the runtime: %1").arg(QString::fromStdString(ex.what())));
+        return;
+    }
 
     m_mainWindow = std::make_unique<EditorMainWindow>(runtimeApp, activeSettings);
     m_mainWindow->show();

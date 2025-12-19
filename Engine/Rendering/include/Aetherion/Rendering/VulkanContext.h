@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -8,6 +9,13 @@
 
 namespace Aetherion::Rendering
 {
+enum class LogSeverity
+{
+    Info,
+    Warning,
+    Error,
+};
+
 class VulkanContext
 {
 public:
@@ -19,6 +27,10 @@ public:
 
     void Initialize(bool enableValidation, bool enableLogging);
     void Shutdown();
+
+    void SetLogCallback(std::function<void(LogSeverity, const std::string&)> callback);
+    void Log(LogSeverity severity, const std::string& message) const;
+    void SetLoggingEnabled(bool enabled) noexcept { m_enableLogging = enabled; }
 
     [[nodiscard]] bool IsInitialized() const noexcept { return m_initialized; }
     [[nodiscard]] bool IsValidationEnabled() const noexcept { return m_enableValidation; }
@@ -60,6 +72,7 @@ private:
     bool m_initialized{false};
     bool m_enableValidation{false};
     bool m_enableLogging{true};
+    std::function<void(LogSeverity, const std::string&)> m_logCallback;
     VkInstance m_instance{VK_NULL_HANDLE};
     VkPhysicalDevice m_physicalDevice{VK_NULL_HANDLE};
     VkDevice m_device{VK_NULL_HANDLE};

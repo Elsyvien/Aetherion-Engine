@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <set>
 #include <string_view>
+#include <utility>
 
 namespace
 {
@@ -16,6 +17,29 @@ const std::vector<const char*> kDeviceExtensions = {
 
 namespace Aetherion::Rendering
 {
+void VulkanContext::SetLogCallback(std::function<void(LogSeverity, const std::string&)> callback)
+{
+    m_logCallback = std::move(callback);
+}
+
+void VulkanContext::Log(LogSeverity severity, const std::string& message) const
+{
+    const bool forward = m_enableLogging || severity != LogSeverity::Info;
+    if (forward && m_logCallback)
+    {
+        m_logCallback(severity, message);
+    }
+
+    const bool alwaysPrint = severity != LogSeverity::Info;
+    if (!m_enableLogging && !alwaysPrint)
+    {
+        return;
+    }
+
+    auto& stream = (severity == LogSeverity::Error) ? std::cerr : std::cout;
+    stream << message << std::endl;
+}
+
 VulkanContext::VulkanContext() = default;
 
 VulkanContext::~VulkanContext()
@@ -81,6 +105,7 @@ void VulkanContext::Shutdown()
     m_graphicsQueueFamilyIndex = 0;
     m_presentQueueFamilyIndex = 0;
     m_initialized = false;
+    m_logCallback = nullptr;
 }
 
 void VulkanContext::CreateInstance()
@@ -258,23 +283,21 @@ void VulkanContext::PickPhysicalDevice(VkSurfaceKHR surface)
             }
         }
 
-        if (swapchainAdequate)
-        {
-            m_physicalDevice = device;
-            m_queueFamilyIndices = indices;
-            m_graphicsQueueFamilyIndex = indices.graphicsFamily.value();
-            m_presentQueueFamilyIndex = indices.presentFamily.value();
-
-            if (m_enableLogging)
+            if (swapchainAdequate)
             {
+                m_physicalDevice = device;
+                m_queueFamilyIndices = indices;
+                m_graphicsQueueFamilyIndex = indices.graphicsFamily.value();
+                m_presentQueueFamilyIndex = indices.presentFamily.value();
+
                 VkPhysicalDeviceProperties props{};
                 vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
-                std::cout << "VulkanContext: selected GPU '" << props.deviceName << "' (graphics queue "
-                          << m_graphicsQueueFamilyIndex << ", present queue " << m_presentQueueFamilyIndex << ")"
-                          << std::endl;
+                Log(LogSeverity::Info,
+                    "VulkanContext: selected GPU '" + std::string(props.deviceName) + "' (graphics queue " +
+                        std::to_string(m_graphicsQueueFamilyIndex) + ", present queue " +
+                        std::to_string(m_presentQueueFamilyIndex) + ")");
+                return true;
             }
-            return true;
-        }
 
         return false;
     };
@@ -330,19 +353,21 @@ void VulkanContext::PickPhysicalDevice(VkSurfaceKHR surface)
             }
         }
 
-        if (m_enableLogging)
-        {
-            if (!foundPreferred)
+            if (m_enableLogging)
             {
-                std::cout << "VulkanContext: preferred GPU '" << preferredGpu
-                          << "' not found; falling back to any compatible adapter" << std::endl;
+                if (!foundPreferred)
+                {
+                    Log(LogSeverity::Warning,
+                        "VulkanContext: preferred GPU '" + std::string(preferredGpu) +
+                            "' not found; falling back to any compatible adapter");
+                }
+                else
+                {
+                    Log(LogSeverity::Warning,
+                        "VulkanContext: preferred GPU '" + std::string(preferredGpu) +
+                            "' found but not compatible; falling back to any compatible adapter");
+                }
             }
-            else
-            {
-                std::cout << "VulkanContext: preferred GPU '" << preferredGpu
-                          << "' found but not compatible; falling back to any compatible adapter" << std::endl;
-            }
-        }
     }
 
     for (auto device : devices)
@@ -457,11 +482,12 @@ void VulkanContext::EnsureSurfaceCompatibility(VkSurfaceKHR surface)
     const bool queuesChanged = (previousGraphics != m_graphicsQueueFamilyIndex) ||
                                (previousPresent != m_presentQueueFamilyIndex);
 
-    if ((deviceChanged || queuesChanged) && m_enableLogging)
+    if (deviceChanged || queuesChanged)
     {
-        std::cout << "VulkanContext: adapter/queue change detected (graphics " << previousGraphics << " -> "
-                  << m_graphicsQueueFamilyIndex << ", present " << previousPresent << " -> "
-                  << m_presentQueueFamilyIndex << ")" << std::endl;
+        Log(LogSeverity::Warning,
+            "VulkanContext: adapter/queue change detected (graphics " + std::to_string(previousGraphics) +
+                " -> " + std::to_string(m_graphicsQueueFamilyIndex) + ", present " +
+                std::to_string(previousPresent) + " -> " + std::to_string(m_presentQueueFamilyIndex) + ")");
     }
 
     if (m_device == VK_NULL_HANDLE || deviceChanged || queuesChanged)
@@ -486,6 +512,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::DebugCallback(
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
     void* pUserData)
 {
+    auto* context = reinterpret_cast<VulkanContext*>(pUserData);
+
     const char* severityStr = "";
     if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
         severityStr = "[ERROR]";
@@ -496,7 +524,22 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::DebugCallback(
     else
         severityStr = "[VERBOSE]";
 
-    std::cerr << "Vulkan " << severityStr << ": " << pCallbackData->pMessage << std::endl;
+    const LogSeverity logSeverity =
+        (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+            ? LogSeverity::Error
+            : ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ? LogSeverity::Warning
+                                                                            : LogSeverity::Info);
+
+    const std::string message = std::string("Vulkan ") + severityStr + ": " + pCallbackData->pMessage;
+
+    if (context)
+    {
+        context->Log(logSeverity, message);
+    }
+    else
+    {
+        std::cerr << message << std::endl;
+    }
     return VK_FALSE;
 }
 
@@ -523,11 +566,12 @@ void VulkanContext::SetupDebugMessenger()
                              VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                              VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.pfnUserCallback = DebugCallback;
+    createInfo.pUserData = this;
 
     if (vkCreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr, &m_debugMessenger) !=
         VK_SUCCESS)
     {
-        std::cerr << "Failed to set up debug messenger" << std::endl;
+        Log(LogSeverity::Warning, "Failed to set up debug messenger");
     }
 }
 
@@ -541,13 +585,15 @@ void VulkanContext::LogDeviceInfo() const
     VkPhysicalDeviceProperties props{};
     vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
 
-    std::cout << "\n=== Vulkan Device Info ===" << std::endl;
-    std::cout << "Device: " << props.deviceName << std::endl;
-    std::cout << "API Version: " << VK_VERSION_MAJOR(props.apiVersion) << "."
-              << VK_VERSION_MINOR(props.apiVersion) << "." << VK_VERSION_PATCH(props.apiVersion)
-              << std::endl;
-    std::cout << "Driver Version: " << props.driverVersion << std::endl;
-    std::cout << "Vendor ID: " << props.vendorID << std::endl;
-    std::cout << "========================\n" << std::endl;
+    std::string info = "\n=== Vulkan Device Info ===\n";
+    info += "Device: " + std::string(props.deviceName) + "\n";
+    info += "API Version: " + std::to_string(VK_VERSION_MAJOR(props.apiVersion)) + "." +
+            std::to_string(VK_VERSION_MINOR(props.apiVersion)) + "." +
+            std::to_string(VK_VERSION_PATCH(props.apiVersion)) + "\n";
+    info += "Driver Version: " + std::to_string(props.driverVersion) + "\n";
+    info += "Vendor ID: " + std::to_string(props.vendorID) + "\n";
+    info += "========================\n";
+
+    Log(LogSeverity::Info, info);
 }
 } // namespace Aetherion::Rendering

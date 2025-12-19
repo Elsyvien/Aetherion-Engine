@@ -11,6 +11,7 @@
 #include "Aetherion/Rendering/RenderView.h"
 
 class QAction;
+class QLabel;
 
 namespace Aetherion::Rendering
 {
@@ -66,6 +67,9 @@ private:
     bool m_surfaceInitialized{false};
     class QTimer* m_renderTimer = nullptr;
     QElapsedTimer m_frameTimer;
+    QLabel* m_fpsLabel = nullptr;
+    QElapsedTimer m_fpsTimer;
+    int m_fpsFrameCounter{0};
     QAction* m_validationMenuAction = nullptr;
     QAction* m_loggingMenuAction = nullptr;
 
@@ -85,5 +89,8 @@ private:
     void OpenSettingsDialog();
     void RefreshRenderView();
     void RecreateRuntimeAndRenderer(bool enableValidation);
+    void DestroyViewportRenderer();
+    void AttachVulkanLogSink();
+    void DetachVulkanLogSink();
 };
 } // namespace Aetherion::Editor
