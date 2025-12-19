@@ -6,6 +6,7 @@
 #include <QElapsedTimer>
 #include <QMainWindow>
 #include <QSize>
+#include <QTabBar>
 
 #include "Aetherion/Editor/EditorSettings.h"
 #include "Aetherion/Rendering/RenderView.h"
@@ -56,11 +57,14 @@ private:
     std::shared_ptr<Scene::Scene> m_scene;
     EditorSelection* m_selection = nullptr;
     Rendering::RenderView m_renderView{};
+    QTabBar* m_modeTabBar = nullptr;
     EditorSettings m_settings{};
     bool m_validationEnabled{true};
     bool m_renderLoggingEnabled{true};
     int m_targetFrameIntervalMs{16};
     int m_headlessSleepMs{50};
+    bool m_isPlaying{false};
+    bool m_isPaused{false};
 
     std::unique_ptr<Rendering::VulkanViewport> m_vulkanViewport;
     WId m_surfaceHandle{0};
@@ -77,6 +81,9 @@ private:
     QAction* m_showInspectorAction = nullptr;
     QAction* m_showAssetBrowserAction = nullptr;
     QAction* m_showConsoleAction = nullptr;
+    QAction* m_playAction = nullptr;
+    QAction* m_pauseAction = nullptr;
+    QAction* m_stepAction = nullptr;
 
     EditorViewport* m_viewport = nullptr;
     EditorHierarchyPanel* m_hierarchyPanel = nullptr;
@@ -103,6 +110,11 @@ private:
     void DetachVulkanLogSink();
     void LoadLayout();
     void SaveLayout() const;
+    void UpdateRuntimeControlStates();
+    void StartOrStopPlaySession();
+    void TogglePauseSession();
+    void StepSimulationOnce();
+    void ActivateModeTab(int index);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
