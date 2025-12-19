@@ -361,12 +361,9 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     VkQueue presentQueue = m_context->GetPresentQueue();
 
     VkFence inFlight = m_inFlight[m_frameIndex];
-    // Allow a reasonable timeout so slower surfaces (e.g., macOS CAMetalLayer) can produce drawables.
-    constexpr uint64_t kFenceWaitTimeoutNs = 50'000'000ULL;   // 50 ms
-    constexpr uint64_t kAcquireTimeoutNs = 50'000'000ULL;     // 50 ms
     // Wait for previous frame using this slot to complete.
-    // Use a bounded timeout to keep the UI responsive while still allowing slower swapchains to catch up.
-    VkResult fenceWait = vkWaitForFences(device, 1, &inFlight, VK_TRUE, kFenceWaitTimeoutNs);
+    // Use a short timeout to keep the UI responsive; if not ready, skip this frame.
+    VkResult fenceWait = vkWaitForFences(device, 1, &inFlight, VK_TRUE, 1'000'000ULL); // 1ms
     if (fenceWait == VK_TIMEOUT)
     {
         // Previous frame not done yet, skip to keep UI responsive.
@@ -379,7 +376,7 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
 
     uint32_t imageIndex = 0;
     VkResult acquire = vkAcquireNextImageKHR(
-        device, m_swapchain, kAcquireTimeoutNs, m_imageAvailable[m_frameIndex], VK_NULL_HANDLE, &imageIndex);
+        device, m_swapchain, 1'000'000ULL, m_imageAvailable[m_frameIndex], VK_NULL_HANDLE, &imageIndex); // 1ms
     if (acquire == VK_TIMEOUT || acquire == VK_NOT_READY)
     {
         // Image not available, skip frame.
@@ -403,7 +400,7 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     // If this swapchain image is already being used by a previous frame, wait for it.
     if (imageIndex < m_imagesInFlight.size() && m_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
     {
-        VkResult imgWait = vkWaitForFences(device, 1, &m_imagesInFlight[imageIndex], VK_TRUE, kFenceWaitTimeoutNs);
+        VkResult imgWait = vkWaitForFences(device, 1, &m_imagesInFlight[imageIndex], VK_TRUE, 1'000'000ULL); // 1ms
         if (imgWait == VK_TIMEOUT)
         {
             // Image still in use, skip frame to keep UI responsive.
@@ -511,6 +508,10 @@ void VulkanViewport::RecreateRenderer(int width, int height)
     try
     {
         m_context->EnsureSurfaceCompatibility(m_surface);
+
+#ifdef __APPLE__
+        UpdateMetalLayerSize(width, height);
+#endif
 
         CreateSwapchain(width, height);
         CreateRenderPass();
@@ -1497,25 +1498,42 @@ void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex)
 #ifdef __APPLE__
 void VulkanViewport::UpdateMetalLayerSize(int width, int height)
 {
-    if (!m_metalLayer)
+    if (!m_metalLayer || !m_nativeHandle)
     {
         return;
     }
 
     id layer = reinterpret_cast<id>(m_metalLayer);
+    id view = reinterpret_cast<id>(m_nativeHandle);
 
+    const SEL selWindow = sel_registerName("window");
+    const SEL selBackingScaleFactor = sel_registerName("backingScaleFactor");
+    const SEL selContentsScale = sel_registerName("contentsScale");
+    const SEL selSetContentsScale = sel_registerName("setContentsScale:");
     const SEL selSetDrawableSize = sel_registerName("setDrawableSize:");
     const SEL selSetFrame = sel_registerName("setFrame:");
     const SEL selSetBounds = sel_registerName("setBounds:");
-    const SEL selContentsScale = sel_registerName("contentsScale");
 
-    // Retrieve contentsScale from the layer to compute drawable size in pixels.
+    // Retrieve the window from the view to get the correct backing scale factor (DPI).
+    // If the window is not yet available, fall back to the layer's current scale.
     double scale = 1.0;
-    scale = reinterpret_cast<double (*)(id, SEL)>(objc_msgSend)(layer, selContentsScale);
+    id window = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(view, selWindow);
+    if (window)
+    {
+        scale = reinterpret_cast<double (*)(id, SEL)>(objc_msgSend)(window, selBackingScaleFactor);
+    }
+    else
+    {
+        scale = reinterpret_cast<double (*)(id, SEL)>(objc_msgSend)(layer, selContentsScale);
+    }
+
     if (scale <= 0.0)
     {
         scale = 1.0;
     }
+
+    // Ensure the layer matches the window's scale factor.
+    reinterpret_cast<void (*)(id, SEL, double)>(objc_msgSend)(layer, selSetContentsScale, scale);
 
     CGSize drawableSize;
     drawableSize.width = static_cast<double>(width) * scale;
@@ -1523,7 +1541,7 @@ void VulkanViewport::UpdateMetalLayerSize(int width, int height)
 
     reinterpret_cast<void (*)(id, SEL, CGSize)>(objc_msgSend)(layer, selSetDrawableSize, drawableSize);
 
-    // Keep layer frame/bounds in sync with view size.
+    // Keep layer frame/bounds in sync with view size (logical points).
     CGRect bounds = CGRectMake(0, 0, static_cast<CGFloat>(width), static_cast<CGFloat>(height));
     reinterpret_cast<void (*)(id, SEL, CGRect)>(objc_msgSend)(layer, selSetBounds, bounds);
     reinterpret_cast<void (*)(id, SEL, CGRect)>(objc_msgSend)(layer, selSetFrame, bounds);

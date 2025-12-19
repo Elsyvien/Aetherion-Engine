@@ -736,6 +736,7 @@ void EditorMainWindow::CreateDockPanels()
 {
     auto* hierarchyDock = new QDockWidget(tr("Hierarchy"), this);
     hierarchyDock->setObjectName("HierarchyDock");
+    hierarchyDock->setAttribute(Qt::WA_NativeWindow, true);
     m_hierarchyDock = hierarchyDock;
     m_hierarchyPanel = new EditorHierarchyPanel(hierarchyDock);
     hierarchyDock->setWidget(m_hierarchyPanel);
@@ -752,6 +753,7 @@ void EditorMainWindow::CreateDockPanels()
 
     auto* inspectorDock = new QDockWidget(tr("Inspector"), this);
     inspectorDock->setObjectName("InspectorDock");
+    inspectorDock->setAttribute(Qt::WA_NativeWindow, true);
     m_inspectorDock = inspectorDock;
     m_inspectorPanel = new EditorInspectorPanel(inspectorDock);
     inspectorDock->setWidget(m_inspectorPanel);
@@ -768,6 +770,7 @@ void EditorMainWindow::CreateDockPanels()
 
     auto* assetDock = new QDockWidget(tr("Asset Browser"), this);
     assetDock->setObjectName("AssetBrowserDock");
+    assetDock->setAttribute(Qt::WA_NativeWindow, true);
     m_assetBrowserDock = assetDock;
     m_assetBrowser = new EditorAssetBrowser(assetDock);
     assetDock->setWidget(m_assetBrowser);
@@ -784,6 +787,7 @@ void EditorMainWindow::CreateDockPanels()
 
     auto* consoleDock = new QDockWidget(tr("Console"), this);
     consoleDock->setObjectName("ConsoleDock");
+    consoleDock->setAttribute(Qt::WA_NativeWindow, true);
     m_consoleDock = consoleDock;
     m_console = new EditorConsole(consoleDock);
     consoleDock->setWidget(m_console);

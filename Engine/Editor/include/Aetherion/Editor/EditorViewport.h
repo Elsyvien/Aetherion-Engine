@@ -12,7 +12,7 @@ class EditorViewport : public QWidget
 
 public:
     explicit EditorViewport(QWidget* parent = nullptr);
-    ~EditorViewport() override = default;
+    ~EditorViewport() override;
 
     QWidget* surfaceWidget() const { return m_surface; }
 
