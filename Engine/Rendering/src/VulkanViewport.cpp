@@ -306,6 +306,8 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
         return;
     }
 
+    static bool s_loggedFirstFrame = false;
+
     if (m_swapchainExtent.width == 0 || m_swapchainExtent.height == 0)
     {
         if (!m_waitingForValidExtent)
@@ -321,6 +323,12 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     }
     m_waitingForValidExtent = false;
 
+    if (!s_loggedFirstFrame && m_context)
+    {
+        m_context->Log(LogSeverity::Info, "VulkanViewport: entering render loop");
+        s_loggedFirstFrame = true;
+    }
+
     m_timeSeconds += deltaTimeSeconds;
     const auto instances = InstancesFromView(view, m_timeSeconds);
 
@@ -330,7 +338,6 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
 
     VkFence inFlight = m_inFlight[m_frameIndex];
     vkWaitForFences(device, 1, &inFlight, VK_TRUE, UINT64_MAX);
-    vkResetFences(device, 1, &inFlight);
 
     uint32_t imageIndex = 0;
     VkResult acquire = vkAcquireNextImageKHR(
@@ -349,6 +356,9 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     {
         throw std::runtime_error("vkAcquireNextImageKHR failed");
     }
+
+    // Now that we know a frame will be submitted, reset the fence for this frame.
+    vkResetFences(device, 1, &inFlight);
 
     // If this swapchain image is already being used by a previous frame, wait for it.
     if (imageIndex < m_imagesInFlight.size() && m_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
@@ -673,6 +683,17 @@ void VulkanViewport::CreateSwapchain(int width, int height)
     VkPresentModeKHR presentMode = ChoosePresentMode(support.presentModes);
     VkExtent2D extent = ChooseExtent(caps, width, height);
 
+    if (extent.width == 0 || extent.height == 0)
+    {
+        m_swapchain = VK_NULL_HANDLE;
+        m_swapchainExtent = {0, 0};
+        m_swapchainImages.clear();
+        m_swapchainImageViews.clear();
+        m_renderFinishedPerImage.clear();
+        m_imagesInFlight.clear();
+        throw std::runtime_error("VulkanViewport: swapchain extent is zero; surface too small/minimized");
+    }
+
     if (m_verboseLogging)
     {
         m_context->Log(LogSeverity::Info,
@@ -685,7 +706,7 @@ void VulkanViewport::CreateSwapchain(int width, int height)
                            ")");
     }
 
-    uint32_t imageCount = caps.minImageCount + 1;
+    uint32_t imageCount = std::max<uint32_t>(caps.minImageCount, 2);
     if (caps.maxImageCount > 0 && imageCount > caps.maxImageCount)
     {
         imageCount = caps.maxImageCount;
@@ -716,7 +737,16 @@ void VulkanViewport::CreateSwapchain(int width, int height)
         create.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     }
 
-    create.preTransform = caps.currentTransform;
+    VkSurfaceTransformFlagBitsKHR preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    if ((caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) == 0)
+    {
+        preTransform = static_cast<VkSurfaceTransformFlagBitsKHR>(caps.currentTransform);
+    }
+    if (preTransform == 0)
+    {
+        preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    }
+    create.preTransform = preTransform;
     create.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     create.presentMode = presentMode;
     create.clipped = VK_TRUE;
