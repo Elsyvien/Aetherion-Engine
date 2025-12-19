@@ -2,6 +2,8 @@
 
 #include <QWidget>
 
+class QTimer;
+
 namespace Aetherion::Editor
 {
 class EditorViewport : public QWidget
@@ -26,5 +28,6 @@ protected:
 private:
     QWidget* m_surface = nullptr;
     bool m_emittedReady = false;
+    QTimer* m_resizeDebounceTimer = nullptr;
 };
 } // namespace Aetherion::Editor

@@ -50,6 +50,7 @@ private:
     float m_timeSeconds{0.0f};
     bool m_waitingForValidExtent{false};
     bool m_shutdown{false};
+    bool m_needsSwapchainRecreate{false};
 
     void* m_nativeHandle{nullptr};
     int m_surfaceWidth{0};

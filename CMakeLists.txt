@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(Aetherion
-    VERSION 0.1.0
+    VERSION 0.0.1
     DESCRIPTION "Aetherion 2D engine scaffolding (architecture only)"
     LANGUAGES CXX
 )
+
+add_compile_definitions(AETHERION_APP_VERSION="${PROJECT_VERSION}")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

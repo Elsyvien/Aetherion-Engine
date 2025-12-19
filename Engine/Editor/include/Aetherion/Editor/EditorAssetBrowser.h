@@ -14,9 +14,12 @@ public:
     explicit EditorAssetBrowser(QWidget* parent = nullptr);
     ~EditorAssetBrowser() override = default;
 
+    void ClearSelection();
+
 signals:
     void AssetSelected(const QString& assetId);
     void AssetSelectionCleared();
+    void AssetActivated();
 
     // TODO: Hook into asset registry and implement drag-and-drop.
 

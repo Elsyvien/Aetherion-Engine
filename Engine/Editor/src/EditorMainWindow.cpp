@@ -7,9 +7,11 @@
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QSysInfo>
+#include <QCloseEvent>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
@@ -122,6 +124,7 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         catch (const std::exception& ex)
         {
             AppendConsole(m_console, QString::fromStdString(ex.what()), ConsoleSeverity::Error);
+            fprintf(stderr, "Render failed: %s\n", ex.what());
             m_renderTimer->stop();
             statusBar()->showMessage(tr("Renderer error: %1").arg(QString::fromStdString(ex.what())));
             return;
@@ -222,7 +225,7 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     CreateMenuBarContent();
     CreateToolBarContent();
     ConfigureStatusBar();
-    m_defaultLayoutState = saveState();
+    LoadLayout();
 
     if (m_hierarchyPanel)
     {
@@ -243,6 +246,10 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
 
     connect(m_selection, &EditorSelection::SelectionChanged, this, [this](Aetherion::Core::EntityId) {
         AppendConsole(m_console, tr("Selection: entity changed"), ConsoleSeverity::Info);
+        if (m_assetBrowser)
+        {
+            m_assetBrowser->ClearSelection();
+        }
         if (m_inspectorPanel)
         {
             m_inspectorPanel->SetSelectedEntity(m_selection->GetSelectedEntity());
@@ -285,6 +292,13 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
             {
                 m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
                 AppendConsole(m_console, tr("Inspector: reverted to entity selection"), ConsoleSeverity::Info);
+            }
+        });
+        connect(m_assetBrowser, &EditorAssetBrowser::AssetActivated, this, [this] {
+            if (m_inspectorDock)
+            {
+                m_inspectorDock->show();
+                m_inspectorDock->raise();
             }
         });
     }
@@ -337,9 +351,69 @@ void EditorMainWindow::CreateMenuBarContent()
     });
 
     auto* viewMenu = menuBar()->addMenu(tr("&View"));
+
+    m_showHierarchyAction = viewMenu->addAction(tr("Show Hierarchy"));
+    m_showHierarchyAction->setCheckable(true);
+    m_showHierarchyAction->setChecked(true);
+    connect(m_showHierarchyAction, &QAction::triggered, this, [this](bool checked) {
+        if (m_hierarchyDock)
+        {
+            m_hierarchyDock->setVisible(checked);
+            if (checked)
+            {
+                m_hierarchyDock->raise();
+            }
+        }
+    });
+
+    m_showInspectorAction = viewMenu->addAction(tr("Show Inspector"));
+    m_showInspectorAction->setCheckable(true);
+    m_showInspectorAction->setChecked(true);
+    connect(m_showInspectorAction, &QAction::triggered, this, [this](bool checked) {
+        if (m_inspectorDock)
+        {
+            m_inspectorDock->setVisible(checked);
+            if (checked)
+            {
+                m_inspectorDock->raise();
+            }
+        }
+    });
+
+    m_showAssetBrowserAction = viewMenu->addAction(tr("Show Asset Browser"));
+    m_showAssetBrowserAction->setCheckable(true);
+    m_showAssetBrowserAction->setChecked(true);
+    connect(m_showAssetBrowserAction, &QAction::triggered, this, [this](bool checked) {
+        if (m_assetBrowserDock)
+        {
+            m_assetBrowserDock->setVisible(checked);
+            if (checked)
+            {
+                m_assetBrowserDock->raise();
+            }
+        }
+    });
+
+    m_showConsoleAction = viewMenu->addAction(tr("Show Console"));
+    m_showConsoleAction->setCheckable(true);
+    m_showConsoleAction->setChecked(true);
+    connect(m_showConsoleAction, &QAction::triggered, this, [this](bool checked) {
+        if (m_consoleDock)
+        {
+            m_consoleDock->setVisible(checked);
+            if (checked)
+            {
+                m_consoleDock->raise();
+            }
+        }
+    });
+
+    viewMenu->addSeparator();
     viewMenu->addAction(tr("Reset Layout"), [this] {
         // TODO: Support named layout presets and user-defined layouts.
         restoreState(m_defaultLayoutState);
+        m_defaultLayoutState = saveState();
+        SaveLayout();
     });
 
     auto* helpMenu = menuBar()->addMenu(tr("&Help"));
@@ -630,32 +704,99 @@ void EditorMainWindow::DetachVulkanLogSink()
     }
 }
 
+void EditorMainWindow::LoadLayout()
+{
+    QSettings settings("Aetherion", "Editor");
+    const QByteArray saved = settings.value("layout/mainWindow").toByteArray();
+    if (!saved.isEmpty())
+    {
+        restoreState(saved);
+        m_defaultLayoutState = saved;
+    }
+    else
+    {
+        m_defaultLayoutState = saveState();
+        settings.setValue("layout/mainWindow", m_defaultLayoutState);
+    }
+}
+
+void EditorMainWindow::SaveLayout() const
+{
+    QSettings settings("Aetherion", "Editor");
+    settings.setValue("layout/mainWindow", saveState());
+}
+
+void EditorMainWindow::closeEvent(QCloseEvent* event)
+{
+    SaveLayout();
+    QMainWindow::closeEvent(event);
+}
+
 void EditorMainWindow::CreateDockPanels()
 {
     auto* hierarchyDock = new QDockWidget(tr("Hierarchy"), this);
+    hierarchyDock->setObjectName("HierarchyDock");
+    m_hierarchyDock = hierarchyDock;
     m_hierarchyPanel = new EditorHierarchyPanel(hierarchyDock);
     hierarchyDock->setWidget(m_hierarchyPanel);
     hierarchyDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::LeftDockWidgetArea, hierarchyDock);
+    connect(hierarchyDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        if (m_showHierarchyAction)
+        {
+            m_showHierarchyAction->blockSignals(true);
+            m_showHierarchyAction->setChecked(visible);
+            m_showHierarchyAction->blockSignals(false);
+        }
+    });
 
     auto* inspectorDock = new QDockWidget(tr("Inspector"), this);
+    inspectorDock->setObjectName("InspectorDock");
     m_inspectorDock = inspectorDock;
     m_inspectorPanel = new EditorInspectorPanel(inspectorDock);
     inspectorDock->setWidget(m_inspectorPanel);
     inspectorDock->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, inspectorDock);
+    connect(inspectorDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        if (m_showInspectorAction)
+        {
+            m_showInspectorAction->blockSignals(true);
+            m_showInspectorAction->setChecked(visible);
+            m_showInspectorAction->blockSignals(false);
+        }
+    });
 
     auto* assetDock = new QDockWidget(tr("Asset Browser"), this);
+    assetDock->setObjectName("AssetBrowserDock");
+    m_assetBrowserDock = assetDock;
     m_assetBrowser = new EditorAssetBrowser(assetDock);
     assetDock->setWidget(m_assetBrowser);
     assetDock->setAllowedAreas(Qt::BottomDockWidgetArea | Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::BottomDockWidgetArea, assetDock);
+    connect(assetDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        if (m_showAssetBrowserAction)
+        {
+            m_showAssetBrowserAction->blockSignals(true);
+            m_showAssetBrowserAction->setChecked(visible);
+            m_showAssetBrowserAction->blockSignals(false);
+        }
+    });
 
     auto* consoleDock = new QDockWidget(tr("Console"), this);
+    consoleDock->setObjectName("ConsoleDock");
+    m_consoleDock = consoleDock;
     m_console = new EditorConsole(consoleDock);
     consoleDock->setWidget(m_console);
     consoleDock->setAllowedAreas(Qt::BottomDockWidgetArea | Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::BottomDockWidgetArea, consoleDock);
+    connect(consoleDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        if (m_showConsoleAction)
+        {
+            m_showConsoleAction->blockSignals(true);
+            m_showConsoleAction->setChecked(visible);
+            m_showConsoleAction->blockSignals(false);
+        }
+    });
 
     tabifyDockWidget(assetDock, consoleDock);
     consoleDock->raise();

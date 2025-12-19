@@ -73,11 +73,18 @@ private:
     int m_fpsFrameCounter{0};
     QAction* m_validationMenuAction = nullptr;
     QAction* m_loggingMenuAction = nullptr;
+    QAction* m_showHierarchyAction = nullptr;
+    QAction* m_showInspectorAction = nullptr;
+    QAction* m_showAssetBrowserAction = nullptr;
+    QAction* m_showConsoleAction = nullptr;
 
     EditorViewport* m_viewport = nullptr;
     EditorHierarchyPanel* m_hierarchyPanel = nullptr;
     EditorInspectorPanel* m_inspectorPanel = nullptr;
+    QDockWidget* m_hierarchyDock = nullptr;
     QDockWidget* m_inspectorDock = nullptr;
+    QDockWidget* m_assetBrowserDock = nullptr;
+    QDockWidget* m_consoleDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorConsole* m_console = nullptr;
     QByteArray m_defaultLayoutState;
@@ -94,5 +101,10 @@ private:
     void DestroyViewportRenderer();
     void AttachVulkanLogSink();
     void DetachVulkanLogSink();
+    void LoadLayout();
+    void SaveLayout() const;
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
 };
 } // namespace Aetherion::Editor
