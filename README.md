@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logos/large_logo.png" alt="Aetherion Engine" width="720" />
+  <img src="assets/logos/large_logo.png" alt="Aetherion Engine" width="480" />
 </p>
 
 # Aetherion Engine (Scaffolding)
