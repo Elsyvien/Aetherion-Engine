@@ -361,9 +361,12 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     VkQueue presentQueue = m_context->GetPresentQueue();
 
     VkFence inFlight = m_inFlight[m_frameIndex];
+    // Allow a reasonable timeout so slower surfaces (e.g., macOS CAMetalLayer) can produce drawables.
+    constexpr uint64_t kFenceWaitTimeoutNs = 50'000'000ULL;   // 50 ms
+    constexpr uint64_t kAcquireTimeoutNs = 50'000'000ULL;     // 50 ms
     // Wait for previous frame using this slot to complete.
-    // Use a short timeout to keep the UI responsive; if not ready, skip this frame.
-    VkResult fenceWait = vkWaitForFences(device, 1, &inFlight, VK_TRUE, 1'000'000ULL); // 1ms
+    // Use a bounded timeout to keep the UI responsive while still allowing slower swapchains to catch up.
+    VkResult fenceWait = vkWaitForFences(device, 1, &inFlight, VK_TRUE, kFenceWaitTimeoutNs);
     if (fenceWait == VK_TIMEOUT)
     {
         // Previous frame not done yet, skip to keep UI responsive.
@@ -376,7 +379,7 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
 
     uint32_t imageIndex = 0;
     VkResult acquire = vkAcquireNextImageKHR(
-        device, m_swapchain, 1'000'000ULL, m_imageAvailable[m_frameIndex], VK_NULL_HANDLE, &imageIndex); // 1ms
+        device, m_swapchain, kAcquireTimeoutNs, m_imageAvailable[m_frameIndex], VK_NULL_HANDLE, &imageIndex);
     if (acquire == VK_TIMEOUT || acquire == VK_NOT_READY)
     {
         // Image not available, skip frame.
@@ -400,7 +403,7 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     // If this swapchain image is already being used by a previous frame, wait for it.
     if (imageIndex < m_imagesInFlight.size() && m_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
     {
-        VkResult imgWait = vkWaitForFences(device, 1, &m_imagesInFlight[imageIndex], VK_TRUE, 1'000'000ULL); // 1ms
+        VkResult imgWait = vkWaitForFences(device, 1, &m_imagesInFlight[imageIndex], VK_TRUE, kFenceWaitTimeoutNs);
         if (imgWait == VK_TIMEOUT)
         {
             // Image still in use, skip frame to keep UI responsive.
