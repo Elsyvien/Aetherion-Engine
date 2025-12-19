@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 
@@ -24,6 +25,15 @@
 #undef IsLoggingEnabled
 #endif
 #include <vulkan/vulkan_win32.h>
+#endif
+
+#ifdef __APPLE__
+#include <vulkan/vulkan_macos.h>
+#include <vulkan/vulkan_metal.h>
+
+#include <CoreGraphics/CoreGraphics.h>
+#include <objc/message.h>
+#include <objc/runtime.h>
 #endif
 
 namespace Aetherion::Rendering
@@ -271,6 +281,10 @@ void VulkanViewport::Resize(int width, int height)
         return;
     }
 
+#ifdef __APPLE__
+    UpdateMetalLayerSize(width, height);
+#endif
+
     if (width <= 0 || height <= 0)
     {
         m_context->Log(LogSeverity::Warning, "VulkanViewport: resize ignored (surface has zero area)");
@@ -450,16 +464,18 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     present.pImageIndices = &imageIndex;
 
     VkResult pres = vkQueuePresentKHR(presentQueue, &present);
-    if (pres == VK_ERROR_OUT_OF_DATE_KHR)
+    if (pres == VK_ERROR_OUT_OF_DATE_KHR || pres == VK_SUBOPTIMAL_KHR)
     {
-        // Swapchain is out of date (e.g., window resized).
-        // Don't recreate immediately - set a flag and let the next Resize() call handle it.
-        // This avoids cascading recreates during continuous resize.
+        // Swapchain is out of date or suboptimal (e.g., window resized).
+        // Mark for recreation and continue; next frame will handle it.
         m_needsSwapchainRecreate = true;
+        // For SUBOPTIMAL we still presented successfully, so advance the frame index.
+        if (pres == VK_SUBOPTIMAL_KHR)
+        {
+            m_frameIndex = (m_frameIndex + 1) % kMaxFramesInFlight;
+        }
         return;
     }
-    // VK_SUBOPTIMAL_KHR means the swapchain still works but isn't optimal.
-    // Don't recreate immediately - let the debounced resize handle it.
     else if (pres == VK_ERROR_SURFACE_LOST_KHR || pres == VK_ERROR_DEVICE_LOST)
     {
         m_context->Log(LogSeverity::Error,
@@ -469,7 +485,11 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     }
     else if (pres != VK_SUCCESS)
     {
-        throw std::runtime_error("vkQueuePresentKHR failed");
+        m_context->Log(LogSeverity::Error,
+                       "VulkanViewport: vkQueuePresentKHR returned " + std::to_string(static_cast<int>(pres)));
+        // Non-fatal; mark for recreation and try again next frame.
+        m_needsSwapchainRecreate = true;
+        return;
     }
 
     m_frameIndex = (m_frameIndex + 1) % kMaxFramesInFlight;
@@ -688,6 +708,93 @@ void VulkanViewport::CreateSurface(void* nativeHandle)
     if (vkCreateWin32SurfaceKHR(m_context->GetInstance(), &createInfo, nullptr, &m_surface) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create Win32 Vulkan surface");
+    }
+#elif defined(__APPLE__)
+    if (!nativeHandle)
+    {
+        throw std::runtime_error("VulkanViewport: invalid native view");
+    }
+
+    // Qt provides a Cocoa view handle (NSView*) as WId on macOS.
+    // Create a CAMetalLayer for that view and build a VK_EXT_metal_surface surface.
+    id view = reinterpret_cast<id>(nativeHandle);
+    Class cametalLayerClass = reinterpret_cast<Class>(objc_getClass("CAMetalLayer"));
+    if (!cametalLayerClass)
+    {
+        throw std::runtime_error("VulkanViewport: CAMetalLayer class not available");
+    }
+
+    const SEL selSetWantsLayer = sel_registerName("setWantsLayer:");
+    const SEL selSetLayer = sel_registerName("setLayer:");
+    const SEL selLayer = sel_registerName("layer");
+    const SEL selIsKindOfClass = sel_registerName("isKindOfClass:");
+    const SEL selAlloc = sel_registerName("alloc");
+    const SEL selInit = sel_registerName("init");
+
+    // Ensure the view is layer-backed.
+    reinterpret_cast<void (*)(id, SEL, BOOL)>(objc_msgSend)(view, selSetWantsLayer, YES);
+
+    id existingLayer = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(view, selLayer);
+    bool isMetalLayer = false;
+    if (existingLayer)
+    {
+        isMetalLayer = reinterpret_cast<BOOL (*)(id, SEL, Class)>(objc_msgSend)(existingLayer, selIsKindOfClass, cametalLayerClass);
+    }
+
+    id metalLayer = existingLayer;
+    if (!isMetalLayer)
+    {
+        // Create a new CAMetalLayer instance: [[CAMetalLayer alloc] init]
+        id alloced = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(reinterpret_cast<id>(cametalLayerClass), selAlloc);
+        if (!alloced)
+        {
+            throw std::runtime_error("VulkanViewport: CAMetalLayer alloc failed");
+        }
+        metalLayer = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(alloced, selInit);
+        if (!metalLayer)
+        {
+            throw std::runtime_error("VulkanViewport: CAMetalLayer init failed");
+        }
+        // Attach the layer to the view.
+        reinterpret_cast<void (*)(id, SEL, id)>(objc_msgSend)(view, selSetLayer, metalLayer);
+    }
+
+    // Configure the Metal layer for proper display.
+    const SEL selSetOpaque = sel_registerName("setOpaque:");
+    const SEL selSetContentsScale = sel_registerName("setContentsScale:");
+    const SEL selBackingScaleFactor = sel_registerName("backingScaleFactor");
+    const SEL selWindow = sel_registerName("window");
+
+    reinterpret_cast<void (*)(id, SEL, BOOL)>(objc_msgSend)(metalLayer, selSetOpaque, YES);
+
+    id window = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(view, selWindow);
+    if (window)
+    {
+        double scale = reinterpret_cast<double (*)(id, SEL)>(objc_msgSend)(window, selBackingScaleFactor);
+        if (scale > 0.0)
+        {
+            reinterpret_cast<void (*)(id, SEL, double)>(objc_msgSend)(metalLayer, selSetContentsScale, scale);
+        }
+    }
+
+    m_metalLayer = metalLayer;
+    UpdateMetalLayerSize(m_surfaceWidth, m_surfaceHeight);
+
+    VkMetalSurfaceCreateInfoEXT createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
+    createInfo.pLayer = reinterpret_cast<CAMetalLayer*>(metalLayer);
+
+    VkResult metalRes = vkCreateMetalSurfaceEXT(m_context->GetInstance(), &createInfo, nullptr, &m_surface);
+    if (metalRes != VK_SUCCESS)
+    {
+        // Fallback: create macOS surface with NSView (MoltenVK path).
+        VkMacOSSurfaceCreateInfoMVK macInfo{};
+        macInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
+        macInfo.pView = nativeHandle;
+        if (vkCreateMacOSSurfaceMVK(m_context->GetInstance(), &macInfo, nullptr, &m_surface) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create Vulkan surface on macOS (Metal and MVK fallback failed)");
+        }
     }
 #else
     (void)nativeHandle;
@@ -1276,8 +1383,8 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, const std::vector<
     }
 
     VkClearValue clear{};
-    // Default neutral background.
-    clear.color = {{0.20f, 0.20f, 0.20f, 1.0f}};
+    // Use a bright background color for visibility while debugging.
+    clear.color = {{0.10f, 0.35f, 0.80f, 1.0f}};
 
     VkRenderPassBeginInfo rp{};
     rp.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1304,21 +1411,23 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, const std::vector<
     scissor.extent = m_swapchainExtent;
     vkCmdSetScissor(cb, 0, 1, &scissor);
 
+    // Always bind the pipeline and draw at least one quad so the viewport is visible.
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+
+    const VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cb, 0, 1, &m_vertexBuffer, offsets);
+    vkCmdBindIndexBuffer(cb, m_indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindDescriptorSets(cb,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_pipelineLayout,
+                            0,
+                            1,
+                            &m_descriptorSets[m_frameIndex],
+                            0,
+                            nullptr);
+
     if (!instances.empty())
     {
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-
-        const VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(cb, 0, 1, &m_vertexBuffer, offsets);
-        vkCmdBindIndexBuffer(cb, m_indexBuffer, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdBindDescriptorSets(cb,
-                                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_pipelineLayout,
-                                0,
-                                1,
-                                &m_descriptorSets[m_frameIndex],
-                                0,
-                                nullptr);
         for (const auto& instance : instances)
         {
             vkCmdPushConstants(cb,
@@ -1329,6 +1438,28 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, const std::vector<
                                &instance);
             vkCmdDrawIndexed(cb, 6, 1, 0, 0, 0);
         }
+    }
+    else
+    {
+        // Draw a default centered quad when the scene is empty.
+        InstancePushConstants defaultQuad{};
+        Mat4Identity(defaultQuad.model);
+        // Scale down and position the default quad.
+        float scale[16];
+        Mat4Scale(scale, 0.8f, 0.8f, 1.0f);
+        std::memcpy(defaultQuad.model, scale, sizeof(scale));
+        defaultQuad.color[0] = 0.95f;
+        defaultQuad.color[1] = 0.30f;
+        defaultQuad.color[2] = 0.70f;
+        defaultQuad.color[3] = 1.0f;
+
+        vkCmdPushConstants(cb,
+                           m_pipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0,
+                           sizeof(InstancePushConstants),
+                           &defaultQuad);
+        vkCmdDrawIndexed(cb, 6, 1, 0, 0, 0);
     }
 
     vkCmdEndRenderPass(cb);
@@ -1359,6 +1490,42 @@ void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex)
 
     std::memcpy(m_uniformMapped[frameIndex], &ubo, sizeof(ubo));
 }
+
+#ifdef __APPLE__
+void VulkanViewport::UpdateMetalLayerSize(int width, int height)
+{
+    if (!m_metalLayer)
+    {
+        return;
+    }
+
+    id layer = reinterpret_cast<id>(m_metalLayer);
+
+    const SEL selSetDrawableSize = sel_registerName("setDrawableSize:");
+    const SEL selSetFrame = sel_registerName("setFrame:");
+    const SEL selSetBounds = sel_registerName("setBounds:");
+    const SEL selContentsScale = sel_registerName("contentsScale");
+
+    // Retrieve contentsScale from the layer to compute drawable size in pixels.
+    double scale = 1.0;
+    scale = reinterpret_cast<double (*)(id, SEL)>(objc_msgSend)(layer, selContentsScale);
+    if (scale <= 0.0)
+    {
+        scale = 1.0;
+    }
+
+    CGSize drawableSize;
+    drawableSize.width = static_cast<double>(width) * scale;
+    drawableSize.height = static_cast<double>(height) * scale;
+
+    reinterpret_cast<void (*)(id, SEL, CGSize)>(objc_msgSend)(layer, selSetDrawableSize, drawableSize);
+
+    // Keep layer frame/bounds in sync with view size.
+    CGRect bounds = CGRectMake(0, 0, static_cast<CGFloat>(width), static_cast<CGFloat>(height));
+    reinterpret_cast<void (*)(id, SEL, CGRect)>(objc_msgSend)(layer, selSetBounds, bounds);
+    reinterpret_cast<void (*)(id, SEL, CGRect)>(objc_msgSend)(layer, selSetFrame, bounds);
+}
+#endif
 
 std::vector<VulkanViewport::InstancePushConstants> VulkanViewport::InstancesFromView(const RenderView& view,
                                                                                      float timeSeconds) const
@@ -1447,8 +1614,25 @@ void VulkanViewport::CreateSyncObjects()
 
 std::string VulkanViewport::ShaderPath(const char* filename) const
 {
-    // Exe is run from build directory; shaders are generated into build-dir/shaders.
-    return std::string("shaders/") + filename;
+    namespace fs = std::filesystem;
+
+    const fs::path candidates[] = {
+        fs::path("shaders") / filename,
+        fs::path("build") / "shaders" / filename,
+        fs::path("..") / "shaders" / filename,
+    };
+
+    for (const auto& candidate : candidates)
+    {
+        std::error_code ec;
+        if (fs::exists(candidate, ec))
+        {
+            return candidate.string();
+        }
+    }
+
+    // Fall back to the original relative path for error reporting.
+    return (fs::path("shaders") / filename).string();
 }
 
 std::vector<char> VulkanViewport::ReadFileBinary(const std::string& path) const

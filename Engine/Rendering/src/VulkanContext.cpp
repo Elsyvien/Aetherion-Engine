@@ -1,5 +1,12 @@
 #include "Aetherion/Rendering/VulkanContext.h"
 
+#ifdef __APPLE__
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_macos.h>
+#include <vulkan/vulkan_metal.h>
+#include <vulkan/vulkan_beta.h>
+#endif
+
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -12,6 +19,10 @@ namespace
 constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
 const std::vector<const char*> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+#ifdef __APPLE__
+    // MoltenVK requires portability subset on macOS.
+    VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
+#endif
 };
 }
 
@@ -59,7 +70,9 @@ void VulkanContext::Initialize(bool enableValidation, bool enableLogging)
 
     if (m_enableValidation && !CheckValidationLayerSupport())
     {
-        throw std::runtime_error("Validation layer VK_LAYER_KHRONOS_validation not available");
+        Log(LogSeverity::Warning,
+            "Vulkan validation layer VK_LAYER_KHRONOS_validation not available; continuing without validation.");
+        m_enableValidation = false;
     }
 
     CreateInstance();
@@ -129,6 +142,10 @@ void VulkanContext::CreateInstance()
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
 
+#ifdef __APPLE__
+    createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
+
     if (vkCreateInstance(&createInfo, nullptr, &m_instance) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create Vulkan instance");
@@ -170,6 +187,14 @@ std::vector<const char*> VulkanContext::GetRequiredInstanceExtensions() const
     extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 #ifdef _WIN32
     extensions.push_back("VK_KHR_win32_surface");
+#endif
+
+#ifdef __APPLE__
+    // MoltenVK (Vulkan-on-Metal) uses a portability subset and a macOS surface extension.
+    extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    extensions.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
+    // Keep MVK macOS surface as an additional option (some toolkits still expose an NSView handle).
+    extensions.push_back(VK_MVK_MACOS_SURFACE_EXTENSION_NAME);
 #endif
 
     if (m_enableValidation)

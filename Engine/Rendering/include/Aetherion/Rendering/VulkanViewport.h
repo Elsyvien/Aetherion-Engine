@@ -56,6 +56,10 @@ private:
     int m_surfaceWidth{0};
     int m_surfaceHeight{0};
 
+#ifdef __APPLE__
+    void* m_metalLayer{nullptr};  // Retained CAMetalLayer for macOS.
+#endif
+
     VkSurfaceKHR m_surface{VK_NULL_HANDLE};
     VkSwapchainKHR m_swapchain{VK_NULL_HANDLE};
     VkFormat m_swapchainFormat{VK_FORMAT_UNDEFINED};
@@ -112,6 +116,10 @@ private:
     void CreateCommandPoolAndBuffers();
     void RecordCommandBuffer(uint32_t imageIndex, const std::vector<InstancePushConstants>& instances);
     void UpdateUniformBuffer(uint32_t frameIndex);
+
+#ifdef __APPLE__
+    void UpdateMetalLayerSize(int width, int height);
+#endif
 
     void CreateSyncObjects();
     [[nodiscard]] std::vector<InstancePushConstants> InstancesFromView(const RenderView& view, float timeSeconds) const;
