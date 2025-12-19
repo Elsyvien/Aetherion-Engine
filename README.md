@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logos/large_logo.png" alt="Aetherion Engine" width="720" />
+</p>
+
 # Aetherion Engine (Scaffolding)
 
 Aetherion is a modular, editor-driven 2D engine scaffold built with modern C++ and Qt 6. This repository only contains architecture and UI shells—no rendering, physics, audio, ECS logic, or asset pipelines are implemented.

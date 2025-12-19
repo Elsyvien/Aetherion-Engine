@@ -1,6 +1,7 @@
 #include "Aetherion/Editor/EditorMainWindow.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QCoreApplication>
 #include <QDockWidget>
 #include <QLabel>
@@ -75,6 +76,7 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     m_selection = new EditorSelection(this);
 
     setWindowTitle("Aetherion Editor");
+    setWindowIcon(QApplication::windowIcon());
     resize(1440, 900);
 
     auto* centerSplit = new QSplitter(Qt::Horizontal, this);
@@ -240,17 +242,52 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     AttachVulkanLogSink();
 
     connect(m_selection, &EditorSelection::SelectionChanged, this, [this](Aetherion::Core::EntityId) {
+        AppendConsole(m_console, tr("Selection: entity changed"), ConsoleSeverity::Info);
         if (m_inspectorPanel)
         {
             m_inspectorPanel->SetSelectedEntity(m_selection->GetSelectedEntity());
         }
     });
     connect(m_selection, &EditorSelection::SelectionCleared, this, [this]() {
+        AppendConsole(m_console, tr("Selection: entity cleared"), ConsoleSeverity::Info);
         if (m_inspectorPanel)
         {
             m_inspectorPanel->SetSelectedEntity(nullptr);
         }
     });
+
+    if (m_hierarchyPanel)
+    {
+        connect(m_hierarchyPanel, &EditorHierarchyPanel::entityActivated, this, [this](Aetherion::Core::EntityId) {
+            // Re-open the Properties/Inspector panel if the user closed it.
+            if (m_inspectorDock)
+            {
+                m_inspectorDock->show();
+                m_inspectorDock->raise();
+            }
+        });
+    }
+
+    if (m_assetBrowser)
+    {
+        connect(m_assetBrowser, &EditorAssetBrowser::AssetSelected, this, [this](const QString& assetId) {
+            AppendConsole(m_console, tr("AssetBrowser: selected '%1'").arg(assetId), ConsoleSeverity::Info);
+            if (m_inspectorPanel)
+            {
+                m_inspectorPanel->SetSelectedAsset(assetId);
+                AppendConsole(m_console, tr("Inspector: showing asset '%1'").arg(assetId), ConsoleSeverity::Info);
+            }
+        });
+        connect(m_assetBrowser, &EditorAssetBrowser::AssetSelectionCleared, this, [this] {
+            AppendConsole(m_console, tr("AssetBrowser: selection cleared"), ConsoleSeverity::Info);
+            // Keep current entity selection (if any) as source of truth.
+            if (m_inspectorPanel)
+            {
+                m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
+                AppendConsole(m_console, tr("Inspector: reverted to entity selection"), ConsoleSeverity::Info);
+            }
+        });
+    }
 }
 
 EditorMainWindow::~EditorMainWindow()
@@ -602,6 +639,7 @@ void EditorMainWindow::CreateDockPanels()
     addDockWidget(Qt::LeftDockWidgetArea, hierarchyDock);
 
     auto* inspectorDock = new QDockWidget(tr("Inspector"), this);
+    m_inspectorDock = inspectorDock;
     m_inspectorPanel = new EditorInspectorPanel(inspectorDock);
     inspectorDock->setWidget(m_inspectorPanel);
     inspectorDock->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea);

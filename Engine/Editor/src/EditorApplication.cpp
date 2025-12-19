@@ -1,6 +1,7 @@
 #include "Aetherion/Editor/EditorApplication.h"
 
 #include <QApplication>
+#include <QIcon>
 #include <QMessageBox>
 #include <cstdlib>
 #include <string>
@@ -16,6 +17,8 @@ EditorApplication::EditorApplication(int& argc, char** argv)
     : m_qtApp(std::make_unique<QApplication>(argc, argv))
     , m_settings(std::make_unique<EditorSettings>(EditorSettings::Load()))
 {
+    QApplication::setWindowIcon(QIcon(":/aetherion/editor_icon.png"));
+
     if (const char* env = std::getenv("AETHERION_ENABLE_VK_VALIDATION"))
     {
         std::string_view value(env);

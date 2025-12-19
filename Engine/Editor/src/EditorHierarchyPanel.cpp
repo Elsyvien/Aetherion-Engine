@@ -47,6 +47,22 @@ EditorHierarchyPanel::EditorHierarchyPanel(QWidget* parent)
 
         emit entitySelected(id);
     });
+
+    connect(m_tree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* item, int) {
+        if (!item)
+        {
+            return;
+        }
+
+        const QVariant idData = item->data(0, Qt::UserRole);
+        if (!idData.isValid())
+        {
+            return;
+        }
+
+        const auto id = static_cast<Aetherion::Core::EntityId>(idData.toULongLong());
+        emit entityActivated(id);
+    });
 }
 
 void EditorHierarchyPanel::BindScene(std::shared_ptr<Scene::Scene> scene)

@@ -5,6 +5,7 @@
 #include <QFormLayout>
 #include <QScrollArea>
 #include <QVBoxLayout>
+#include <QFileInfo>
 
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
@@ -37,6 +38,16 @@ EditorInspectorPanel::EditorInspectorPanel(QWidget* parent)
 void EditorInspectorPanel::SetSelectedEntity(std::shared_ptr<Scene::Entity> entity)
 {
     m_entity = std::move(entity);
+    m_showingAsset = false;
+    m_assetId.clear();
+    RebuildUi();
+}
+
+void EditorInspectorPanel::SetSelectedAsset(QString assetId)
+{
+    m_entity.reset();
+    m_showingAsset = true;
+    m_assetId = std::move(assetId);
     RebuildUi();
 }
 
@@ -70,6 +81,33 @@ void EditorInspectorPanel::RebuildUi()
 
     if (!m_entity)
     {
+        if (m_showingAsset)
+        {
+            const QString displayName = m_assetId.trimmed().isEmpty() ? tr("Asset") : m_assetId.trimmed();
+
+            auto* title = new QLabel(displayName, m_content);
+            title->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+            m_contentLayout->addWidget(title);
+
+            auto* formHost = new QWidget(m_content);
+            auto* form = new QFormLayout(formHost);
+            form->setLabelAlignment(Qt::AlignLeft);
+
+            const QString type = displayName.endsWith('/') ? tr("Folder") : tr("Asset");
+            form->addRow(tr("Type"), new QLabel(type, formHost));
+
+            const QString normalized = displayName.endsWith('/') ? displayName.left(displayName.size() - 1) : displayName;
+            form->addRow(tr("Id"), new QLabel(normalized, formHost));
+
+            form->addRow(tr("Status"), new QLabel(tr("Placeholder (not backed by AssetRegistry yet)"), formHost));
+
+            formHost->setLayout(form);
+            m_contentLayout->addWidget(formHost);
+            m_contentLayout->addStretch(1);
+            m_buildingUi = false;
+            return;
+        }
+
         auto* placeholder = new QLabel(tr("Select an entity to view details"), m_content);
         placeholder->setAlignment(Qt::AlignTop | Qt::AlignLeft);
         m_contentLayout->addWidget(placeholder);

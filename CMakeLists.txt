@@ -146,6 +146,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorConsole.cpp
     Engine/Editor/src/EditorSettings.cpp
     Engine/Editor/src/EditorSettingsDialog.cpp
+    Engine/Editor/resources/AetherionEditor.qrc
 )
 
 add_executable(AetherionEditor ${EDITOR_SOURCES})

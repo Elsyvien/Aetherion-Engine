@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/aetherion">
+        <file alias="editor_icon.png">../../../assets/logos/logo.png</file>
+    </qresource>
+</RCC>

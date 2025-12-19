@@ -4,6 +4,8 @@
 
 #include <memory>
 
+#include <QString>
+
 #include "Aetherion/Core/Types.h"
 
 namespace Aetherion::Scene
@@ -27,6 +29,7 @@ public:
     ~EditorInspectorPanel() override = default;
 
     void SetSelectedEntity(std::shared_ptr<Scene::Entity> entity);
+    void SetSelectedAsset(QString assetId);
 
 signals:
     void transformChanged(Aetherion::Core::EntityId entityId, float posX, float posY, float rotDegZ, float scaleX, float scaleY);
@@ -35,6 +38,8 @@ private:
     void RebuildUi();
 
     std::shared_ptr<Scene::Entity> m_entity;
+    QString m_assetId;
+    bool m_showingAsset = false;
 
     QScrollArea* m_scrollArea = nullptr;
     QWidget* m_content = nullptr;

@@ -31,6 +31,7 @@ public:
 
 signals:
     void entitySelected(Aetherion::Core::EntityId id);
+    void entityActivated(Aetherion::Core::EntityId id);
 
 private:
     QTreeWidget* m_tree = nullptr;

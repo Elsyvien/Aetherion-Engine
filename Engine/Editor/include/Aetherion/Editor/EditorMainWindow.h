@@ -12,6 +12,7 @@
 
 class QAction;
 class QLabel;
+class QDockWidget;
 
 namespace Aetherion::Rendering
 {
@@ -76,6 +77,7 @@ private:
     EditorViewport* m_viewport = nullptr;
     EditorHierarchyPanel* m_hierarchyPanel = nullptr;
     EditorInspectorPanel* m_inspectorPanel = nullptr;
+    QDockWidget* m_inspectorDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorConsole* m_console = nullptr;
     QByteArray m_defaultLayoutState;
