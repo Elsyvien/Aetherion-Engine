@@ -101,6 +101,7 @@ private:
     QAction* m_showInspectorAction = nullptr;
     QAction* m_showAssetBrowserAction = nullptr;
     QAction* m_showConsoleAction = nullptr;
+    QAction* m_showMeshPreviewAction = nullptr;
     QAction* m_playAction = nullptr;
     QAction* m_pauseAction = nullptr;
     QAction* m_stepAction = nullptr;
@@ -108,10 +109,12 @@ private:
     EditorViewport* m_viewport = nullptr;
     EditorHierarchyPanel* m_hierarchyPanel = nullptr;
     EditorInspectorPanel* m_inspectorPanel = nullptr;
+    class EditorMeshPreview* m_meshPreview = nullptr;
     QDockWidget* m_hierarchyDock = nullptr;
     QDockWidget* m_inspectorDock = nullptr;
     QDockWidget* m_assetBrowserDock = nullptr;
     QDockWidget* m_consoleDock = nullptr;
+    QDockWidget* m_meshPreviewDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorConsole* m_console = nullptr;
     QByteArray m_defaultLayoutState;

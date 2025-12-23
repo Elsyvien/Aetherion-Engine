@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <vulkan/vulkan.h>
@@ -141,6 +142,7 @@ private:
     std::vector<VkFence> m_inFlight;
     std::vector<VkFence> m_imagesInFlight;
     std::unordered_map<std::string, GpuMesh> m_meshCache;
+    std::unordered_set<std::string> m_missingMeshes;
 
     void CreateSurface(void* nativeHandle);
     void CreateSwapchain(int width, int height);
@@ -180,4 +182,3 @@ private:
     [[nodiscard]] VkShaderModule CreateShaderModule(const std::vector<char>& code) const;
 };
 } // namespace Aetherion::Rendering
-

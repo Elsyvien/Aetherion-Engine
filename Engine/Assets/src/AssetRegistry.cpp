@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <regex>
+#include <sstream>
 
 #define CGLTF_IMPLEMENTATION
 #include "cgltf/cgltf.h"
@@ -71,6 +72,124 @@ void TransformPosition(const cgltf_float* matrix, const float in[3], float out[3
     out[0] = static_cast<float>(matrix[0] * in[0] + matrix[4] * in[1] + matrix[8] * in[2] + matrix[12]);
     out[1] = static_cast<float>(matrix[1] * in[0] + matrix[5] * in[1] + matrix[9] * in[2] + matrix[13]);
     out[2] = static_cast<float>(matrix[2] * in[0] + matrix[6] * in[1] + matrix[10] * in[2] + matrix[14]);
+}
+
+bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshData& mesh)
+{
+    std::ifstream input(sourcePath);
+    if (!input.is_open())
+    {
+        return false;
+    }
+
+    std::vector<std::array<float, 3>> positions;
+    std::vector<std::array<float, 4>> colors;
+    std::vector<std::uint32_t> indices;
+
+    std::string line;
+    while (std::getline(input, line))
+    {
+        std::istringstream stream(line);
+        std::string keyword;
+        if (!(stream >> keyword))
+        {
+            continue;
+        }
+        if (!keyword.empty() && keyword.front() == '#')
+        {
+            continue;
+        }
+
+        if (keyword == "v")
+        {
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            if (!(stream >> x >> y >> z))
+            {
+                continue;
+            }
+
+            float r = 1.0f;
+            float g = 1.0f;
+            float b = 1.0f;
+            if (stream >> r >> g >> b)
+            {
+                colors.push_back({r, g, b, 1.0f});
+            }
+            else
+            {
+                colors.push_back({1.0f, 1.0f, 1.0f, 1.0f});
+            }
+            positions.push_back({x, y, z});
+        }
+        else if (keyword == "f")
+        {
+            std::vector<std::uint32_t> face;
+            std::string token;
+            while (stream >> token)
+            {
+                if (positions.empty())
+                {
+                    continue;
+                }
+
+                const size_t slash = token.find('/');
+                const std::string indexStr = (slash == std::string::npos) ? token : token.substr(0, slash);
+                if (indexStr.empty())
+                {
+                    continue;
+                }
+
+                int indexValue = 0;
+                try
+                {
+                    indexValue = std::stoi(indexStr);
+                }
+                catch (const std::exception&)
+                {
+                    continue;
+                }
+
+                if (indexValue < 0)
+                {
+                    indexValue = static_cast<int>(positions.size()) + indexValue + 1;
+                }
+
+                if (indexValue <= 0 || indexValue > static_cast<int>(positions.size()))
+                {
+                    continue;
+                }
+
+                face.push_back(static_cast<std::uint32_t>(indexValue - 1));
+            }
+
+            if (face.size() >= 3)
+            {
+                for (size_t i = 1; i + 1 < face.size(); ++i)
+                {
+                    indices.push_back(face[0]);
+                    indices.push_back(face[i]);
+                    indices.push_back(face[i + 1]);
+                }
+            }
+        }
+    }
+
+    if (positions.empty() || indices.empty())
+    {
+        return false;
+    }
+
+    if (colors.size() < positions.size())
+    {
+        colors.resize(positions.size(), {1.0f, 1.0f, 1.0f, 1.0f});
+    }
+
+    mesh.positions = std::move(positions);
+    mesh.colors = std::move(colors);
+    mesh.indices = std::move(indices);
+    return true;
 }
 
 int AssetTypeOrder(AssetRegistry::AssetType type)
@@ -264,6 +383,19 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
     }
 
     const std::string extension = ToLower(sourcePath.extension().string());
+    if (extension == ".obj")
+    {
+        MeshData mesh{};
+        if (!LoadObjMesh(sourcePath, mesh))
+        {
+            return nullptr;
+        }
+
+        auto& stored = m_meshData[assetId];
+        stored = std::move(mesh);
+        return &stored;
+    }
+
     if (extension != ".gltf" && extension != ".glb")
     {
         return nullptr;
@@ -297,13 +429,17 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
         }
 
         const cgltf_accessor* positionAccessor = nullptr;
+        const cgltf_accessor* colorAccessor = nullptr;
         for (cgltf_size attrIndex = 0; attrIndex < primitive.attributes_count; ++attrIndex)
         {
             const cgltf_attribute& attr = primitive.attributes[attrIndex];
             if (attr.type == cgltf_attribute_type_position)
             {
                 positionAccessor = attr.data;
-                break;
+            }
+            else if (attr.type == cgltf_attribute_type_color)
+            {
+                colorAccessor = attr.data;
             }
         }
 
@@ -314,6 +450,7 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
 
         const size_t baseVertex = mesh.positions.size();
         mesh.positions.reserve(baseVertex + positionAccessor->count);
+        mesh.colors.reserve(baseVertex + positionAccessor->count);
 
         for (cgltf_size i = 0; i < positionAccessor->count; ++i)
         {
@@ -328,6 +465,18 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
             else
             {
                 mesh.positions.push_back({values[0], values[1], values[2]});
+            }
+
+            // Load vertex color if available, otherwise use white
+            if (colorAccessor && i < colorAccessor->count)
+            {
+                float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+                cgltf_accessor_read_float(colorAccessor, i, color, 4);
+                mesh.colors.push_back({color[0], color[1], color[2], color[3]});
+            }
+            else
+            {
+                mesh.colors.push_back({1.0f, 1.0f, 1.0f, 1.0f});
             }
         }
 

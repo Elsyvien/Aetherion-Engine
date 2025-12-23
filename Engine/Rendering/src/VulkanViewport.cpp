@@ -869,6 +869,7 @@ void VulkanViewport::DestroyMeshCache()
         mesh = {};
     }
     m_meshCache.clear();
+    m_missingMeshes.clear();
 }
 
 void VulkanViewport::DestroySwapchainResources()
@@ -1991,22 +1992,64 @@ std::vector<VulkanViewport::DrawInstance> VulkanViewport::InstancesFromView(cons
     auto appendInstances = [&](const std::vector<RenderInstance>& source) {
         for (const auto& instance : source)
         {
-            if (!instance.transform || !instance.mesh)
+            const Scene::TransformComponent* transform = instance.transform;
+            if (!transform)
+            {
+                auto it = transformLookup.find(instance.entityId);
+                if (it != transformLookup.end())
+                {
+                    transform = it->second;
+                }
+            }
+
+            const Scene::MeshRendererComponent* mesh = instance.mesh;
+            if (!mesh)
+            {
+                auto it = meshLookup.find(instance.entityId);
+                if (it != meshLookup.end())
+                {
+                    mesh = it->second;
+                }
+            }
+
+            if (!transform && !instance.hasModel)
             {
                 continue;
             }
 
             DrawInstance draw{};
 
-            const auto& model = modelFor(modelFor, instance.entityId);
-            std::memcpy(draw.constants.model, model.data(), sizeof(draw.constants.model));
+            if (instance.hasModel)
+            {
+                std::memcpy(draw.constants.model, instance.model, sizeof(draw.constants.model));
+            }
+            else
+            {
+                const auto& model = modelFor(modelFor, instance.entityId);
+                std::memcpy(draw.constants.model, model.data(), sizeof(draw.constants.model));
+            }
 
-            const auto color = instance.mesh->GetColor();
-            draw.constants.color[0] = color[0];
-            draw.constants.color[1] = color[1];
-            draw.constants.color[2] = color[2];
-            draw.constants.color[3] = 1.0f;
+            if (mesh)
+            {
+                const auto color = mesh->GetColor();
+                draw.constants.color[0] = color[0];
+                draw.constants.color[1] = color[1];
+                draw.constants.color[2] = color[2];
+                draw.constants.color[3] = 1.0f;
+            }
+            else
+            {
+                draw.constants.color[0] = 1.0f;
+                draw.constants.color[1] = 1.0f;
+                draw.constants.color[2] = 1.0f;
+                draw.constants.color[3] = 1.0f;
+            }
+
             draw.meshId = instance.meshAssetId;
+            if (draw.meshId.empty() && mesh)
+            {
+                draw.meshId = mesh->GetMeshAssetId();
+            }
 
             instances.push_back(std::move(draw));
         }
@@ -2048,14 +2091,28 @@ const VulkanViewport::GpuMesh* VulkanViewport::ResolveMesh(const std::string& as
     const auto* meshData = m_assetRegistry->LoadMeshData(assetId);
     if (!meshData || meshData->positions.empty() || meshData->indices.empty())
     {
+        if (m_missingMeshes.emplace(assetId).second && m_context)
+        {
+            m_context->Log(LogSeverity::Warning,
+                           "VulkanViewport: mesh data missing or unsupported for asset '" + assetId + "'");
+        }
         return nullptr;
     }
+    m_missingMeshes.erase(assetId);
 
     std::vector<Vertex> vertices;
     vertices.reserve(meshData->positions.size());
-    for (const auto& pos : meshData->positions)
+    for (size_t i = 0; i < meshData->positions.size(); ++i)
     {
-        vertices.push_back(Vertex{{pos[0], pos[1], pos[2]}, {1.0f, 1.0f, 1.0f}});
+        const auto& pos = meshData->positions[i];
+        float r = 1.0f, g = 1.0f, b = 1.0f;
+        if (i < meshData->colors.size())
+        {
+            r = meshData->colors[i][0];
+            g = meshData->colors[i][1];
+            b = meshData->colors[i][2];
+        }
+        vertices.push_back(Vertex{{pos[0], pos[1], pos[2]}, {r, g, b}});
     }
 
     VkDevice device = m_context->GetDevice();

@@ -32,6 +32,7 @@
 #include "Aetherion/Editor/EditorAssetBrowser.h"
 #include "Aetherion/Editor/EditorConsole.h"
 #include "Aetherion/Editor/EditorHierarchyPanel.h"
+#include "Aetherion/Editor/EditorMeshPreview.h"
 #include "Aetherion/Editor/EditorSelection.h"
 #include "Aetherion/Editor/EditorInspectorPanel.h"
 #include "Aetherion/Editor/EditorSettingsDialog.h"
@@ -274,6 +275,16 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
             m_fpsFrameCounter = 0;
             m_fpsTimer.start();
             statusBar()->showMessage(tr("Viewport Vulkan renderer active"));
+
+            // Initialize mesh preview with shared Vulkan context
+            if (m_meshPreview)
+            {
+                auto previewCtx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+                auto previewVk = previewCtx ? previewCtx->GetVulkanContext() : nullptr;
+                auto previewRegistry = previewCtx ? previewCtx->GetAssetRegistry() : nullptr;
+                m_meshPreview->SetVulkanContext(previewVk);
+                m_meshPreview->SetAssetRegistry(previewRegistry);
+            }
         }
         else
         {
@@ -451,6 +462,24 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                 m_inspectorPanel->SetSelectedAsset(assetId);
                 AppendConsole(m_console, tr("Inspector: showing asset '%1'").arg(assetId), ConsoleSeverity::Info);
             }
+            // Update mesh preview if it's a mesh asset
+            if (m_meshPreview)
+            {
+                auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+                auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+                if (registry)
+                {
+                    const auto* entry = registry->FindEntry(assetId.toStdString());
+                    if (entry && entry->type == Assets::AssetRegistry::AssetType::Mesh)
+                    {
+                        m_meshPreview->SetMeshAsset(assetId);
+                    }
+                    else
+                    {
+                        m_meshPreview->ClearPreview();
+                    }
+                }
+            }
         });
         connect(m_assetBrowser, &EditorAssetBrowser::AssetSelectionCleared, this, [this] {
             AppendConsole(m_console, tr("AssetBrowser: selection cleared"), ConsoleSeverity::Info);
@@ -459,6 +488,10 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
             {
                 m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
                 AppendConsole(m_console, tr("Inspector: reverted to entity selection"), ConsoleSeverity::Info);
+            }
+            if (m_meshPreview)
+            {
+                m_meshPreview->ClearPreview();
             }
         });
         connect(m_assetBrowser, &EditorAssetBrowser::AssetActivated, this, [this] {
@@ -587,6 +620,20 @@ void EditorMainWindow::CreateMenuBarContent()
             if (checked)
             {
                 m_consoleDock->raise();
+            }
+        }
+    });
+
+    m_showMeshPreviewAction = viewMenu->addAction(tr("Show Mesh Preview"));
+    m_showMeshPreviewAction->setCheckable(true);
+    m_showMeshPreviewAction->setChecked(true);
+    connect(m_showMeshPreviewAction, &QAction::triggered, this, [this](bool checked) {
+        if (m_meshPreviewDock)
+        {
+            m_meshPreviewDock->setVisible(checked);
+            if (checked)
+            {
+                m_meshPreviewDock->raise();
             }
         }
     });
@@ -1789,6 +1836,24 @@ void EditorMainWindow::CreateDockPanels()
 
     tabifyDockWidget(assetDock, consoleDock);
     consoleDock->raise();
+
+    // Mesh Preview panel (right side, below inspector)
+    auto* meshPreviewDock = new QDockWidget(tr("Mesh Preview"), this);
+    meshPreviewDock->setObjectName("MeshPreviewDock");
+    meshPreviewDock->setAttribute(Qt::WA_NativeWindow, true);
+    m_meshPreviewDock = meshPreviewDock;
+    m_meshPreview = new EditorMeshPreview(meshPreviewDock);
+    meshPreviewDock->setWidget(m_meshPreview);
+    meshPreviewDock->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea | Qt::BottomDockWidgetArea);
+    addDockWidget(Qt::RightDockWidgetArea, meshPreviewDock);
+    connect(meshPreviewDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        if (m_showMeshPreviewAction)
+        {
+            m_showMeshPreviewAction->blockSignals(true);
+            m_showMeshPreviewAction->setChecked(visible);
+            m_showMeshPreviewAction->blockSignals(false);
+        }
+    });
 
     // TODO: Persist dock layout between sessions.
 }

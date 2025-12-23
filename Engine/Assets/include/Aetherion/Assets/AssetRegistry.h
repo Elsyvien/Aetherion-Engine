@@ -49,6 +49,7 @@ public:
     struct MeshData
     {
         std::vector<std::array<float, 3>> positions;
+        std::vector<std::array<float, 4>> colors; // RGBA vertex colors
         std::vector<std::uint32_t> indices;
     };
 
