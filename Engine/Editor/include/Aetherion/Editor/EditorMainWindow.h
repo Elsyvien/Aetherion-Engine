@@ -125,6 +125,7 @@ private:
     void UpdateRenderTimerInterval(bool viewportReady);
     void OpenSettingsDialog();
     void RefreshAssetBrowser();
+    void RescanAssets();
     void SaveScene();
     void ReloadScene();
     bool ConfirmSaveIfDirty();

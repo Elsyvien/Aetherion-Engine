@@ -375,6 +375,7 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                 m_inspectorDock->raise();
             }
         });
+        connect(m_assetBrowser, &EditorAssetBrowser::RescanRequested, this, &EditorMainWindow::RescanAssets);
     }
 }
 
@@ -400,6 +401,9 @@ void EditorMainWindow::CreateMenuBarContent()
     auto* reloadScene = fileMenu->addAction(tr("Reload Scene"));
     reloadScene->setShortcut(QKeySequence::Refresh);
     connect(reloadScene, &QAction::triggered, this, &EditorMainWindow::ReloadScene);
+    auto* rescanAssets = fileMenu->addAction(tr("Rescan Assets"));
+    rescanAssets->setShortcut(QKeySequence(tr("Ctrl+Shift+R")));
+    connect(rescanAssets, &QAction::triggered, this, &EditorMainWindow::RescanAssets);
     fileMenu->addSeparator();
     fileMenu->addAction(tr("Exit"), this, &QWidget::close);
 
@@ -728,6 +732,30 @@ void EditorMainWindow::RefreshAssetBrowser()
     }
 
     m_assetBrowser->SetItems(items);
+}
+
+void EditorMainWindow::RescanAssets()
+{
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+    if (!registry)
+    {
+        statusBar()->showMessage(tr("Asset registry unavailable"), 2000);
+        return;
+    }
+
+    std::filesystem::path root = registry->GetRootPath();
+    if (root.empty())
+    {
+        root = std::filesystem::path("assets");
+    }
+    registry->Scan(root.string());
+    RefreshAssetBrowser();
+    if (m_inspectorPanel)
+    {
+        m_inspectorPanel->SetAssetRegistry(registry);
+    }
+    statusBar()->showMessage(tr("Assets rescanned"), 2000);
 }
 
 void EditorMainWindow::SaveScene()

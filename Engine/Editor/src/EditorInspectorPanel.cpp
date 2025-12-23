@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QFileInfo>
+#include <QImageReader>
+#include <QPixmap>
 #include <QScrollArea>
 #include <QVBoxLayout>
 
@@ -11,6 +14,48 @@
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/TransformComponent.h"
+
+namespace
+{
+QString FormatBytes(long long bytes)
+{
+    if (bytes < 0)
+    {
+        return {};
+    }
+    static const char* units[] = {"B", "KB", "MB", "GB"};
+    double value = static_cast<double>(bytes);
+    int unitIndex = 0;
+    while (value >= 1024.0 && unitIndex < 3)
+    {
+        value /= 1024.0;
+        ++unitIndex;
+    }
+    return QString::number(value, 'f', unitIndex == 0 ? 0 : 1) + " " + units[unitIndex];
+}
+
+QString AssetTypeLabel(Aetherion::Assets::AssetRegistry::AssetType type)
+{
+    using AssetType = Aetherion::Assets::AssetRegistry::AssetType;
+    switch (type)
+    {
+    case AssetType::Texture:
+        return "Texture";
+    case AssetType::Mesh:
+        return "Mesh";
+    case AssetType::Audio:
+        return "Audio";
+    case AssetType::Script:
+        return "Script";
+    case AssetType::Scene:
+        return "Scene";
+    case AssetType::Shader:
+        return "Shader";
+    default:
+        return "Other";
+    }
+}
+} // namespace
 
 namespace Aetherion::Editor
 {
@@ -112,6 +157,7 @@ void EditorInspectorPanel::RebuildUi()
 
             const auto registry = m_assetRegistry;
             const Assets::AssetRegistry::AssetEntry* entry = nullptr;
+            QLabel* previewLabel = nullptr;
             if (!isFolder && registry)
             {
                 const std::string id = normalized.toStdString();
@@ -134,8 +180,40 @@ void EditorInspectorPanel::RebuildUi()
             else if (entry)
             {
                 const QString pathLabel = QString::fromStdString(entry->path.generic_string());
+                form->addRow(tr("Category"), new QLabel(AssetTypeLabel(entry->type), formHost));
                 form->addRow(tr("Path"), new QLabel(pathLabel, formHost));
+
+                QFileInfo fileInfo(QString::fromStdString(entry->path.string()));
+                if (fileInfo.exists())
+                {
+                    form->addRow(tr("Size"), new QLabel(FormatBytes(fileInfo.size()), formHost));
+                    form->addRow(tr("Modified"), new QLabel(fileInfo.lastModified().toString(Qt::ISODate), formHost));
+                }
                 form->addRow(tr("Status"), new QLabel(tr("Registered"), formHost));
+
+                if (entry->type == Assets::AssetRegistry::AssetType::Texture && fileInfo.exists())
+                {
+                    QImageReader reader(fileInfo.absoluteFilePath());
+                    reader.setAutoTransform(true);
+                    const QSize imageSize = reader.size();
+                    if (imageSize.isValid())
+                    {
+                        form->addRow(tr("Dimensions"),
+                                     new QLabel(tr("%1 x %2").arg(imageSize.width()).arg(imageSize.height()), formHost));
+                    }
+
+                    const QImage image = reader.read();
+                    if (!image.isNull())
+                    {
+                        const int previewMax = 256;
+                        const QPixmap preview =
+                            QPixmap::fromImage(image)
+                                .scaled(previewMax, previewMax, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                        previewLabel = new QLabel(m_content);
+                        previewLabel->setPixmap(preview);
+                        previewLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+                    }
+                }
             }
             else
             {
@@ -145,6 +223,10 @@ void EditorInspectorPanel::RebuildUi()
 
             formHost->setLayout(form);
             m_contentLayout->addWidget(formHost);
+            if (previewLabel)
+            {
+                m_contentLayout->addWidget(previewLabel);
+            }
             m_contentLayout->addStretch(1);
             m_buildingUi = false;
             return;

@@ -1,9 +1,11 @@
 #include "Aetherion/Editor/EditorAssetBrowser.h"
 
 #include <QFont>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <iostream>
@@ -16,10 +18,21 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
 
-    auto* header = new QLabel(tr("Asset Browser"), this);
+    auto* headerRow = new QWidget(this);
+    auto* headerLayout = new QHBoxLayout(headerRow);
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto* header = new QLabel(tr("Asset Browser"), headerRow);
+    m_rescanButton = new QToolButton(headerRow);
+    m_rescanButton->setText(tr("Rescan"));
+    m_rescanButton->setToolTip(tr("Rescan assets"));
+    headerLayout->addWidget(header);
+    headerLayout->addStretch(1);
+    headerLayout->addWidget(m_rescanButton);
+
     m_list = new QListWidget(this);
 
-    layout->addWidget(header);
+    layout->addWidget(headerRow);
     layout->addWidget(m_list, 1);
     setLayout(layout);
 
@@ -50,6 +63,11 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
     connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem*) {
         emit AssetActivated();
     });
+
+    if (m_rescanButton)
+    {
+        connect(m_rescanButton, &QToolButton::clicked, this, &EditorAssetBrowser::RescanRequested);
+    }
 
     // TODO: Implement drag-and-drop and asset previews.
 }
