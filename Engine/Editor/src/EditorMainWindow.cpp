@@ -17,14 +17,11 @@
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <algorithm>
-#include <array>
-#include <unordered_map>
 #include <string>
 #include <utility>
-#include <cstring>
-#include <cmath>
-#include <functional>
+#include <vector>
 
 #include "Aetherion/Editor/EditorAssetBrowser.h"
 #include "Aetherion/Editor/EditorConsole.h"
@@ -33,14 +30,15 @@
 #include "Aetherion/Editor/EditorInspectorPanel.h"
 #include "Aetherion/Editor/EditorSettingsDialog.h"
 #include "Aetherion/Editor/EditorViewport.h"
+#include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Rendering/RenderView.h"
 #include "Aetherion/Rendering/VulkanContext.h"
 #include "Aetherion/Rendering/VulkanViewport.h"
 #include "Aetherion/Runtime/EngineApplication.h"
 
 #include "Aetherion/Scene/Entity.h"
-#include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
+#include "Aetherion/Scene/SceneSerializer.h"
 #include "Aetherion/Scene/TransformComponent.h"
 
 namespace Aetherion::Editor
@@ -68,56 +66,8 @@ void AppendConsole(EditorConsole* console, const QString& message, ConsoleSeveri
     }
 }
 
-void Mat4Identity(float out[16])
-{
-    std::memset(out, 0, sizeof(float) * 16);
-    out[0] = 1.0f;
-    out[5] = 1.0f;
-    out[10] = 1.0f;
-    out[15] = 1.0f;
-}
 
-void Mat4Mul(float out[16], const float a[16], const float b[16])
-{
-    float r[16];
-    for (int c = 0; c < 4; ++c)
-    {
-        for (int rIdx = 0; rIdx < 4; ++rIdx)
-        {
-            r[c * 4 + rIdx] = a[0 * 4 + rIdx] * b[c * 4 + 0] + a[1 * 4 + rIdx] * b[c * 4 + 1] +
-                              a[2 * 4 + rIdx] * b[c * 4 + 2] + a[3 * 4 + rIdx] * b[c * 4 + 3];
-        }
-    }
-    std::memcpy(out, r, sizeof(r));
-}
 
-void Mat4RotationZ(float out[16], float radians)
-{
-    Mat4Identity(out);
-    const float c = std::cos(radians);
-    const float s = std::sin(radians);
-    out[0] = c;
-    out[4] = -s;
-    out[1] = s;
-    out[5] = c;
-}
-
-void Mat4Translation(float out[16], float x, float y, float z)
-
-{
-    Mat4Identity(out);
-    out[12] = x;
-    out[13] = y;
-    out[14] = z;
-}
-
-void Mat4Scale(float out[16], float x, float y, float z)
-{
-    Mat4Identity(out);
-    out[0] = x;
-    out[5] = y;
-    out[10] = z;
-}
 } // namespace
 
 EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> runtimeApp,
@@ -151,6 +101,10 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     connect(m_renderTimer, &QTimer::timeout, this, [this] {
         const bool viewportReady = m_vulkanViewport && m_vulkanViewport->IsReady();
         UpdateRenderTimerInterval(viewportReady);
+        if (m_runtimeApp)
+        {
+            m_runtimeApp->Tick();
+        }
         if (!viewportReady)
         {
             if (m_fpsLabel)
@@ -175,10 +129,17 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         const qint64 nanos = m_frameTimer.isValid() ? m_frameTimer.nsecsElapsed() : 0;
         const float dt = static_cast<float>(nanos) / 1'000'000'000.0f;
         m_frameTimer.restart();
-        RefreshRenderView();
+        auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+        auto renderView = ctx ? ctx->GetRenderView() : nullptr;
+        const Rendering::RenderView* activeView = renderView.get();
+        Rendering::RenderView emptyView{};
+        if (!activeView)
+        {
+            activeView = &emptyView;
+        }
         try
         {
-            m_vulkanViewport->RenderFrame(dt, m_renderView);
+            m_vulkanViewport->RenderFrame(dt, *activeView);
         }
         catch (const std::exception& ex)
         {
@@ -300,8 +261,16 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     {
         m_hierarchyPanel->BindScene(m_scene);
     }
+    m_scenePath = std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json";
+    UpdateWindowTitle();
+    if (m_inspectorPanel)
+    {
+        auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+        m_inspectorPanel->SetAssetRegistry(ctx ? ctx->GetAssetRegistry() : nullptr);
+    }
 
     AttachVulkanLogSink();
+    RefreshAssetBrowser();
 
     connect(m_selection, &EditorSelection::SelectionChanged, this, [this](Aetherion::Core::EntityId) {
         AppendConsole(m_console, tr("Selection: entity changed"), ConsoleSeverity::Info);
@@ -356,6 +325,8 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                         return;
                     }
 
+                    SetSceneDirty(true);
+
                     if (m_console)
                     {
                         const QString msg = (newParentId == 0)
@@ -373,15 +344,9 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
 
     if (m_inspectorPanel)
     {
-        connect(m_inspectorPanel,
-                &EditorInspectorPanel::transformChanged,
-                this,
-                [this](Aetherion::Core::EntityId,
-                       float,
-                       float,
-                       float,
-                       float,
-                       float) { RefreshRenderView(); });
+        connect(m_inspectorPanel, &EditorInspectorPanel::sceneModified, this, [this] {
+            SetSceneDirty(true);
+        });
     }
 
     if (m_assetBrowser)
@@ -429,6 +394,12 @@ void EditorMainWindow::CreateMenuBarContent()
     auto* fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(tr("New Project"), [] {});
     fileMenu->addAction(tr("Open Project..."), [] {});
+    auto* saveScene = fileMenu->addAction(tr("Save Scene"));
+    saveScene->setShortcut(QKeySequence::Save);
+    connect(saveScene, &QAction::triggered, this, &EditorMainWindow::SaveScene);
+    auto* reloadScene = fileMenu->addAction(tr("Reload Scene"));
+    reloadScene->setShortcut(QKeySequence::Refresh);
+    connect(reloadScene, &QAction::triggered, this, &EditorMainWindow::ReloadScene);
     fileMenu->addSeparator();
     fileMenu->addAction(tr("Exit"), this, &QWidget::close);
 
@@ -689,130 +660,205 @@ void EditorMainWindow::OpenSettingsDialog()
     }
 }
 
-void EditorMainWindow::RefreshRenderView()
+void EditorMainWindow::RefreshAssetBrowser()
 {
-    m_renderView.instances.clear();
-    m_renderView.batches.clear();
-
-    if (!m_scene)
+    if (!m_assetBrowser)
     {
         return;
     }
 
-    std::unordered_map<const Scene::MeshRendererComponent*, size_t> batchLookup;
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
 
-    std::unordered_map<Core::EntityId, const Scene::TransformComponent*> transformLookup;
-    std::unordered_map<Core::EntityId, const Scene::MeshRendererComponent*> meshLookup;
-    for (const auto& entity : m_scene->GetEntities())
+    std::vector<EditorAssetBrowser::Item> items;
+    if (!registry)
     {
-        if (!entity)
-        {
-            continue;
-        }
-
-        if (auto transform = entity->GetComponent<Scene::TransformComponent>())
-        {
-            transformLookup.emplace(entity->GetId(), transform.get());
-        }
-
-        if (auto mesh = entity->GetComponent<Scene::MeshRendererComponent>())
-        {
-            meshLookup.emplace(entity->GetId(), mesh.get());
-        }
+        const QString label = tr("Assets unavailable");
+        items.push_back({label, label, true});
+        m_assetBrowser->SetItems(items);
+        return;
     }
 
-    std::unordered_map<Core::EntityId, std::array<float, 16>> worldCache;
-    std::function<const std::array<float, 16>&(Core::EntityId)> modelFor = [&](Core::EntityId id)
+    const auto& entries = registry->GetEntries();
+    struct Category
     {
-        auto cached = worldCache.find(id);
-        if (cached != worldCache.end())
-        {
-            return cached->second;
-        }
-
-        std::array<float, 16> identity{};
-        Mat4Identity(identity.data());
-
-        auto it = transformLookup.find(id);
-        if (it == transformLookup.end() || it->second == nullptr)
-        {
-            return worldCache.emplace(id, identity).first->second;
-        }
-
-        const auto* transform = it->second;
-        const float radians = transform->GetRotationZDegrees() * (3.14159265358979323846f / 180.0f);
-
-        float t[16];
-        Mat4Translation(t, transform->GetPositionX(), transform->GetPositionY(), 0.0f);
-
-        float r[16];
-        Mat4RotationZ(r, radians);
-
-        float s[16];
-        Mat4Scale(s, transform->GetScaleX(), transform->GetScaleY(), 1.0f);
-
-        float tr[16];
-        Mat4Mul(tr, t, r);
-
-        float localModel[16];
-        Mat4Mul(localModel, tr, s);
-
-        if (transform->HasParent())
-        {
-            const auto& parentModel = modelFor(transform->GetParentId());
-            float world[16];
-            Mat4Mul(world, parentModel.data(), localModel);
-            std::array<float, 16> stored{};
-            std::memcpy(stored.data(), world, sizeof(world));
-            return worldCache.emplace(id, stored).first->second;
-        }
-
-        std::array<float, 16> stored{};
-        std::memcpy(stored.data(), localModel, sizeof(localModel));
-        return worldCache.emplace(id, stored).first->second;
+        Assets::AssetRegistry::AssetType type;
+        const char* label;
     };
 
-    for (const auto& entity : m_scene->GetEntities())
+    const Category categories[] = {
+        {Assets::AssetRegistry::AssetType::Texture, "Textures/"},
+        {Assets::AssetRegistry::AssetType::Mesh, "Meshes/"},
+        {Assets::AssetRegistry::AssetType::Audio, "Audio/"},
+        {Assets::AssetRegistry::AssetType::Script, "Scripts/"},
+        {Assets::AssetRegistry::AssetType::Scene, "Scenes/"},
+        {Assets::AssetRegistry::AssetType::Shader, "Shaders/"},
+        {Assets::AssetRegistry::AssetType::Other, "Misc/"}
+    };
+
+    const size_t categoryCount = sizeof(categories) / sizeof(categories[0]);
+    std::vector<std::vector<const Assets::AssetRegistry::AssetEntry*>> grouped(categoryCount);
+    for (const auto& entry : entries)
     {
-        if (!entity)
+        for (size_t i = 0; i < categoryCount; ++i)
         {
-            continue;
+            if (entry.type == categories[i].type)
+            {
+                grouped[i].push_back(&entry);
+                break;
+            }
         }
-
-        auto transform = entity->GetComponent<Scene::TransformComponent>();
-        auto mesh = entity->GetComponent<Scene::MeshRendererComponent>();
-        if (!transform || !mesh || !mesh->IsVisible())
-        {
-            continue;
-        }
-
-        Rendering::RenderInstance instance{};
-        instance.entityId = entity->GetId();
-        instance.transform = transform.get();
-        instance.mesh = mesh.get();
-        const auto& model = modelFor(instance.entityId);
-        std::memcpy(instance.model, model.data(), sizeof(instance.model));
-        instance.hasModel = true;
-        m_renderView.instances.push_back(instance);
-
-        size_t batchIndex = 0;
-        auto found = batchLookup.find(instance.mesh);
-        if (found == batchLookup.end())
-        {
-            batchIndex = m_renderView.batches.size();
-            batchLookup[instance.mesh] = batchIndex;
-            m_renderView.batches.emplace_back();
-        }
-        else
-        {
-            batchIndex = found->second;
-        }
-
-        m_renderView.batches[batchIndex].instances.push_back(instance);
     }
 
-    m_renderView.transforms = transformLookup;
-    m_renderView.meshes = meshLookup;
+    for (size_t i = 0; i < categoryCount; ++i)
+    {
+        const QString header = tr(categories[i].label);
+        items.push_back({header, header, true});
+
+        auto& list = grouped[i];
+        std::sort(list.begin(), list.end(), [](const auto* lhs, const auto* rhs) {
+            return lhs->id < rhs->id;
+        });
+
+        for (const auto* entry : list)
+        {
+            const QString id = QString::fromStdString(entry->id);
+            items.push_back({QString("  %1").arg(id), id, false});
+        }
+    }
+
+    m_assetBrowser->SetItems(items);
+}
+
+void EditorMainWindow::SaveScene()
+{
+    if (m_scenePath.empty())
+    {
+        m_scenePath = std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json";
+    }
+    SaveSceneToPath(m_scenePath);
+}
+
+void EditorMainWindow::ReloadScene()
+{
+    if (!ConfirmSaveIfDirty())
+    {
+        return;
+    }
+    if (m_scenePath.empty())
+    {
+        m_scenePath = std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json";
+    }
+    LoadSceneFromPath(m_scenePath);
+}
+
+bool EditorMainWindow::ConfirmSaveIfDirty()
+{
+    if (!m_sceneDirty)
+    {
+        return true;
+    }
+
+    const auto choice = QMessageBox::question(this,
+                                              tr("Unsaved Changes"),
+                                              tr("The current scene has unsaved changes. Save before continuing?"),
+                                              QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+    if (choice == QMessageBox::Cancel)
+    {
+        return false;
+    }
+    if (choice == QMessageBox::Yes)
+    {
+        return SaveSceneToPath(m_scenePath);
+    }
+    return true;
+}
+
+bool EditorMainWindow::SaveSceneToPath(const std::filesystem::path& path)
+{
+    if (!m_scene || !m_runtimeApp)
+    {
+        statusBar()->showMessage(tr("No scene to save"), 2000);
+        return false;
+    }
+
+    auto ctx = m_runtimeApp->GetContext();
+    if (!ctx)
+    {
+        statusBar()->showMessage(tr("Runtime context unavailable"), 2000);
+        return false;
+    }
+
+    const std::filesystem::path target =
+        path.empty() ? (std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json") : path;
+    Scene::SceneSerializer serializer(*ctx);
+    if (!serializer.Save(*m_scene, target))
+    {
+        statusBar()->showMessage(tr("Failed to save scene"), 2000);
+        return false;
+    }
+
+    m_scenePath = target;
+    SetSceneDirty(false);
+    statusBar()->showMessage(tr("Scene saved"), 2000);
+    return true;
+}
+
+bool EditorMainWindow::LoadSceneFromPath(const std::filesystem::path& path)
+{
+    if (!m_runtimeApp)
+    {
+        statusBar()->showMessage(tr("Runtime unavailable"), 2000);
+        return false;
+    }
+
+    auto ctx = m_runtimeApp->GetContext();
+    if (!ctx)
+    {
+        statusBar()->showMessage(tr("Runtime context unavailable"), 2000);
+        return false;
+    }
+
+    const std::filesystem::path target =
+        path.empty() ? (std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json") : path;
+    Scene::SceneSerializer serializer(*ctx);
+    auto loaded = serializer.Load(target);
+    if (!loaded)
+    {
+        statusBar()->showMessage(tr("Failed to load scene"), 2000);
+        return false;
+    }
+
+    m_scenePath = target;
+    m_scene = loaded;
+    if (m_runtimeApp)
+    {
+        m_runtimeApp->SetActiveScene(m_scene);
+    }
+
+    if (m_selection)
+    {
+        m_selection->SetActiveScene(m_scene);
+        if (!m_scene)
+        {
+            m_selection->Clear();
+        }
+    }
+
+    if (m_hierarchyPanel)
+    {
+        m_hierarchyPanel->SetSelectionModel(m_selection);
+        m_hierarchyPanel->BindScene(m_scene);
+    }
+
+    if (m_inspectorPanel)
+    {
+        m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
+    }
+
+    SetSceneDirty(false);
+    statusBar()->showMessage(tr("Scene loaded"), 2000);
+    return true;
 }
 
 void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
@@ -853,6 +899,8 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
         m_hierarchyPanel->SetSelectionModel(m_selection);
         m_hierarchyPanel->BindScene(m_scene);
     }
+    m_scenePath = std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json";
+    SetSceneDirty(false);
 
     if (m_selection)
     {
@@ -865,9 +913,12 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
     if (m_inspectorPanel)
     {
         m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
+        auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+        m_inspectorPanel->SetAssetRegistry(ctx ? ctx->GetAssetRegistry() : nullptr);
     }
 
     AttachVulkanLogSink();
+    RefreshAssetBrowser();
 
     if (m_surfaceInitialized && m_surfaceHandle != 0)
     {
@@ -899,7 +950,6 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
         }
     }
 
-    RefreshRenderView();
     UpdateRenderTimerInterval(m_vulkanViewport && m_vulkanViewport->IsReady());
     statusBar()->showMessage(tr("Renderer reset (%1 validation, %2 logging)")
                                  .arg(m_validationEnabled ? tr("with") : tr("without"))
@@ -973,6 +1023,11 @@ void EditorMainWindow::SaveLayout() const
 
 void EditorMainWindow::closeEvent(QCloseEvent* event)
 {
+    if (!ConfirmSaveIfDirty())
+    {
+        event->ignore();
+        return;
+    }
     SaveLayout();
     QMainWindow::closeEvent(event);
 }
@@ -1061,6 +1116,35 @@ void EditorMainWindow::ConfigureStatusBar()
         m_fpsLabel = new QLabel(tr("FPS: --"), this);
         m_fpsLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         statusBar()->addPermanentWidget(m_fpsLabel);
+    }
+}
+
+void EditorMainWindow::UpdateWindowTitle()
+{
+    QString title = tr("Aetherion Editor");
+    if (m_scene)
+    {
+        const std::string name = m_scene->GetName().empty() ? std::string("Scene") : m_scene->GetName();
+        title = tr("Aetherion Editor - %1").arg(QString::fromStdString(name));
+    }
+    if (m_sceneDirty)
+    {
+        title += tr(" *");
+    }
+    setWindowTitle(title);
+}
+
+void EditorMainWindow::SetSceneDirty(bool dirty)
+{
+    if (m_sceneDirty == dirty)
+    {
+        return;
+    }
+    m_sceneDirty = dirty;
+    UpdateWindowTitle();
+    if (dirty)
+    {
+        statusBar()->showMessage(tr("Scene modified"), 2000);
     }
 }
 
@@ -1286,7 +1370,7 @@ void EditorMainWindow::ApplyTranslationDelta(float dx, float dy)
     }
 
     transform->SetPosition(transform->GetPositionX() + dx, transform->GetPositionY() + dy);
-    RefreshRenderView();
+    SetSceneDirty(true);
     RefreshSelectedEntityUi();
 }
 
@@ -1310,7 +1394,7 @@ void EditorMainWindow::ApplyRotationDelta(float deltaDeg)
     }
 
     transform->SetRotationZDegrees(transform->GetRotationZDegrees() + deltaDeg);
-    RefreshRenderView();
+    SetSceneDirty(true);
     RefreshSelectedEntityUi();
 }
 
@@ -1336,7 +1420,7 @@ void EditorMainWindow::ApplyScaleDelta(float deltaUniform)
     const float newScaleX = std::max(0.001f, transform->GetScaleX() + deltaUniform);
     const float newScaleY = std::max(0.001f, transform->GetScaleY() + deltaUniform);
     transform->SetScale(newScaleX, newScaleY);
-    RefreshRenderView();
+    SetSceneDirty(true);
     RefreshSelectedEntityUi();
 }
 

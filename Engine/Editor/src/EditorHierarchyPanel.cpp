@@ -13,8 +13,6 @@
 
 namespace Aetherion::Editor
 {
-namespace
-{
 class HierarchyTreeWidget : public QTreeWidget
 {
     Q_OBJECT
@@ -68,7 +66,6 @@ protected:
         }
     }
 };
-} // namespace
 
 EditorHierarchyPanel::EditorHierarchyPanel(QWidget* parent)
     : QWidget(parent)
@@ -269,3 +266,5 @@ void EditorHierarchyPanel::SetSelectedEntity(Aetherion::Core::EntityId id)
     m_updatingSelection = false;
 }
 } // namespace Aetherion::Editor
+
+#include "EditorHierarchyPanel.moc"

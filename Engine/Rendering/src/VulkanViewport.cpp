@@ -1581,7 +1581,7 @@ std::vector<VulkanViewport::InstancePushConstants> VulkanViewport::InstancesFrom
     }
 
     std::unordered_map<Core::EntityId, std::array<float, 16>> worldCache;
-    std::function<const std::array<float, 16>&(Core::EntityId)> modelFor = [&](Core::EntityId id)
+    auto modelFor = [&](auto&& self, Core::EntityId id) -> const std::array<float, 16>&
     {
         auto cached = worldCache.find(id);
         if (cached != worldCache.end())
@@ -1621,7 +1621,7 @@ std::vector<VulkanViewport::InstancePushConstants> VulkanViewport::InstancesFrom
 
         if (transform->HasParent())
         {
-            const auto& parentModel = modelFor(transform->GetParentId());
+            const auto& parentModel = self(self, transform->GetParentId());
             float world[16];
             Mat4Mul(world, parentModel.data(), localModel);
             std::array<float, 16> stored{};
@@ -1644,7 +1644,7 @@ std::vector<VulkanViewport::InstancePushConstants> VulkanViewport::InstancesFrom
 
             InstancePushConstants data{};
 
-            const auto& model = modelFor(instance.entityId);
+            const auto& model = modelFor(modelFor, instance.entityId);
             std::memcpy(data.model, model.data(), sizeof(data.model));
 
             const auto color = instance.mesh->GetColor();

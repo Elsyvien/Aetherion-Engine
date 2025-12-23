@@ -12,6 +12,10 @@ namespace Aetherion::Scene
 {
 class Entity;
 } // namespace Aetherion::Scene
+namespace Aetherion::Assets
+{
+class AssetRegistry;
+} // namespace Aetherion::Assets
 
 class QScrollArea;
 class QVBoxLayout;
@@ -30,14 +34,17 @@ public:
 
     void SetSelectedEntity(std::shared_ptr<Scene::Entity> entity);
     void SetSelectedAsset(QString assetId);
+    void SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry);
 
 signals:
     void transformChanged(Aetherion::Core::EntityId entityId, float posX, float posY, float rotDegZ, float scaleX, float scaleY);
+    void sceneModified();
 
 private:
     void RebuildUi();
 
     std::shared_ptr<Scene::Entity> m_entity;
+    std::shared_ptr<Assets::AssetRegistry> m_assetRegistry;
     QString m_assetId;
     bool m_showingAsset = false;
 

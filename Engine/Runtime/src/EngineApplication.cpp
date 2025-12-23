@@ -3,15 +3,19 @@
 #include <filesystem>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
 
 #include "Aetherion/Audio/AudioPlaceholder.h"
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Physics/PhysicsPlaceholder.h"
 #include "Aetherion/Rendering/RenderView.h"
 #include "Aetherion/Rendering/VulkanContext.h"
+#include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/SceneSerializer.h"
 #include "Aetherion/Scene/System.h"
+#include "Aetherion/Scene/TransformComponent.h"
 #include "Aetherion/Scripting/ScriptingPlaceholder.h"
 
 namespace Aetherion::Runtime
@@ -81,6 +85,131 @@ private:
 
     EngineContext* m_context{nullptr};
     bool m_sceneConfigured{false};
+    std::weak_ptr<Scene::Scene> m_scene;
+};
+
+class RenderViewSystem final : public IRuntimeSystem
+{
+public:
+    explicit RenderViewSystem(std::weak_ptr<Scene::Scene> scene)
+        : m_scene(std::move(scene))
+    {
+    }
+
+    [[nodiscard]] std::string GetName() const override { return "RenderViewSystem"; }
+
+    void Initialize(EngineContext& context) override
+    {
+        m_context = &context;
+        EnsureRenderView();
+        RebuildRenderView();
+    }
+
+    void Tick(EngineContext& context, float) override
+    {
+        m_context = &context;
+        RebuildRenderView();
+    }
+
+    void Shutdown(EngineContext& context) override
+    {
+        (void)context;
+        m_context = nullptr;
+        m_scene.reset();
+    }
+
+private:
+    void EnsureRenderView()
+    {
+        if (!m_context)
+        {
+            return;
+        }
+
+        if (!m_context->GetRenderView())
+        {
+            m_context->SetRenderView(std::make_shared<Rendering::RenderView>());
+        }
+    }
+
+    void RebuildRenderView()
+    {
+        if (!m_context)
+        {
+            return;
+        }
+
+        auto view = m_context->GetRenderView();
+        if (!view)
+        {
+            view = std::make_shared<Rendering::RenderView>();
+            m_context->SetRenderView(view);
+        }
+
+        view->instances.clear();
+        view->batches.clear();
+        view->transforms.clear();
+        view->meshes.clear();
+
+        auto scene = m_scene.lock();
+        if (!scene)
+        {
+            return;
+        }
+
+        std::unordered_map<const Scene::MeshRendererComponent*, size_t> batchLookup;
+        const auto& entities = scene->GetEntities();
+        view->instances.reserve(entities.size());
+
+        for (const auto& entity : entities)
+        {
+            if (!entity)
+            {
+                continue;
+            }
+
+            auto transform = entity->GetComponent<Scene::TransformComponent>();
+            if (transform)
+            {
+                view->transforms.emplace(entity->GetId(), transform.get());
+            }
+
+            auto mesh = entity->GetComponent<Scene::MeshRendererComponent>();
+            if (mesh)
+            {
+                view->meshes.emplace(entity->GetId(), mesh.get());
+            }
+
+            if (!transform || !mesh || !mesh->IsVisible())
+            {
+                continue;
+            }
+
+            Rendering::RenderInstance instance{};
+            instance.entityId = entity->GetId();
+            instance.transform = transform.get();
+            instance.mesh = mesh.get();
+            instance.hasModel = false;
+            view->instances.push_back(instance);
+
+            size_t batchIndex = 0;
+            auto found = batchLookup.find(instance.mesh);
+            if (found == batchLookup.end())
+            {
+                batchIndex = view->batches.size();
+                batchLookup.emplace(instance.mesh, batchIndex);
+                view->batches.emplace_back();
+            }
+            else
+            {
+                batchIndex = found->second;
+            }
+
+            view->batches[batchIndex].instances.push_back(instance);
+        }
+    }
+
+    EngineContext* m_context{nullptr};
     std::weak_ptr<Scene::Scene> m_scene;
 };
 } // namespace
@@ -261,9 +390,36 @@ std::shared_ptr<Scene::Scene> EngineApplication::GetActiveScene() const noexcept
     return m_activeScene;
 }
 
+void EngineApplication::SetActiveScene(std::shared_ptr<Scene::Scene> scene)
+{
+    m_activeScene = std::move(scene);
+    m_sceneSystemsConfigured = false;
+
+    if (m_activeScene && m_context)
+    {
+        m_activeScene->BindContext(*m_context);
+    }
+
+    if (!m_context)
+    {
+        return;
+    }
+
+    for (const auto& system : m_runtimeSystems)
+    {
+        if (system)
+        {
+            system->Shutdown(*m_context);
+        }
+    }
+    m_runtimeSystems.clear();
+    RegisterPlaceholderSystems();
+}
+
 void EngineApplication::RegisterPlaceholderSystems()
 {
     RegisterSystem(std::make_shared<SceneSystemDispatcher>(m_activeScene));
+    RegisterSystem(std::make_shared<RenderViewSystem>(m_activeScene));
     // TODO: Register systems with the engine once rendering/physics/audio exist.
 }
 

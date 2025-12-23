@@ -15,6 +15,26 @@ public:
 
     void Scan(const std::string& rootPath);
     [[nodiscard]] bool HasAsset(const std::string& assetId) const;
+    enum class AssetType
+    {
+        Texture,
+        Mesh,
+        Audio,
+        Script,
+        Scene,
+        Shader,
+        Other
+    };
+
+    struct AssetEntry
+    {
+        std::string id;
+        std::filesystem::path path;
+        AssetType type{AssetType::Other};
+    };
+
+    [[nodiscard]] const std::vector<AssetEntry>& GetEntries() const noexcept;
+    [[nodiscard]] const std::filesystem::path& GetRootPath() const noexcept;
 
     struct CachedTexture
     {
@@ -47,5 +67,8 @@ private:
     std::unordered_map<std::string, std::string> m_placeholderAssets;
     std::unordered_map<std::string, CachedMesh> m_meshes;
     std::unordered_map<std::string, CachedTexture> m_textures;
+    std::filesystem::path m_rootPath;
+    std::vector<AssetEntry> m_entries;
+    std::unordered_map<std::string, size_t> m_entryLookup;
 };
 } // namespace Aetherion::Assets

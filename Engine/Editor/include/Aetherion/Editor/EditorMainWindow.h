@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
 
 #include <QByteArray>
@@ -8,7 +9,6 @@
 #include <QSize>
 
 #include "Aetherion/Editor/EditorSettings.h"
-#include "Aetherion/Rendering/RenderView.h"
 
 class QAction;
 class QActionGroup;
@@ -55,8 +55,9 @@ private:
     std::shared_ptr<Runtime::EngineApplication> m_runtimeApp;
 
     std::shared_ptr<Scene::Scene> m_scene;
+    std::filesystem::path m_scenePath;
+    bool m_sceneDirty{false};
     EditorSelection* m_selection = nullptr;
-    Rendering::RenderView m_renderView{};
     QActionGroup* m_modeActionGroup = nullptr;
     QAction* m_modeEditAction = nullptr;
     QAction* m_modePlaytestAction = nullptr;
@@ -118,10 +119,17 @@ private:
     void CreateToolBarContent();
     void CreateDockPanels();
     void ConfigureStatusBar();
+    void UpdateWindowTitle();
+    void SetSceneDirty(bool dirty);
     void ApplySettings(const EditorSettings& settings, bool persist);
     void UpdateRenderTimerInterval(bool viewportReady);
     void OpenSettingsDialog();
-    void RefreshRenderView();
+    void RefreshAssetBrowser();
+    void SaveScene();
+    void ReloadScene();
+    bool ConfirmSaveIfDirty();
+    bool SaveSceneToPath(const std::filesystem::path& path);
+    bool LoadSceneFromPath(const std::filesystem::path& path);
     void RecreateRuntimeAndRenderer(bool enableValidation);
     void DestroyViewportRenderer();
     void AttachVulkanLogSink();

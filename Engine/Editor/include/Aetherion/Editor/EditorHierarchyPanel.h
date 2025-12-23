@@ -7,8 +7,6 @@
 
 class QTreeWidgetItem;
 
-class HierarchyTreeWidget;
-
 namespace Aetherion::Scene
 {
 class Scene;
@@ -17,6 +15,7 @@ class Scene;
 namespace Aetherion::Editor
 {
 class EditorSelection;
+class HierarchyTreeWidget;
 
 class EditorHierarchyPanel : public QWidget
 {

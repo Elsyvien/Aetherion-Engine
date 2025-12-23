@@ -1,5 +1,6 @@
 #include "Aetherion/Editor/EditorAssetBrowser.h"
 
+#include <QFont>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
@@ -17,7 +18,6 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
 
     auto* header = new QLabel(tr("Asset Browser"), this);
     m_list = new QListWidget(this);
-    m_list->addItems({tr("Textures/"), tr("Audio/"), tr("Scripts/"), tr("Prefabs/")});
 
     layout->addWidget(header);
     layout->addWidget(m_list, 1);
@@ -34,20 +34,50 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
             return;
         }
 
-        const QString text = current->text();
-        if (text.trimmed().isEmpty())
+        QString id = current->data(Qt::UserRole).toString();
+        if (id.trimmed().isEmpty())
+        {
+            id = current->text();
+        }
+        if (id.trimmed().isEmpty())
         {
             emit AssetSelectionCleared();
             return;
         }
-        emit AssetSelected(text);
+        emit AssetSelected(id);
     });
 
     connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem*) {
         emit AssetActivated();
     });
 
-    // TODO: Pull data from asset registry and support previews.
+    // TODO: Implement drag-and-drop and asset previews.
+}
+
+void EditorAssetBrowser::SetItems(const std::vector<Item>& items)
+{
+    if (!m_list)
+    {
+        return;
+    }
+
+    const bool signalsBlocked = m_list->blockSignals(true);
+    m_list->clear();
+
+    for (const auto& item : items)
+    {
+        auto* listItem = new QListWidgetItem(item.label, m_list);
+        listItem->setData(Qt::UserRole, item.id);
+        if (item.isHeader)
+        {
+            QFont font = listItem->font();
+            font.setBold(true);
+            listItem->setFont(font);
+        }
+    }
+
+    m_list->blockSignals(signalsBlocked);
+    emit AssetSelectionCleared();
 }
 
 void EditorAssetBrowser::ClearSelection()

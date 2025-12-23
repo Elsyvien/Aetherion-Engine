@@ -1,12 +1,13 @@
 #include "Aetherion/Editor/EditorInspectorPanel.h"
 
 #include <QLabel>
+#include <algorithm>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QScrollArea>
 #include <QVBoxLayout>
-#include <QFileInfo>
 
+#include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/TransformComponent.h"
@@ -51,6 +52,15 @@ void EditorInspectorPanel::SetSelectedAsset(QString assetId)
     RebuildUi();
 }
 
+void EditorInspectorPanel::SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry)
+{
+    m_assetRegistry = std::move(registry);
+    if (m_showingAsset)
+    {
+        RebuildUi();
+    }
+}
+
 void EditorInspectorPanel::RebuildUi()
 {
     if (!m_contentLayout)
@@ -93,13 +103,45 @@ void EditorInspectorPanel::RebuildUi()
             auto* form = new QFormLayout(formHost);
             form->setLabelAlignment(Qt::AlignLeft);
 
-            const QString type = displayName.endsWith('/') ? tr("Folder") : tr("Asset");
+            const bool isFolder = displayName.endsWith('/');
+            const QString type = isFolder ? tr("Folder") : tr("Asset");
             form->addRow(tr("Type"), new QLabel(type, formHost));
 
-            const QString normalized = displayName.endsWith('/') ? displayName.left(displayName.size() - 1) : displayName;
+            const QString normalized = isFolder ? displayName.left(displayName.size() - 1) : displayName;
             form->addRow(tr("Id"), new QLabel(normalized, formHost));
 
-            form->addRow(tr("Status"), new QLabel(tr("Placeholder (not backed by AssetRegistry yet)"), formHost));
+            const auto registry = m_assetRegistry;
+            const Assets::AssetRegistry::AssetEntry* entry = nullptr;
+            if (!isFolder && registry)
+            {
+                const std::string id = normalized.toStdString();
+                const auto& entries = registry->GetEntries();
+                const auto it = std::find_if(entries.begin(),
+                                             entries.end(),
+                                             [&id](const Assets::AssetRegistry::AssetEntry& asset) {
+                                                 return asset.id == id;
+                                             });
+                if (it != entries.end())
+                {
+                    entry = &(*it);
+                }
+            }
+
+            if (isFolder)
+            {
+                form->addRow(tr("Status"), new QLabel(tr("Category"), formHost));
+            }
+            else if (entry)
+            {
+                const QString pathLabel = QString::fromStdString(entry->path.generic_string());
+                form->addRow(tr("Path"), new QLabel(pathLabel, formHost));
+                form->addRow(tr("Status"), new QLabel(tr("Registered"), formHost));
+            }
+            else
+            {
+                const QString status = registry ? tr("Not found in registry") : tr("Asset registry unavailable");
+                form->addRow(tr("Status"), new QLabel(status, formHost));
+            }
 
             formHost->setLayout(form);
             m_contentLayout->addWidget(formHost);
@@ -185,6 +227,7 @@ void EditorInspectorPanel::RebuildUi()
                                   static_cast<float>(m_rotZ->value()),
                                   static_cast<float>(m_scaleX->value()),
                                   static_cast<float>(m_scaleY->value()));
+            emit sceneModified();
         };
 
         connect(m_posX, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
@@ -233,6 +276,7 @@ void EditorInspectorPanel::RebuildUi()
                            static_cast<float>(m_colorG->value()),
                            static_cast<float>(m_colorB->value()));
             mesh->SetRotationSpeedDegPerSec(static_cast<float>(m_meshRotationSpeed->value()));
+            emit sceneModified();
         };
 
         connect(m_colorR, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateMesh](double) { updateMesh(); });

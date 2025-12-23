@@ -35,6 +35,7 @@ public:
     [[nodiscard]] std::shared_ptr<EngineContext> GetContext() const noexcept;
 
     [[nodiscard]] std::shared_ptr<Scene::Scene> GetActiveScene() const noexcept;
+    void SetActiveScene(std::shared_ptr<Scene::Scene> scene);
     [[nodiscard]] bool IsValidationEnabled() const noexcept { return m_enableValidationLayers; }
     [[nodiscard]] bool IsVerboseLoggingEnabled() const noexcept { return m_enableVerboseLogging; }
 

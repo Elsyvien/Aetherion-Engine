@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QWidget>
+#include <QString>
+#include <vector>
 
 class QListWidget;
 
@@ -11,9 +13,17 @@ class EditorAssetBrowser : public QWidget
     Q_OBJECT
 
 public:
+    struct Item
+    {
+        QString label;
+        QString id;
+        bool isHeader{false};
+    };
+
     explicit EditorAssetBrowser(QWidget* parent = nullptr);
     ~EditorAssetBrowser() override = default;
 
+    void SetItems(const std::vector<Item>& items);
     void ClearSelection();
 
 signals:
@@ -21,7 +31,7 @@ signals:
     void AssetSelectionCleared();
     void AssetActivated();
 
-    // TODO: Hook into asset registry and implement drag-and-drop.
+    // TODO: Implement drag-and-drop and asset previews.
 
 private:
     QListWidget* m_list = nullptr;
