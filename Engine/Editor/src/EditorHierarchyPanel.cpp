@@ -1,8 +1,11 @@
 #include "Aetherion/Editor/EditorHierarchyPanel.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QDropEvent>
+#include <QKeyEvent>
 #include <QLabel>
+#include <QMenu>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -75,10 +78,15 @@ EditorHierarchyPanel::EditorHierarchyPanel(QWidget* parent)
 
     auto* header = new QLabel(tr("Hierarchy"), this);
     m_tree = new HierarchyTreeWidget(this);
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
 
     layout->addWidget(header);
     layout->addWidget(m_tree, 1);
     setLayout(layout);
+
+    setupContextMenu();
+
+    connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &EditorHierarchyPanel::showContextMenu);
 
     connect(m_tree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem* current, QTreeWidgetItem*) {
         if (!current)
@@ -264,6 +272,150 @@ void EditorHierarchyPanel::SetSelectedEntity(Aetherion::Core::EntityId id)
     m_updatingSelection = true;
     m_tree->setCurrentItem(item);
     m_updatingSelection = false;
+}
+
+Aetherion::Core::EntityId EditorHierarchyPanel::GetSelectedEntityId() const
+{
+    if (!m_tree)
+    {
+        return 0;
+    }
+    
+    QTreeWidgetItem* current = m_tree->currentItem();
+    if (!current)
+    {
+        return 0;
+    }
+    
+    const QVariant idData = current->data(0, Qt::UserRole);
+    if (!idData.isValid())
+    {
+        return 0;
+    }
+    
+    return static_cast<Aetherion::Core::EntityId>(idData.toULongLong());
+}
+
+void EditorHierarchyPanel::setupContextMenu()
+{
+    m_contextMenu = new QMenu(this);
+    
+    auto* createEmptyAction = m_contextMenu->addAction(tr("Create Empty"));
+    createEmptyAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N));
+    connect(createEmptyAction, &QAction::triggered, this, [this]() {
+        emit createEmptyEntityAtRootRequested();
+    });
+    
+    auto* createChildAction = m_contextMenu->addAction(tr("Create Empty Child"));
+    connect(createChildAction, &QAction::triggered, this, [this]() {
+        Core::EntityId id = GetSelectedEntityId();
+        if (id != 0)
+        {
+            emit createEmptyEntityRequested(id);
+        }
+        else
+        {
+            emit createEmptyEntityAtRootRequested();
+        }
+    });
+    
+    m_contextMenu->addSeparator();
+    
+    auto* duplicateAction = m_contextMenu->addAction(tr("Duplicate"));
+    duplicateAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
+    connect(duplicateAction, &QAction::triggered, this, [this]() {
+        Core::EntityId id = GetSelectedEntityId();
+        if (id != 0)
+        {
+            emit entityDuplicateRequested(id);
+        }
+    });
+    
+    auto* renameAction = m_contextMenu->addAction(tr("Rename"));
+    renameAction->setShortcut(QKeySequence(Qt::Key_F2));
+    connect(renameAction, &QAction::triggered, this, [this]() {
+        Core::EntityId id = GetSelectedEntityId();
+        if (id != 0)
+        {
+            emit entityRenameRequested(id);
+        }
+    });
+    
+    m_contextMenu->addSeparator();
+    
+    auto* deleteAction = m_contextMenu->addAction(tr("Delete"));
+    deleteAction->setShortcut(QKeySequence::Delete);
+    connect(deleteAction, &QAction::triggered, this, [this]() {
+        Core::EntityId id = GetSelectedEntityId();
+        if (id != 0)
+        {
+            emit entityDeleteRequested(id);
+        }
+    });
+}
+
+void EditorHierarchyPanel::showContextMenu(const QPoint& pos)
+{
+    QTreeWidgetItem* item = m_tree->itemAt(pos);
+    Core::EntityId entityId = 0;
+    
+    if (item)
+    {
+        const QVariant idData = item->data(0, Qt::UserRole);
+        if (idData.isValid())
+        {
+            entityId = static_cast<Core::EntityId>(idData.toULongLong());
+        }
+    }
+    
+    const bool hasSelection = entityId != 0;
+    
+    for (QAction* action : m_contextMenu->actions())
+    {
+        const QString text = action->text();
+        if (text == tr("Create Empty"))
+        {
+            action->setEnabled(true);
+        }
+        else if (!action->isSeparator())
+        {
+            action->setEnabled(hasSelection);
+        }
+    }
+    
+    m_contextMenu->exec(m_tree->mapToGlobal(pos));
+}
+
+void EditorHierarchyPanel::keyPressEvent(QKeyEvent* event)
+{
+    Core::EntityId id = GetSelectedEntityId();
+    
+    if (event->key() == Qt::Key_Delete && id != 0)
+    {
+        emit entityDeleteRequested(id);
+        event->accept();
+        return;
+    }
+    else if (event->key() == Qt::Key_F2 && id != 0)
+    {
+        emit entityRenameRequested(id);
+        event->accept();
+        return;
+    }
+    else if (event->key() == Qt::Key_D && (event->modifiers() & Qt::ControlModifier) && id != 0)
+    {
+        emit entityDuplicateRequested(id);
+        event->accept();
+        return;
+    }
+    else if (event->key() == Qt::Key_N && (event->modifiers() & Qt::ControlModifier) && (event->modifiers() & Qt::ShiftModifier))
+    {
+        emit createEmptyEntityAtRootRequested();
+        event->accept();
+        return;
+    }
+    
+    QWidget::keyPressEvent(event);
 }
 } // namespace Aetherion::Editor
 

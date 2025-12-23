@@ -197,7 +197,8 @@ bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path
             const auto color = mesh->GetColor();
             out << "          \"visible\": " << (mesh->IsVisible() ? "true" : "false") << ",\n";
             out << "          \"color\": [" << color[0] << ", " << color[1] << ", " << color[2] << "],\n";
-            out << "          \"rotationSpeed\": " << mesh->GetRotationSpeedDegPerSec() << "\n";
+            out << "          \"rotationSpeed\": " << mesh->GetRotationSpeedDegPerSec() << ",\n";
+            out << "          \"meshId\": \"" << mesh->GetMeshAssetId() << "\"\n";
             out << "        }";
         }
 
@@ -262,6 +263,7 @@ std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) 
         const auto visible = ExtractBool(block, "visible", true);
         const auto meshColor = ExtractFloatArray(block, "color");
         const auto rotationSpeed = ExtractFloat(block, "rotationSpeed");
+        const auto meshId = ExtractStringValue(block, "meshId");
         if (!meshColor.empty() || rotationSpeed.has_value() || block.find("MeshRenderer") != std::string::npos)
         {
             auto mesh = std::make_shared<MeshRendererComponent>();
@@ -273,6 +275,10 @@ std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) 
             if (rotationSpeed.has_value())
             {
                 mesh->SetRotationSpeedDegPerSec(*rotationSpeed);
+            }
+            if (!meshId.empty())
+            {
+                mesh->SetMeshAssetId(meshId);
             }
             entity->AddComponent(mesh);
         }

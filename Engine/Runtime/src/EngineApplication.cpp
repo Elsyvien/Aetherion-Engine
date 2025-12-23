@@ -300,6 +300,7 @@ private:
             instance.entityId = entity->GetId();
             instance.transform = transform.get();
             instance.mesh = mesh.get();
+            instance.meshAssetId = mesh->GetMeshAssetId();
             instance.hasModel = false;
             view->instances.push_back(instance);
 

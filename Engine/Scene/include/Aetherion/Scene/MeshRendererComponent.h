@@ -2,6 +2,7 @@
 
 #include <array>
 #include <string>
+#include <utility>
 
 #include "Aetherion/Scene/Component.h"
 
@@ -24,9 +25,13 @@ public:
     [[nodiscard]] float GetRotationSpeedDegPerSec() const noexcept { return m_rotationSpeedDegPerSec; }
     void SetRotationSpeedDegPerSec(float speed) noexcept;
 
+    [[nodiscard]] const std::string& GetMeshAssetId() const noexcept { return m_meshAssetId; }
+    void SetMeshAssetId(std::string assetId) { m_meshAssetId = std::move(assetId); }
+
 private:
     bool m_visible{true};
     std::array<float, 3> m_color{1.0f, 1.0f, 1.0f};
     float m_rotationSpeedDegPerSec{0.0f};
+    std::string m_meshAssetId;
 };
 } // namespace Aetherion::Scene

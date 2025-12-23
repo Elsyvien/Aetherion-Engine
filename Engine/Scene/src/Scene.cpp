@@ -5,6 +5,7 @@
 #include "Aetherion/Scene/System.h"
 #include "Aetherion/Scene/TransformComponent.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace Aetherion::Scene
@@ -22,6 +23,36 @@ void Scene::AddEntity(std::shared_ptr<Entity> entity)
 {
     // TODO: Route through ECS world to ensure deterministic ordering and ownership.
     m_entities.push_back(std::move(entity));
+}
+
+void Scene::RemoveEntity(Core::EntityId id)
+{
+    if (id == 0)
+    {
+        return;
+    }
+
+    // First, unparent any children of this entity
+    for (const auto& entity : m_entities)
+    {
+        if (!entity)
+        {
+            continue;
+        }
+        auto transform = entity->GetComponent<TransformComponent>();
+        if (transform && transform->GetParentId() == id)
+        {
+            transform->ClearParent();
+        }
+    }
+
+    // Remove the entity from the list
+    m_entities.erase(
+        std::remove_if(m_entities.begin(), m_entities.end(),
+                       [id](const std::shared_ptr<Entity>& e) {
+                           return e && e->GetId() == id;
+                       }),
+        m_entities.end());
 }
 
 const std::vector<std::shared_ptr<Entity>>& Scene::GetEntities() const noexcept

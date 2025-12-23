@@ -2,13 +2,13 @@
 
 #include <QLabel>
 #include <algorithm>
+#include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QFileInfo>
 #include <QImageReader>
 #include <QPixmap>
 #include <QScrollArea>
-#include <QStringList>
 #include <QVBoxLayout>
 
 #include "Aetherion/Assets/AssetRegistry.h"
@@ -101,7 +101,7 @@ void EditorInspectorPanel::SetSelectedAsset(QString assetId)
 void EditorInspectorPanel::SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry)
 {
     m_assetRegistry = std::move(registry);
-    if (m_showingAsset)
+    if (m_showingAsset || m_entity)
     {
         RebuildUi();
     }
@@ -134,6 +134,7 @@ void EditorInspectorPanel::RebuildUi()
     m_colorG = nullptr;
     m_colorB = nullptr;
     m_meshRotationSpeed = nullptr;
+    m_meshAsset = nullptr;
 
     if (!m_entity)
     {
@@ -209,31 +210,20 @@ void EditorInspectorPanel::RebuildUi()
 
                 if (registry && entry->type == Assets::AssetRegistry::AssetType::Mesh)
                 {
-                    const std::string meshId = entry->path.stem().string();
-                    const auto* mesh = registry->GetMesh(meshId);
-                    if (mesh)
+                    const auto* meshData = registry->LoadMeshData(entry->id);
+                    if (meshData)
                     {
-                        form->addRow(tr("Import Cache"), new QLabel(tr("Available"), formHost));
-                        if (!mesh->textureIds.empty())
-                        {
-                            QStringList textures;
-                            textures.reserve(static_cast<int>(mesh->textureIds.size()));
-                            for (const auto& tex : mesh->textureIds)
-                            {
-                                textures << QString::fromStdString(tex);
-                            }
-                            auto* textureLabel = new QLabel(textures.join(", "), formHost);
-                            textureLabel->setWordWrap(true);
-                            form->addRow(tr("Textures"), textureLabel);
-                        }
-                        else
-                        {
-                            form->addRow(tr("Textures"), new QLabel(tr("None cached"), formHost));
-                        }
+                        form->addRow(tr("Geometry"), new QLabel(tr("Loaded"), formHost));
+                        form->addRow(tr("Vertices"),
+                                     new QLabel(QString::number(static_cast<long long>(meshData->positions.size())),
+                                                formHost));
+                        form->addRow(tr("Indices"),
+                                     new QLabel(QString::number(static_cast<long long>(meshData->indices.size())),
+                                                formHost));
                     }
                     else
                     {
-                        form->addRow(tr("Import Cache"), new QLabel(tr("Not imported"), formHost));
+                        form->addRow(tr("Geometry"), new QLabel(tr("Not loaded"), formHost));
                     }
                 }
             }
@@ -358,6 +348,9 @@ void EditorInspectorPanel::RebuildUi()
         m_colorG = makeSpin(0.0, 1.0, 0.01);
         m_colorB = makeSpin(0.0, 1.0, 0.01);
         m_meshRotationSpeed = makeSpin(-720.0, 720.0, 1.0);
+        m_meshAsset = new QComboBox(m_content);
+        m_meshAsset->setEditable(true);
+        m_meshAsset->setInsertPolicy(QComboBox::NoInsert);
 
         auto color = mesh->GetColor();
         m_colorR->setValue(color[0]);
@@ -369,6 +362,33 @@ void EditorInspectorPanel::RebuildUi()
         form->addRow(tr("Color G"), m_colorG);
         form->addRow(tr("Color B"), m_colorB);
         form->addRow(tr("Rotation Speed (deg/s)"), m_meshRotationSpeed);
+        form->addRow(tr("Mesh Asset"), m_meshAsset);
+
+        m_meshAsset->addItem(tr("(None)"), QString());
+        if (m_assetRegistry)
+        {
+            for (const auto& entry : m_assetRegistry->GetEntries())
+            {
+                if (entry.type != Assets::AssetRegistry::AssetType::Mesh)
+                {
+                    continue;
+                }
+                const QString id = QString::fromStdString(entry.id);
+                m_meshAsset->addItem(id, id);
+            }
+        }
+
+        const QString currentMeshId = QString::fromStdString(mesh->GetMeshAssetId());
+        const int meshIndex = m_meshAsset->findData(currentMeshId);
+        if (meshIndex >= 0)
+        {
+            m_meshAsset->setCurrentIndex(meshIndex);
+        }
+        else if (!currentMeshId.isEmpty())
+        {
+            m_meshAsset->addItem(currentMeshId, currentMeshId);
+            m_meshAsset->setCurrentIndex(m_meshAsset->count() - 1);
+        }
 
         auto updateMesh = [this, mesh]() {
             if (m_buildingUi || !m_entity)
@@ -380,6 +400,12 @@ void EditorInspectorPanel::RebuildUi()
                            static_cast<float>(m_colorG->value()),
                            static_cast<float>(m_colorB->value()));
             mesh->SetRotationSpeedDegPerSec(static_cast<float>(m_meshRotationSpeed->value()));
+            if (m_meshAsset)
+            {
+                const QString meshId = m_meshAsset->currentText().trimmed();
+                const QString normalized = (meshId == tr("(None)")) ? QString() : meshId;
+                mesh->SetMeshAssetId(normalized.toStdString());
+            }
             emit sceneModified();
         };
 
@@ -387,6 +413,10 @@ void EditorInspectorPanel::RebuildUi()
         connect(m_colorG, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateMesh](double) { updateMesh(); });
         connect(m_colorB, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateMesh](double) { updateMesh(); });
         connect(m_meshRotationSpeed, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateMesh](double) { updateMesh(); });
+        if (m_meshAsset)
+        {
+            connect(m_meshAsset, &QComboBox::currentTextChanged, this, [updateMesh](const QString&) { updateMesh(); });
+        }
 
         formHost->setLayout(form);
         m_contentLayout->addWidget(formHost);

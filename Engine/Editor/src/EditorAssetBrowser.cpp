@@ -1,11 +1,19 @@
 #include "Aetherion/Editor/EditorAssetBrowser.h"
 
+#include <QAction>
+#include <QDesktopServices>
+#include <QDrag>
 #include <QFont>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMenu>
+#include <QMimeData>
 #include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <iostream>
@@ -30,11 +38,26 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
     headerLayout->addStretch(1);
     headerLayout->addWidget(m_rescanButton);
 
+    // Search/filter field
+    m_filterEdit = new QLineEdit(this);
+    m_filterEdit->setPlaceholderText(tr("Filter assets..."));
+    m_filterEdit->setClearButtonEnabled(true);
+
     m_list = new QListWidget(this);
+    m_list->setDragEnabled(true);
+    m_list->setDragDropMode(QAbstractItemView::DragOnly);
+    m_list->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_list->setContextMenuPolicy(Qt::CustomContextMenu);
 
     layout->addWidget(headerRow);
+    layout->addWidget(m_filterEdit);
     layout->addWidget(m_list, 1);
     setLayout(layout);
+
+    setupContextMenu();
+
+    connect(m_filterEdit, &QLineEdit::textChanged, this, &EditorAssetBrowser::onFilterTextChanged);
+    connect(m_list, &QListWidget::customContextMenuRequested, this, &EditorAssetBrowser::showContextMenu);
 
     connect(m_list, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* current, QListWidgetItem* previous) {
         const std::string cur = current ? current->text().toStdString() : std::string("<null>");
@@ -60,7 +83,19 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
         emit AssetSelected(id);
     });
 
-    connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem*) {
+    connect(m_list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item) {
+        if (item)
+        {
+            QString id = item->data(Qt::UserRole).toString();
+            if (id.trimmed().isEmpty())
+            {
+                id = item->text();
+            }
+            if (!id.trimmed().isEmpty() && !id.endsWith('/'))
+            {
+                emit AssetDroppedOnScene(id);
+            }
+        }
         emit AssetActivated();
     });
 
@@ -68,11 +103,15 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
     {
         connect(m_rescanButton, &QToolButton::clicked, this, &EditorAssetBrowser::RescanRequested);
     }
-
-    // TODO: Implement drag-and-drop and asset previews.
 }
 
-void EditorAssetBrowser::SetItems(const std::vector<Item>& items)
+void EditorAssetBrowser::onFilterTextChanged(const QString& text)
+{
+    m_filterText = text.trimmed().toLower();
+    updateVisibleItems();
+}
+
+void EditorAssetBrowser::updateVisibleItems()
 {
     if (!m_list)
     {
@@ -82,20 +121,62 @@ void EditorAssetBrowser::SetItems(const std::vector<Item>& items)
     const bool signalsBlocked = m_list->blockSignals(true);
     m_list->clear();
 
-    for (const auto& item : items)
+    QString currentCategory;
+    bool categoryHasVisibleItems = false;
+    QListWidgetItem* pendingHeader = nullptr;
+
+    for (const auto& item : m_allItems)
     {
-        auto* listItem = new QListWidgetItem(item.label, m_list);
-        listItem->setData(Qt::UserRole, item.id);
         if (item.isHeader)
         {
-            QFont font = listItem->font();
-            font.setBold(true);
-            listItem->setFont(font);
+            // Store header but don't add yet - only add if category has visible items
+            if (pendingHeader && categoryHasVisibleItems)
+            {
+                // Add previous header that had visible items
+            }
+            currentCategory = item.label;
+            categoryHasVisibleItems = false;
+            pendingHeader = nullptr;
+            
+            if (m_filterText.isEmpty())
+            {
+                auto* listItem = new QListWidgetItem(item.label, m_list);
+                listItem->setData(Qt::UserRole, item.id);
+                QFont font = listItem->font();
+                font.setBold(true);
+                listItem->setFont(font);
+                listItem->setFlags(listItem->flags() & ~Qt::ItemIsDragEnabled);
+            }
+            continue;
         }
+
+        // Check if item matches filter
+        if (!m_filterText.isEmpty())
+        {
+            if (!item.label.toLower().contains(m_filterText) && 
+                !item.id.toLower().contains(m_filterText))
+            {
+                continue;
+            }
+        }
+
+        categoryHasVisibleItems = true;
+
+        auto* listItem = new QListWidgetItem(item.label, m_list);
+        listItem->setData(Qt::UserRole, item.id);
+        
+        // Set drag data for the item
+        listItem->setFlags(listItem->flags() | Qt::ItemIsDragEnabled);
     }
 
     m_list->blockSignals(signalsBlocked);
     emit AssetSelectionCleared();
+}
+
+void EditorAssetBrowser::SetItems(const std::vector<Item>& items)
+{
+    m_allItems = items;
+    updateVisibleItems();
 }
 
 void EditorAssetBrowser::ClearSelection()
@@ -108,5 +189,136 @@ void EditorAssetBrowser::ClearSelection()
     m_list->clearSelection();
     m_list->blockSignals(signalsBlocked);
     emit AssetSelectionCleared();
+}
+
+QString EditorAssetBrowser::GetSelectedAssetId() const
+{
+    if (!m_list)
+    {
+        return QString();
+    }
+    
+    QListWidgetItem* current = m_list->currentItem();
+    if (!current)
+    {
+        return QString();
+    }
+    
+    QString id = current->data(Qt::UserRole).toString();
+    if (id.trimmed().isEmpty())
+    {
+        id = current->text();
+    }
+    
+    // Don't return header IDs
+    if (id.endsWith('/'))
+    {
+        return QString();
+    }
+    
+    return id;
+}
+
+void EditorAssetBrowser::setupContextMenu()
+{
+    m_contextMenu = new QMenu(this);
+    
+    auto* addToSceneAction = m_contextMenu->addAction(tr("Add to Scene"));
+    addToSceneAction->setShortcut(QKeySequence(Qt::Key_Return));
+    connect(addToSceneAction, &QAction::triggered, this, [this]() {
+        QString id = GetSelectedAssetId();
+        if (!id.isEmpty())
+        {
+            emit AssetDroppedOnScene(id);
+        }
+    });
+    
+    m_contextMenu->addSeparator();
+    
+    auto* showInExplorerAction = m_contextMenu->addAction(tr("Show in Explorer"));
+    connect(showInExplorerAction, &QAction::triggered, this, [this]() {
+        QString id = GetSelectedAssetId();
+        if (!id.isEmpty())
+        {
+            emit AssetShowInExplorerRequested(id);
+        }
+    });
+    
+    m_contextMenu->addSeparator();
+    
+    auto* renameAction = m_contextMenu->addAction(tr("Rename"));
+    renameAction->setShortcut(QKeySequence(Qt::Key_F2));
+    connect(renameAction, &QAction::triggered, this, [this]() {
+        QString id = GetSelectedAssetId();
+        if (!id.isEmpty())
+        {
+            emit AssetRenameRequested(id);
+        }
+    });
+    
+    auto* deleteAction = m_contextMenu->addAction(tr("Delete"));
+    deleteAction->setShortcut(QKeySequence::Delete);
+    connect(deleteAction, &QAction::triggered, this, [this]() {
+        QString id = GetSelectedAssetId();
+        if (!id.isEmpty())
+        {
+            emit AssetDeleteRequested(id);
+        }
+    });
+    
+    m_contextMenu->addSeparator();
+    
+    auto* refreshAction = m_contextMenu->addAction(tr("Refresh"));
+    refreshAction->setShortcut(QKeySequence::Refresh);
+    connect(refreshAction, &QAction::triggered, this, &EditorAssetBrowser::RescanRequested);
+}
+
+void EditorAssetBrowser::showContextMenu(const QPoint& pos)
+{
+    QListWidgetItem* item = m_list->itemAt(pos);
+    QString selectedId = item ? item->data(Qt::UserRole).toString() : QString();
+    
+    // Enable/disable actions based on selection
+    const bool hasSelection = !selectedId.isEmpty() && !selectedId.endsWith('/');
+    
+    for (QAction* action : m_contextMenu->actions())
+    {
+        if (action->text() == tr("Refresh"))
+        {
+            action->setEnabled(true);
+        }
+        else if (!action->isSeparator())
+        {
+            action->setEnabled(hasSelection);
+        }
+    }
+    
+    m_contextMenu->exec(m_list->mapToGlobal(pos));
+}
+
+void EditorAssetBrowser::keyPressEvent(QKeyEvent* event)
+{
+    QString id = GetSelectedAssetId();
+    
+    if (event->key() == Qt::Key_Delete && !id.isEmpty())
+    {
+        emit AssetDeleteRequested(id);
+        event->accept();
+        return;
+    }
+    else if (event->key() == Qt::Key_F2 && !id.isEmpty())
+    {
+        emit AssetRenameRequested(id);
+        event->accept();
+        return;
+    }
+    else if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && !id.isEmpty())
+    {
+        emit AssetDroppedOnScene(id);
+        event->accept();
+        return;
+    }
+    
+    QWidget::keyPressEvent(event);
 }
 } // namespace Aetherion::Editor

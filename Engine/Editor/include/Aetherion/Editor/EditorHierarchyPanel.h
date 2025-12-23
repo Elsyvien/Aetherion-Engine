@@ -6,6 +6,7 @@
 #include "Aetherion/Core/Types.h"
 
 class QTreeWidgetItem;
+class QMenu;
 
 namespace Aetherion::Scene
 {
@@ -28,14 +29,29 @@ public:
     void BindScene(std::shared_ptr<Scene::Scene> scene);
     void SetSelectionModel(EditorSelection* selection);
     void SetSelectedEntity(Aetherion::Core::EntityId id);
+    Aetherion::Core::EntityId GetSelectedEntityId() const;
 
 signals:
     void entitySelected(Aetherion::Core::EntityId id);
     void entityActivated(Aetherion::Core::EntityId id);
     void entityReparentRequested(Aetherion::Core::EntityId childId, Aetherion::Core::EntityId newParentId);
+    void entityDeleteRequested(Aetherion::Core::EntityId id);
+    void entityDuplicateRequested(Aetherion::Core::EntityId id);
+    void entityRenameRequested(Aetherion::Core::EntityId id);
+    void createEmptyEntityRequested(Aetherion::Core::EntityId parentId);
+    void createEmptyEntityAtRootRequested();
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
+
+private slots:
+    void showContextMenu(const QPoint& pos);
 
 private:
+    void setupContextMenu();
+
     HierarchyTreeWidget* m_tree = nullptr;
+    QMenu* m_contextMenu = nullptr;
     std::shared_ptr<Scene::Scene> m_scene;
     EditorSelection* m_selection = nullptr;
     QHash<qulonglong, QTreeWidgetItem*> m_itemLookup;

@@ -3,11 +3,15 @@
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDesktopServices>
+#include <QDir>
 #include <QDockWidget>
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QProcess>
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
@@ -16,6 +20,7 @@
 #include <QActionGroup>
 #include <QTimer>
 #include <QToolBar>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -38,6 +43,7 @@
 #include "Aetherion/Runtime/EngineApplication.h"
 
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/SceneSerializer.h"
 #include "Aetherion/Scene/TransformComponent.h"
@@ -236,9 +242,23 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
 
         try
         {
-            m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk);
+            auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+            m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk, registry);
             m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
             m_vulkanViewport->Initialize(reinterpret_cast<void*>(nativeHandle), width, height);
+            
+            // Sync camera from viewport widget
+            if (m_viewport)
+            {
+                m_vulkanViewport->SetCameraPosition(
+                    m_viewport->getCameraX(),
+                    m_viewport->getCameraY(),
+                    m_viewport->getCameraZ());
+                m_vulkanViewport->SetCameraRotation(
+                    m_viewport->getCameraRotationY(),
+                    m_viewport->getCameraRotationX());
+                m_vulkanViewport->SetCameraZoom(m_viewport->getCameraZoom());
+            }
         }
         catch (const std::exception& ex)
         {
@@ -274,6 +294,21 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                 AppendConsole(m_console, QString::fromStdString(ex.what()), ConsoleSeverity::Error);
                 statusBar()->showMessage(tr("Viewport resize failed: %1").arg(QString::fromStdString(ex.what())));
             }
+        }
+    });
+
+    // Connect camera changes from viewport to renderer
+    connect(m_viewport, &EditorViewport::cameraChanged, this, [this]() {
+        if (m_vulkanViewport)
+        {
+            m_vulkanViewport->SetCameraPosition(
+                m_viewport->getCameraX(),
+                m_viewport->getCameraY(),
+                m_viewport->getCameraZ());
+            m_vulkanViewport->SetCameraRotation(
+                m_viewport->getCameraRotationY(),
+                m_viewport->getCameraRotationX());
+            m_vulkanViewport->SetCameraZoom(m_viewport->getCameraZoom());
         }
     });
 
@@ -389,6 +424,15 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                         m_hierarchyPanel->SetSelectedEntity(childId);
                     }
                 });
+        
+        // Connect hierarchy context menu actions
+        connect(m_hierarchyPanel, &EditorHierarchyPanel::entityDeleteRequested, this, &EditorMainWindow::DeleteEntity);
+        connect(m_hierarchyPanel, &EditorHierarchyPanel::entityDuplicateRequested, this, &EditorMainWindow::DuplicateEntity);
+        connect(m_hierarchyPanel, &EditorHierarchyPanel::entityRenameRequested, this, &EditorMainWindow::RenameEntity);
+        connect(m_hierarchyPanel, &EditorHierarchyPanel::createEmptyEntityRequested, this, &EditorMainWindow::CreateEmptyEntity);
+        connect(m_hierarchyPanel, &EditorHierarchyPanel::createEmptyEntityAtRootRequested, this, [this]() {
+            CreateEmptyEntity(0);
+        });
     }
 
     if (m_inspectorPanel)
@@ -425,6 +469,10 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
             }
         });
         connect(m_assetBrowser, &EditorAssetBrowser::RescanRequested, this, &EditorMainWindow::RescanAssets);
+        connect(m_assetBrowser, &EditorAssetBrowser::AssetDroppedOnScene, this, &EditorMainWindow::AddAssetToScene);
+        connect(m_assetBrowser, &EditorAssetBrowser::AssetDeleteRequested, this, &EditorMainWindow::DeleteAsset);
+        connect(m_assetBrowser, &EditorAssetBrowser::AssetRenameRequested, this, &EditorMainWindow::RenameAsset);
+        connect(m_assetBrowser, &EditorAssetBrowser::AssetShowInExplorerRequested, this, &EditorMainWindow::ShowAssetInExplorer);
     }
 }
 
@@ -549,6 +597,26 @@ void EditorMainWindow::CreateMenuBarContent()
         restoreState(m_defaultLayoutState);
         m_defaultLayoutState = saveState();
         SaveLayout();
+    });
+
+    auto* resetCameraAction = viewMenu->addAction(tr("Reset Camera"));
+    resetCameraAction->setShortcut(QKeySequence(Qt::Key_Home));
+    connect(resetCameraAction, &QAction::triggered, this, [this] {
+        if (m_viewport)
+        {
+            m_viewport->resetCamera();
+        }
+        if (m_vulkanViewport)
+        {
+            m_vulkanViewport->ResetCamera();
+        }
+        statusBar()->showMessage(tr("Camera reset"), 2000);
+    });
+
+    auto* focusOnSelectionAction = viewMenu->addAction(tr("Focus on Selection"));
+    focusOnSelectionAction->setShortcut(QKeySequence(Qt::Key_F));
+    connect(focusOnSelectionAction, &QAction::triggered, this, [this] {
+        FocusCameraOnSelection();
     });
 
     auto* helpMenu = menuBar()->addMenu(tr("&Help"));
@@ -896,6 +964,444 @@ void EditorMainWindow::ImportGltfAsset()
     statusBar()->showMessage(success, 3000);
 }
 
+void EditorMainWindow::AddAssetToScene(const QString& assetId)
+{
+    if (assetId.isEmpty() || !m_scene)
+    {
+        statusBar()->showMessage(tr("Cannot add asset: no active scene"), 2000);
+        return;
+    }
+
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+    if (!registry)
+    {
+        statusBar()->showMessage(tr("Asset registry unavailable"), 2000);
+        return;
+    }
+
+    const std::string idStr = assetId.toStdString();
+    const auto* entry = registry->FindEntry(idStr);
+    if (!entry)
+    {
+        statusBar()->showMessage(tr("Asset not found: %1").arg(assetId), 2000);
+        return;
+    }
+
+    // Only mesh assets can be added to the scene directly
+    if (entry->type != Assets::AssetRegistry::AssetType::Mesh)
+    {
+        statusBar()->showMessage(tr("Only mesh assets can be added to scene"), 2000);
+        return;
+    }
+
+    // Generate a unique entity ID
+    Core::EntityId newId = 1;
+    for (const auto& entity : m_scene->GetEntities())
+    {
+        if (entity && entity->GetId() >= newId)
+        {
+            newId = entity->GetId() + 1;
+        }
+    }
+
+    // Create the entity name from asset path
+    std::filesystem::path assetPath(idStr);
+    std::string entityName = assetPath.stem().string();
+    if (entityName.empty())
+    {
+        entityName = "New Entity";
+    }
+
+    // Create entity with transform and mesh renderer
+    auto newEntity = std::make_shared<Scene::Entity>(newId, entityName);
+    
+    auto transform = std::make_shared<Scene::TransformComponent>();
+    transform->SetPosition(0.0f, 0.0f);
+    transform->SetScale(1.0f, 1.0f);
+    
+    auto meshRenderer = std::make_shared<Scene::MeshRendererComponent>();
+    meshRenderer->SetMeshAssetId(idStr);
+    meshRenderer->SetColor(1.0f, 1.0f, 1.0f);
+    
+    newEntity->AddComponent(transform);
+    newEntity->AddComponent(meshRenderer);
+    
+    m_scene->AddEntity(newEntity);
+
+    // Update UI
+    if (m_hierarchyPanel)
+    {
+        m_hierarchyPanel->BindScene(m_scene);
+        m_hierarchyPanel->SetSelectedEntity(newId);
+    }
+    
+    if (m_selection)
+    {
+        m_selection->SelectEntity(newEntity);
+    }
+
+    SetSceneDirty(true);
+    
+    const QString msg = tr("Added '%1' to scene as entity '%2'").arg(assetId).arg(QString::fromStdString(entityName));
+    AppendConsole(m_console, msg, ConsoleSeverity::Info);
+    statusBar()->showMessage(msg, 3000);
+}
+
+void EditorMainWindow::DeleteAsset(const QString& assetId)
+{
+    if (assetId.isEmpty())
+    {
+        return;
+    }
+
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+    if (!registry)
+    {
+        statusBar()->showMessage(tr("Asset registry unavailable"), 2000);
+        return;
+    }
+
+    const std::string idStr = assetId.toStdString();
+    const auto* entry = registry->FindEntry(idStr);
+    if (!entry)
+    {
+        statusBar()->showMessage(tr("Asset not found: %1").arg(assetId), 2000);
+        return;
+    }
+
+    // Confirm deletion
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        tr("Delete Asset"),
+        tr("Are you sure you want to delete '%1'?\n\nThis will remove the file from disk.").arg(assetId),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+
+    if (reply != QMessageBox::Yes)
+    {
+        return;
+    }
+
+    // Delete the file
+    std::error_code ec;
+    if (std::filesystem::exists(entry->path, ec) && std::filesystem::remove(entry->path, ec))
+    {
+        AppendConsole(m_console, tr("Deleted asset: %1").arg(assetId), ConsoleSeverity::Info);
+        statusBar()->showMessage(tr("Asset deleted: %1").arg(assetId), 3000);
+        RescanAssets();
+    }
+    else
+    {
+        AppendConsole(m_console, tr("Failed to delete asset: %1").arg(assetId), ConsoleSeverity::Error);
+        statusBar()->showMessage(tr("Failed to delete asset"), 2000);
+    }
+}
+
+void EditorMainWindow::RenameAsset(const QString& assetId)
+{
+    if (assetId.isEmpty())
+    {
+        return;
+    }
+
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+    if (!registry)
+    {
+        statusBar()->showMessage(tr("Asset registry unavailable"), 2000);
+        return;
+    }
+
+    const std::string idStr = assetId.toStdString();
+    const auto* entry = registry->FindEntry(idStr);
+    if (!entry)
+    {
+        statusBar()->showMessage(tr("Asset not found: %1").arg(assetId), 2000);
+        return;
+    }
+
+    std::filesystem::path oldPath(entry->path);
+    QString oldName = QString::fromStdString(oldPath.stem().string());
+    QString extension = QString::fromStdString(oldPath.extension().string());
+
+    bool ok = false;
+    QString newName = QInputDialog::getText(
+        this,
+        tr("Rename Asset"),
+        tr("Enter new name:"),
+        QLineEdit::Normal,
+        oldName,
+        &ok);
+
+    if (!ok || newName.isEmpty() || newName == oldName)
+    {
+        return;
+    }
+
+    std::filesystem::path newPath = oldPath.parent_path() / (newName.toStdString() + extension.toStdString());
+
+    std::error_code ec;
+    if (std::filesystem::exists(newPath, ec))
+    {
+        QMessageBox::warning(this, tr("Rename Failed"), tr("A file with that name already exists."));
+        return;
+    }
+
+    std::filesystem::rename(oldPath, newPath, ec);
+    if (ec)
+    {
+        AppendConsole(m_console, tr("Failed to rename asset: %1").arg(QString::fromStdString(ec.message())), ConsoleSeverity::Error);
+        return;
+    }
+
+    AppendConsole(m_console, tr("Renamed asset: %1 -> %2").arg(oldName).arg(newName), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Asset renamed"), 3000);
+    RescanAssets();
+}
+
+void EditorMainWindow::ShowAssetInExplorer(const QString& assetId)
+{
+    if (assetId.isEmpty())
+    {
+        return;
+    }
+
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+    if (!registry)
+    {
+        statusBar()->showMessage(tr("Asset registry unavailable"), 2000);
+        return;
+    }
+
+    const std::string idStr = assetId.toStdString();
+    const auto* entry = registry->FindEntry(idStr);
+    if (!entry)
+    {
+        statusBar()->showMessage(tr("Asset not found: %1").arg(assetId), 2000);
+        return;
+    }
+
+    QString filePath = QString::fromStdString(entry->path.string());
+    
+#ifdef Q_OS_WIN
+    QProcess::startDetached("explorer.exe", {"/select,", QDir::toNativeSeparators(filePath)});
+#elif defined(Q_OS_MAC)
+    QProcess::startDetached("open", {"-R", filePath});
+#else
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QString::fromStdString(entry->path.parent_path().string())));
+#endif
+}
+
+void EditorMainWindow::DeleteEntity(Aetherion::Core::EntityId id)
+{
+    if (id == 0 || !m_scene)
+    {
+        return;
+    }
+
+    auto entity = m_scene->GetEntityById(id);
+    if (!entity)
+    {
+        statusBar()->showMessage(tr("Entity not found"), 2000);
+        return;
+    }
+
+    QString entityName = QString::fromStdString(entity->GetName());
+
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        tr("Delete Entity"),
+        tr("Are you sure you want to delete '%1'?").arg(entityName),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+
+    if (reply != QMessageBox::Yes)
+    {
+        return;
+    }
+
+    m_scene->RemoveEntity(id);
+    SetSceneDirty(true);
+
+    if (m_selection)
+    {
+        m_selection->Clear();
+    }
+
+    if (m_hierarchyPanel)
+    {
+        m_hierarchyPanel->BindScene(m_scene);
+    }
+
+    AppendConsole(m_console, tr("Deleted entity: %1").arg(entityName), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Entity deleted: %1").arg(entityName), 3000);
+}
+
+void EditorMainWindow::DuplicateEntity(Aetherion::Core::EntityId id)
+{
+    if (id == 0 || !m_scene)
+    {
+        return;
+    }
+
+    auto sourceEntity = m_scene->GetEntityById(id);
+    if (!sourceEntity)
+    {
+        statusBar()->showMessage(tr("Entity not found"), 2000);
+        return;
+    }
+
+    // Generate a unique entity ID
+    Core::EntityId newId = 1;
+    for (const auto& entity : m_scene->GetEntities())
+    {
+        if (entity && entity->GetId() >= newId)
+        {
+            newId = entity->GetId() + 1;
+        }
+    }
+
+    std::string newName = sourceEntity->GetName() + " (Copy)";
+    auto newEntity = std::make_shared<Scene::Entity>(newId, newName);
+
+    // Copy transform component
+    auto sourceTransform = sourceEntity->GetComponent<Scene::TransformComponent>();
+    if (sourceTransform)
+    {
+        auto transform = std::make_shared<Scene::TransformComponent>();
+        float px = sourceTransform->GetPositionX();
+        float py = sourceTransform->GetPositionY();
+        transform->SetPosition(px + 0.5f, py);  // Offset slightly
+        float sx = sourceTransform->GetScaleX();
+        float sy = sourceTransform->GetScaleY();
+        transform->SetScale(sx, sy);
+        transform->SetRotationZDegrees(sourceTransform->GetRotationZDegrees());
+        newEntity->AddComponent(transform);
+    }
+
+    // Copy mesh renderer component
+    auto sourceMesh = sourceEntity->GetComponent<Scene::MeshRendererComponent>();
+    if (sourceMesh)
+    {
+        auto meshRenderer = std::make_shared<Scene::MeshRendererComponent>();
+        meshRenderer->SetMeshAssetId(sourceMesh->GetMeshAssetId());
+        auto [r, g, b] = sourceMesh->GetColor();
+        meshRenderer->SetColor(r, g, b);
+        newEntity->AddComponent(meshRenderer);
+    }
+
+    m_scene->AddEntity(newEntity);
+    SetSceneDirty(true);
+
+    if (m_hierarchyPanel)
+    {
+        m_hierarchyPanel->BindScene(m_scene);
+        m_hierarchyPanel->SetSelectedEntity(newId);
+    }
+
+    if (m_selection)
+    {
+        m_selection->SelectEntity(newEntity);
+    }
+
+    AppendConsole(m_console, tr("Duplicated entity: %1").arg(QString::fromStdString(newName)), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Entity duplicated"), 3000);
+}
+
+void EditorMainWindow::RenameEntity(Aetherion::Core::EntityId id)
+{
+    if (id == 0 || !m_scene)
+    {
+        return;
+    }
+
+    auto entity = m_scene->GetEntityById(id);
+    if (!entity)
+    {
+        statusBar()->showMessage(tr("Entity not found"), 2000);
+        return;
+    }
+
+    QString oldName = QString::fromStdString(entity->GetName());
+
+    bool ok = false;
+    QString newName = QInputDialog::getText(
+        this,
+        tr("Rename Entity"),
+        tr("Enter new name:"),
+        QLineEdit::Normal,
+        oldName,
+        &ok);
+
+    if (!ok || newName.isEmpty() || newName == oldName)
+    {
+        return;
+    }
+
+    entity->SetName(newName.toStdString());
+    SetSceneDirty(true);
+
+    if (m_hierarchyPanel)
+    {
+        m_hierarchyPanel->BindScene(m_scene);
+        m_hierarchyPanel->SetSelectedEntity(id);
+    }
+
+    AppendConsole(m_console, tr("Renamed entity: %1 -> %2").arg(oldName).arg(newName), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Entity renamed"), 3000);
+}
+
+void EditorMainWindow::CreateEmptyEntity(Aetherion::Core::EntityId parentId)
+{
+    if (!m_scene)
+    {
+        statusBar()->showMessage(tr("No active scene"), 2000);
+        return;
+    }
+
+    // Generate a unique entity ID
+    Core::EntityId newId = 1;
+    for (const auto& entity : m_scene->GetEntities())
+    {
+        if (entity && entity->GetId() >= newId)
+        {
+            newId = entity->GetId() + 1;
+        }
+    }
+
+    auto newEntity = std::make_shared<Scene::Entity>(newId, "New Entity");
+
+    auto transform = std::make_shared<Scene::TransformComponent>();
+    transform->SetPosition(0.0f, 0.0f);
+    transform->SetScale(1.0f, 1.0f);
+    
+    if (parentId != 0)
+    {
+        transform->SetParent(parentId);
+    }
+
+    newEntity->AddComponent(transform);
+    m_scene->AddEntity(newEntity);
+    SetSceneDirty(true);
+
+    if (m_hierarchyPanel)
+    {
+        m_hierarchyPanel->BindScene(m_scene);
+        m_hierarchyPanel->SetSelectedEntity(newId);
+    }
+
+    if (m_selection)
+    {
+        m_selection->SelectEntity(newEntity);
+    }
+
+    AppendConsole(m_console, tr("Created new entity"), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Entity created"), 3000);
+}
+
 void EditorMainWindow::SaveScene()
 {
     if (m_scenePath.empty())
@@ -1093,11 +1599,26 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
             try
             {
                 DestroyViewportRenderer();
-                m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk);
+                auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+                m_vulkanViewport = std::make_unique<Rendering::VulkanViewport>(vk, registry);
                 m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
                 m_vulkanViewport->Initialize(reinterpret_cast<void*>(m_surfaceHandle),
                                              m_surfaceSize.width(),
                                              m_surfaceSize.height());
+                
+                // Sync camera from viewport widget
+                if (m_viewport)
+                {
+                    m_vulkanViewport->SetCameraPosition(
+                        m_viewport->getCameraX(),
+                        m_viewport->getCameraY(),
+                        m_viewport->getCameraZ());
+                    m_vulkanViewport->SetCameraRotation(
+                        m_viewport->getCameraRotationY(),
+                        m_viewport->getCameraRotationX());
+                    m_vulkanViewport->SetCameraZoom(m_viewport->getCameraZoom());
+                }
+                
                 if (m_vulkanViewport->IsReady())
                 {
                     m_frameTimer.restart();
@@ -1619,5 +2140,40 @@ void EditorMainWindow::RefreshSelectedEntityUi()
             m_hierarchyPanel->SetSelectedEntity(entity->GetId());
         }
     }
+}
+
+void EditorMainWindow::FocusCameraOnSelection()
+{
+    if (!m_selection)
+    {
+        statusBar()->showMessage(tr("No entity selected"), 2000);
+        return;
+    }
+
+    auto entity = m_selection->GetSelectedEntity();
+    if (!entity)
+    {
+        statusBar()->showMessage(tr("No entity selected"), 2000);
+        return;
+    }
+
+    auto transform = entity->GetComponent<Scene::TransformComponent>();
+    if (!transform)
+    {
+        statusBar()->showMessage(tr("Selected entity has no transform"), 2000);
+        return;
+    }
+
+    // Set the camera to focus on the selected entity's position
+    const float targetX = transform->GetPositionX();
+    const float targetY = transform->GetPositionY();
+    
+    if (m_vulkanViewport)
+    {
+        m_vulkanViewport->SetCameraPosition(targetX, targetY, 5.0f);
+        m_vulkanViewport->SetCameraZoom(1.0f);
+    }
+
+    statusBar()->showMessage(tr("Focused on '%1'").arg(QString::fromStdString(entity->GetName())), 2000);
 }
 } // namespace Aetherion::Editor

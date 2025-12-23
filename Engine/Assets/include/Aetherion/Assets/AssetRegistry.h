@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -44,6 +46,12 @@ public:
         std::filesystem::path path;
     };
 
+    struct MeshData
+    {
+        std::vector<std::array<float, 3>> positions;
+        std::vector<std::uint32_t> indices;
+    };
+
     struct CachedMesh
     {
         std::string id;
@@ -59,9 +67,11 @@ public:
         std::string message;
     };
 
-    [[nodiscard]] GltfImportResult ImportGltf(const std::string& gltfPath);
-    [[nodiscard]] const CachedMesh* GetMesh(const std::string& id) const;
-    [[nodiscard]] const CachedTexture* GetTexture(const std::string& id) const;
+    [[nodiscard]] GltfImportResult ImportGltf(const std::string& gltfPath);     
+    [[nodiscard]] const CachedMesh* GetMesh(const std::string& id) const;       
+    [[nodiscard]] const CachedTexture* GetTexture(const std::string& id) const; 
+    [[nodiscard]] const MeshData* GetMeshData(const std::string& assetId) const noexcept;
+    [[nodiscard]] const MeshData* LoadMeshData(const std::string& assetId);
 
     // TODO: Replace string identifiers with strong asset handles/UUIDs.
     // TODO: Add import pipeline hooks and metadata caching.
@@ -69,6 +79,7 @@ private:
     std::unordered_map<std::string, std::string> m_placeholderAssets;
     std::unordered_map<std::string, CachedMesh> m_meshes;
     std::unordered_map<std::string, CachedTexture> m_textures;
+    std::unordered_map<std::string, MeshData> m_meshData;
     std::filesystem::path m_rootPath;
     std::vector<AssetEntry> m_entries;
     std::unordered_map<std::string, size_t> m_entryLookup;

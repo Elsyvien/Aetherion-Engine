@@ -8,6 +8,7 @@
 #include <QMainWindow>
 #include <QSize>
 
+#include "Aetherion/Core/Types.h"
 #include "Aetherion/Editor/EditorSettings.h"
 
 class QAction;
@@ -129,6 +130,14 @@ private:
     void RefreshAssetBrowser();
     void RescanAssets();
     void ImportGltfAsset();
+    void AddAssetToScene(const QString& assetId);
+    void DeleteAsset(const QString& assetId);
+    void RenameAsset(const QString& assetId);
+    void ShowAssetInExplorer(const QString& assetId);
+    void DeleteEntity(Aetherion::Core::EntityId id);
+    void DuplicateEntity(Aetherion::Core::EntityId id);
+    void RenameEntity(Aetherion::Core::EntityId id);
+    void CreateEmptyEntity(Aetherion::Core::EntityId parentId);
     void SaveScene();
     void ReloadScene();
     bool ConfirmSaveIfDirty();
@@ -148,6 +157,7 @@ private:
     void ApplyTranslationDelta(float dx, float dy);
     void ApplyRotationDelta(float deltaDeg);
     void ApplyScaleDelta(float deltaUniform);
+    void FocusCameraOnSelection();
     void RefreshSelectedEntityUi();
 
 protected:

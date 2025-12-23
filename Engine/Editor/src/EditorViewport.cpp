@@ -3,8 +3,12 @@
 #include <QVBoxLayout>
 #include <QResizeEvent>
 #include <QShowEvent>
+#include <QMouseEvent>
+#include <QWheelEvent>
+#include <QKeyEvent>
 #include <QTimer>
 #include <QWindow>
+#include <cmath>
 
 namespace Aetherion::Editor
 {
@@ -14,6 +18,8 @@ EditorViewport::EditorViewport(QWidget* parent)
     // Ensure the viewport widget itself expands.
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMinimumSize(100, 100);
+    setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -27,6 +33,7 @@ EditorViewport::EditorViewport(QWidget* parent)
     m_surface->setAttribute(Qt::WA_OpaquePaintEvent, true);
     m_surface->setAttribute(Qt::WA_NoSystemBackground, true);
     m_surface->setAutoFillBackground(false);
+    m_surface->setMouseTracking(true);
     
     // Policy for proper resizing - container must expand to fill layout
     m_surface->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -52,11 +59,24 @@ EditorViewport::EditorViewport(QWidget* parent)
             emit surfaceResized(surfaceSize.width(), surfaceSize.height());
         }
     });
+
+    resetCamera();
 }
 
 EditorViewport::~EditorViewport()
 {
     // m_surface is a child widget, automatically deleted.
+}
+
+void EditorViewport::resetCamera()
+{
+    m_cameraX = 0.0f;
+    m_cameraY = 0.0f;
+    m_cameraZ = 5.0f;
+    m_cameraRotationY = 30.0f;  // Slight yaw for 3D view
+    m_cameraRotationX = 25.0f;  // Slight pitch for 3D view
+    m_cameraZoom = 1.0f;
+    emit cameraChanged();
 }
 
 void EditorViewport::showEvent(QShowEvent* e)
@@ -94,5 +114,159 @@ void EditorViewport::resizeEvent(QResizeEvent* e)
     {
         m_resizeDebounceTimer->start();
     }
+}
+
+void EditorViewport::mousePressEvent(QMouseEvent* e)
+{
+    m_lastMousePos = e->pos();
+    
+    if (e->button() == Qt::MiddleButton)
+    {
+        // Middle button: pan
+        m_isPanning = true;
+        e->accept();
+        return;
+    }
+    else if (e->button() == Qt::RightButton)
+    {
+        // Right button: rotate
+        m_isRotating = true;
+        e->accept();
+        return;
+    }
+
+    QWidget::mousePressEvent(e);
+}
+
+void EditorViewport::mouseReleaseEvent(QMouseEvent* e)
+{
+    if (e->button() == Qt::MiddleButton)
+    {
+        m_isPanning = false;
+        e->accept();
+        return;
+    }
+    else if (e->button() == Qt::RightButton)
+    {
+        m_isRotating = false;
+        e->accept();
+        return;
+    }
+
+    QWidget::mouseReleaseEvent(e);
+}
+
+void EditorViewport::mouseMoveEvent(QMouseEvent* e)
+{
+    const QPoint delta = e->pos() - m_lastMousePos;
+    m_lastMousePos = e->pos();
+
+    if (m_isPanning)
+    {
+        // Pan the camera
+        const float panSpeed = 0.01f * m_cameraZoom;
+        
+        // Convert screen delta to world delta based on camera rotation
+        const float yawRad = m_cameraRotationY * 3.14159265f / 180.0f;
+        const float dx = delta.x() * panSpeed;
+        const float dy = delta.y() * panSpeed;
+        
+        m_cameraX -= dx * std::cos(yawRad);
+        m_cameraZ -= dx * std::sin(yawRad);
+        m_cameraY += dy;
+        
+        emit cameraChanged();
+        e->accept();
+        return;
+    }
+    else if (m_isRotating)
+    {
+        // Rotate the camera (orbit)
+        const float rotateSpeed = 0.3f;
+        m_cameraRotationY += delta.x() * rotateSpeed;
+        m_cameraRotationX += delta.y() * rotateSpeed;
+        
+        // Clamp pitch to prevent gimbal lock
+        if (m_cameraRotationX > 89.0f) m_cameraRotationX = 89.0f;
+        if (m_cameraRotationX < -89.0f) m_cameraRotationX = -89.0f;
+        
+        emit cameraChanged();
+        e->accept();
+        return;
+    }
+
+    QWidget::mouseMoveEvent(e);
+}
+
+void EditorViewport::wheelEvent(QWheelEvent* e)
+{
+    // Zoom in/out
+    const float zoomSpeed = 0.001f;
+    const float delta = e->angleDelta().y() * zoomSpeed;
+    
+    m_cameraZoom *= (1.0f - delta);
+    
+    // Clamp zoom
+    if (m_cameraZoom < 0.1f) m_cameraZoom = 0.1f;
+    if (m_cameraZoom > 10.0f) m_cameraZoom = 10.0f;
+    
+    emit cameraChanged();
+    e->accept();
+}
+
+void EditorViewport::keyPressEvent(QKeyEvent* e)
+{
+    const float moveSpeed = 0.1f * m_cameraZoom;
+    const float yawRad = m_cameraRotationY * 3.14159265f / 180.0f;
+    bool handled = true;
+
+    switch (e->key())
+    {
+    case Qt::Key_W:
+        // Move forward (into the scene)
+        m_cameraX -= moveSpeed * std::sin(yawRad);
+        m_cameraZ -= moveSpeed * std::cos(yawRad);
+        break;
+    case Qt::Key_S:
+        // Move backward
+        m_cameraX += moveSpeed * std::sin(yawRad);
+        m_cameraZ += moveSpeed * std::cos(yawRad);
+        break;
+    case Qt::Key_A:
+        // Strafe left
+        m_cameraX -= moveSpeed * std::cos(yawRad);
+        m_cameraZ += moveSpeed * std::sin(yawRad);
+        break;
+    case Qt::Key_D:
+        // Strafe right
+        m_cameraX += moveSpeed * std::cos(yawRad);
+        m_cameraZ -= moveSpeed * std::sin(yawRad);
+        break;
+    case Qt::Key_Q:
+        // Move down
+        m_cameraY -= moveSpeed;
+        break;
+    case Qt::Key_E:
+        // Move up
+        m_cameraY += moveSpeed;
+        break;
+    default:
+        handled = false;
+        break;
+    }
+
+    if (handled)
+    {
+        emit cameraChanged();
+        e->accept();
+        return;
+    }
+
+    QWidget::keyPressEvent(e);
+}
+
+void EditorViewport::keyReleaseEvent(QKeyEvent* e)
+{
+    QWidget::keyReleaseEvent(e);
 }
 } // namespace Aetherion::Editor

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -18,6 +19,7 @@ struct RenderInstance
     Core::EntityId entityId{0};
     const Scene::TransformComponent* transform{nullptr};
     const Scene::MeshRendererComponent* mesh{nullptr};
+    std::string meshAssetId;
     float model[16]{};
     bool hasModel{false};
 };

@@ -6,6 +6,8 @@
 
 class QListWidget;
 class QToolButton;
+class QLineEdit;
+class QMenu;
 
 namespace Aetherion::Editor
 {
@@ -26,17 +28,34 @@ public:
 
     void SetItems(const std::vector<Item>& items);
     void ClearSelection();
+    QString GetSelectedAssetId() const;
 
 signals:
     void AssetSelected(const QString& assetId);
     void AssetSelectionCleared();
     void AssetActivated();
     void RescanRequested();
+    void AssetDroppedOnScene(const QString& assetId);
+    void AssetDeleteRequested(const QString& assetId);
+    void AssetRenameRequested(const QString& assetId);
+    void AssetShowInExplorerRequested(const QString& assetId);
 
-    // TODO: Implement drag-and-drop and asset previews.
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
+
+private slots:
+    void onFilterTextChanged(const QString& text);
+    void showContextMenu(const QPoint& pos);
 
 private:
+    void updateVisibleItems();
+    void setupContextMenu();
+
     QListWidget* m_list = nullptr;
     QToolButton* m_rescanButton = nullptr;
+    QLineEdit* m_filterEdit = nullptr;
+    QMenu* m_contextMenu = nullptr;
+    std::vector<Item> m_allItems;
+    QString m_filterText;
 };
 } // namespace Aetherion::Editor

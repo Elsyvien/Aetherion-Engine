@@ -130,6 +130,7 @@ target_include_directories(AetherionRuntime
         Engine/Physics/include
         Engine/Audio/include
         Engine/Scripting/include
+        Engine/ThirdParty
 )
 target_compile_features(AetherionRuntime PRIVATE cxx_std_20)
 target_link_libraries(AetherionRuntime

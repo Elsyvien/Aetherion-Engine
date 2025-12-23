@@ -27,8 +27,10 @@ public:
     Scene& operator=(const Scene&) = delete;
 
     void AddEntity(std::shared_ptr<Entity> entity);
+    void RemoveEntity(Core::EntityId id);
     [[nodiscard]] const std::vector<std::shared_ptr<Entity>>& GetEntities() const noexcept;
     [[nodiscard]] std::shared_ptr<Entity> FindEntityById(Core::EntityId id) const noexcept;
+    [[nodiscard]] std::shared_ptr<Entity> GetEntityById(Core::EntityId id) const noexcept { return FindEntityById(id); }
 
     bool SetParent(Core::EntityId childId, Core::EntityId newParentId);
 
