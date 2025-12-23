@@ -8,6 +8,7 @@
 #include <QImageReader>
 #include <QPixmap>
 #include <QScrollArea>
+#include <QStringList>
 #include <QVBoxLayout>
 
 #include "Aetherion/Assets/AssetRegistry.h"
@@ -161,16 +162,7 @@ void EditorInspectorPanel::RebuildUi()
             if (!isFolder && registry)
             {
                 const std::string id = normalized.toStdString();
-                const auto& entries = registry->GetEntries();
-                const auto it = std::find_if(entries.begin(),
-                                             entries.end(),
-                                             [&id](const Assets::AssetRegistry::AssetEntry& asset) {
-                                                 return asset.id == id;
-                                             });
-                if (it != entries.end())
-                {
-                    entry = &(*it);
-                }
+                entry = registry->FindEntry(id);
             }
 
             if (isFolder)
@@ -212,6 +204,36 @@ void EditorInspectorPanel::RebuildUi()
                         previewLabel = new QLabel(m_content);
                         previewLabel->setPixmap(preview);
                         previewLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+                    }
+                }
+
+                if (registry && entry->type == Assets::AssetRegistry::AssetType::Mesh)
+                {
+                    const std::string meshId = entry->path.stem().string();
+                    const auto* mesh = registry->GetMesh(meshId);
+                    if (mesh)
+                    {
+                        form->addRow(tr("Import Cache"), new QLabel(tr("Available"), formHost));
+                        if (!mesh->textureIds.empty())
+                        {
+                            QStringList textures;
+                            textures.reserve(static_cast<int>(mesh->textureIds.size()));
+                            for (const auto& tex : mesh->textureIds)
+                            {
+                                textures << QString::fromStdString(tex);
+                            }
+                            auto* textureLabel = new QLabel(textures.join(", "), formHost);
+                            textureLabel->setWordWrap(true);
+                            form->addRow(tr("Textures"), textureLabel);
+                        }
+                        else
+                        {
+                            form->addRow(tr("Textures"), new QLabel(tr("None cached"), formHost));
+                        }
+                    }
+                    else
+                    {
+                        form->addRow(tr("Import Cache"), new QLabel(tr("Not imported"), formHost));
                     }
                 }
             }

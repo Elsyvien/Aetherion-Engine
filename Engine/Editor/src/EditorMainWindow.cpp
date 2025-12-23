@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDockWidget>
+#include <QFileDialog>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -67,6 +68,54 @@ void AppendConsole(EditorConsole* console, const QString& message, ConsoleSeveri
 }
 
 
+
+std::filesystem::path NormalizePath(const std::filesystem::path& path)
+{
+    std::error_code ec;
+    auto canonical = std::filesystem::weakly_canonical(path, ec);
+    if (!ec)
+    {
+        return canonical;
+    }
+    return path.lexically_normal();
+}
+
+bool PathStartsWith(const std::filesystem::path& path, const std::filesystem::path& prefix)
+{
+    auto pathIt = path.begin();
+    auto prefixIt = prefix.begin();
+    for (; prefixIt != prefix.end(); ++prefixIt, ++pathIt)
+    {
+        if (pathIt == path.end() || *pathIt != *prefixIt)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::filesystem::path MakeUniquePath(const std::filesystem::path& base)
+{
+    std::error_code ec;
+    if (!std::filesystem::exists(base, ec))
+    {
+        return base;
+    }
+
+    const auto dir = base.parent_path();
+    const auto stem = base.stem().string();
+    const auto ext = base.extension().string();
+    for (int i = 1; i < 1000; ++i)
+    {
+        auto candidate = dir / (stem + "_" + std::to_string(i) + ext);
+        if (!std::filesystem::exists(candidate, ec))
+        {
+            return candidate;
+        }
+    }
+
+    return base;
+}
 
 } // namespace
 
@@ -261,7 +310,7 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     {
         m_hierarchyPanel->BindScene(m_scene);
     }
-    m_scenePath = std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json";
+    m_scenePath = GetDefaultScenePath();
     UpdateWindowTitle();
     if (m_inspectorPanel)
     {
@@ -395,6 +444,8 @@ void EditorMainWindow::CreateMenuBarContent()
     auto* fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(tr("New Project"), [] {});
     fileMenu->addAction(tr("Open Project..."), [] {});
+    auto* importGltf = fileMenu->addAction(tr("Import glTF..."));
+    connect(importGltf, &QAction::triggered, this, &EditorMainWindow::ImportGltfAsset);
     auto* saveScene = fileMenu->addAction(tr("Save Scene"));
     saveScene->setShortcut(QKeySequence::Save);
     connect(saveScene, &QAction::triggered, this, &EditorMainWindow::SaveScene);
@@ -758,11 +809,98 @@ void EditorMainWindow::RescanAssets()
     statusBar()->showMessage(tr("Assets rescanned"), 2000);
 }
 
+void EditorMainWindow::ImportGltfAsset()
+{
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+    if (!registry)
+    {
+        statusBar()->showMessage(tr("Asset registry unavailable"), 2000);
+        return;
+    }
+
+    const QString filter = tr("glTF (*.gltf *.glb)");
+    const QString selected = QFileDialog::getOpenFileName(this, tr("Import glTF"), QString(), filter);
+    if (selected.isEmpty())
+    {
+        return;
+    }
+
+    std::filesystem::path sourcePath = selected.toStdString();
+    std::filesystem::path rootPath = registry->GetRootPath();
+    if (rootPath.empty())
+    {
+        rootPath = std::filesystem::path("assets");
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories(rootPath, ec);
+    if (ec)
+    {
+        statusBar()->showMessage(tr("Failed to prepare assets folder"), 2000);
+        return;
+    }
+
+    std::filesystem::path normalizedSource = NormalizePath(sourcePath);
+    std::filesystem::path normalizedRoot = NormalizePath(rootPath);
+    bool insideRoot = PathStartsWith(normalizedSource, normalizedRoot);
+    std::filesystem::path importPath = sourcePath;
+
+    if (!insideRoot)
+    {
+        const auto choice = QMessageBox::question(
+            this,
+            tr("Import glTF"),
+            tr("Selected file is outside the assets folder. Copy into assets/meshes and import?\n\nNote: external dependencies are not copied yet."),
+            QMessageBox::Yes | QMessageBox::Cancel);
+        if (choice != QMessageBox::Yes)
+        {
+            return;
+        }
+
+        std::filesystem::path destDir = normalizedRoot / "meshes";
+        std::filesystem::create_directories(destDir, ec);
+        if (ec)
+        {
+            statusBar()->showMessage(tr("Failed to create assets/meshes"), 2000);
+            return;
+        }
+
+        importPath = MakeUniquePath(destDir / sourcePath.filename());
+        std::filesystem::copy_file(sourcePath, importPath, std::filesystem::copy_options::none, ec);
+        if (ec)
+        {
+            statusBar()->showMessage(tr("Failed to copy glTF"), 2000);
+            return;
+        }
+    }
+
+    const auto result = registry->ImportGltf(importPath.string());
+    if (!result.success)
+    {
+        const QString message = tr("GLTF import failed: %1").arg(QString::fromStdString(result.message));
+        AppendConsole(m_console, message, ConsoleSeverity::Error);
+        statusBar()->showMessage(message, 3000);
+        return;
+    }
+
+    registry->Scan(rootPath.string());
+    RefreshAssetBrowser();
+    if (m_inspectorPanel)
+    {
+        m_inspectorPanel->SetAssetRegistry(registry);
+    }
+
+    const QString success = tr("Imported glTF: %1").arg(QString::fromStdString(result.id));
+    AppendConsole(m_console, success, ConsoleSeverity::Info);
+    statusBar()->showMessage(success, 3000);
+}
+
 void EditorMainWindow::SaveScene()
 {
     if (m_scenePath.empty())
     {
-        m_scenePath = std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json";
+        m_scenePath = GetDefaultScenePath();
     }
     SaveSceneToPath(m_scenePath);
 }
@@ -775,7 +913,7 @@ void EditorMainWindow::ReloadScene()
     }
     if (m_scenePath.empty())
     {
-        m_scenePath = std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json";
+        m_scenePath = GetDefaultScenePath();
     }
     LoadSceneFromPath(m_scenePath);
 }
@@ -817,8 +955,7 @@ bool EditorMainWindow::SaveSceneToPath(const std::filesystem::path& path)
         return false;
     }
 
-    const std::filesystem::path target =
-        path.empty() ? (std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json") : path;
+    const std::filesystem::path target = path.empty() ? GetDefaultScenePath() : path;
     Scene::SceneSerializer serializer(*ctx);
     if (!serializer.Save(*m_scene, target))
     {
@@ -847,8 +984,7 @@ bool EditorMainWindow::LoadSceneFromPath(const std::filesystem::path& path)
         return false;
     }
 
-    const std::filesystem::path target =
-        path.empty() ? (std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json") : path;
+    const std::filesystem::path target = path.empty() ? GetDefaultScenePath() : path;
     Scene::SceneSerializer serializer(*ctx);
     auto loaded = serializer.Load(target);
     if (!loaded)
@@ -927,7 +1063,7 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
         m_hierarchyPanel->SetSelectionModel(m_selection);
         m_hierarchyPanel->BindScene(m_scene);
     }
-    m_scenePath = std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json";
+    m_scenePath = GetDefaultScenePath();
     SetSceneDirty(false);
 
     if (m_selection)
@@ -1174,6 +1310,23 @@ void EditorMainWindow::SetSceneDirty(bool dirty)
     {
         statusBar()->showMessage(tr("Scene modified"), 2000);
     }
+}
+
+std::filesystem::path EditorMainWindow::GetAssetsRootPath() const
+{
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+    auto root = registry ? registry->GetRootPath() : std::filesystem::path();
+    if (root.empty())
+    {
+        root = std::filesystem::path("assets");
+    }
+    return root;
+}
+
+std::filesystem::path EditorMainWindow::GetDefaultScenePath() const
+{
+    return GetAssetsRootPath() / "scenes" / "bootstrap_scene.json";
 }
 
 void EditorMainWindow::UpdateRuntimeControlStates()

@@ -14,6 +14,7 @@ public:
     ~AssetRegistry() = default;
 
     void Scan(const std::string& rootPath);
+    void Rescan();
     [[nodiscard]] bool HasAsset(const std::string& assetId) const;
     enum class AssetType
     {
@@ -35,6 +36,7 @@ public:
 
     [[nodiscard]] const std::vector<AssetEntry>& GetEntries() const noexcept;
     [[nodiscard]] const std::filesystem::path& GetRootPath() const noexcept;
+    [[nodiscard]] const AssetEntry* FindEntry(const std::string& assetId) const noexcept;
 
     struct CachedTexture
     {

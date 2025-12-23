@@ -121,11 +121,14 @@ private:
     void ConfigureStatusBar();
     void UpdateWindowTitle();
     void SetSceneDirty(bool dirty);
+    std::filesystem::path GetAssetsRootPath() const;
+    std::filesystem::path GetDefaultScenePath() const;
     void ApplySettings(const EditorSettings& settings, bool persist);
     void UpdateRenderTimerInterval(bool viewportReady);
     void OpenSettingsDialog();
     void RefreshAssetBrowser();
     void RescanAssets();
+    void ImportGltfAsset();
     void SaveScene();
     void ReloadScene();
     bool ConfirmSaveIfDirty();

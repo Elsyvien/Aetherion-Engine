@@ -1,9 +1,26 @@
 #include "Aetherion/Runtime/EngineApplication.h"
 
+#include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
+#ifdef __linux__
+#include <unistd.h>
+#endif
 
 #include "Aetherion/Audio/AudioPlaceholder.h"
 #include "Aetherion/Assets/AssetRegistry.h"
@@ -22,6 +39,100 @@ namespace Aetherion::Runtime
 {
 namespace
 {
+std::filesystem::path FindAssetsRoot(std::filesystem::path start)
+{
+    if (start.empty())
+    {
+        return {};
+    }
+
+    std::error_code ec;
+    auto probe = std::filesystem::absolute(start, ec);
+    if (ec)
+    {
+        probe = std::move(start);
+    }
+
+    for (int i = 0; i < 8; ++i)
+    {
+        std::filesystem::path candidate = probe / "assets";
+        if (std::filesystem::exists(candidate, ec))
+        {
+            return candidate;
+        }
+        if (!probe.has_parent_path())
+        {
+            break;
+        }
+        probe = probe.parent_path();
+    }
+
+    return {};
+}
+
+std::filesystem::path GetExecutableDir()
+{
+#ifdef _WIN32
+    std::wstring buffer;
+    buffer.resize(MAX_PATH);
+    const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (length == 0)
+    {
+        return {};
+    }
+    buffer.resize(length);
+    return std::filesystem::path(buffer).parent_path();
+#elif defined(__APPLE__)
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) != 0)
+    {
+        return {};
+    }
+    return std::filesystem::path(buffer).parent_path();
+#elif defined(__linux__)
+    std::array<char, 4096> buffer{};
+    const ssize_t length = readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
+    if (length <= 0)
+    {
+        return {};
+    }
+    buffer[static_cast<size_t>(length)] = '\0';
+    return std::filesystem::path(buffer.data()).parent_path();
+#else
+    return {};
+#endif
+}
+
+std::filesystem::path ResolveAssetsRoot()
+{
+    if (const char* env = std::getenv("AETHERION_ASSETS_DIR"))
+    {
+        std::filesystem::path envPath(env);
+        std::error_code ec;
+        if (!envPath.empty() && std::filesystem::exists(envPath, ec))
+        {
+            return std::filesystem::absolute(envPath, ec);
+        }
+    }
+
+    std::error_code ec;
+    auto fromCwd = FindAssetsRoot(std::filesystem::current_path(ec));
+    if (!fromCwd.empty())
+    {
+        return fromCwd;
+    }
+
+    auto fromExe = FindAssetsRoot(GetExecutableDir());
+    if (!fromExe.empty())
+    {
+        return fromExe;
+    }
+
+    return std::filesystem::path("assets");
+}
+
 class SceneSystemDispatcher final : public IRuntimeSystem
 {
 public:
@@ -255,9 +366,10 @@ void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerbo
     m_context->SetScriptingRuntime(std::make_shared<Scripting::ScriptingRuntimeStub>());
     m_context->SetProjectName("Aetherion");
 
+    const std::filesystem::path assetsRoot = ResolveAssetsRoot();
     if (const auto assets = m_context->GetAssetRegistry())
     {
-        assets->Scan("assets");
+        assets->Scan(assetsRoot.string());
     }
     if (const auto physics = m_context->GetPhysicsSystem())
     {
@@ -273,7 +385,7 @@ void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerbo
     }
 
     Scene::SceneSerializer serializer(*m_context);
-    const auto scenePath = std::filesystem::path("assets") / "scenes" / "bootstrap_scene.json";
+    const auto scenePath = assetsRoot / "scenes" / "bootstrap_scene.json";
     m_activeScene = serializer.Load(scenePath);
     if (!m_activeScene)
     {

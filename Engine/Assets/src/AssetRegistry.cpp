@@ -91,12 +91,18 @@ namespace Aetherion::Assets
 void AssetRegistry::Scan(const std::string& rootPath)
 {
     m_placeholderAssets.clear();
-    m_placeholderAssets.emplace("root", rootPath);
     m_entries.clear();
     m_entryLookup.clear();
-    m_rootPath = std::filesystem::path(rootPath);
 
     std::error_code ec;
+    m_rootPath = std::filesystem::absolute(rootPath, ec);
+    if (ec)
+    {
+        ec.clear();
+        m_rootPath = std::filesystem::path(rootPath);
+    }
+    m_placeholderAssets.emplace("root", m_rootPath.string());
+
     if (!std::filesystem::exists(m_rootPath, ec))
     {
         return;
@@ -160,6 +166,17 @@ void AssetRegistry::Scan(const std::string& rootPath)
     }
 }
 
+void AssetRegistry::Rescan()
+{
+    if (m_rootPath.empty())
+    {
+        Scan("assets");
+        return;
+    }
+
+    Scan(m_rootPath.string());
+}
+
 bool AssetRegistry::HasAsset(const std::string& assetId) const
 {
     return m_placeholderAssets.find(assetId) != m_placeholderAssets.end() ||
@@ -175,6 +192,21 @@ const std::vector<AssetRegistry::AssetEntry>& AssetRegistry::GetEntries() const 
 const std::filesystem::path& AssetRegistry::GetRootPath() const noexcept
 {
     return m_rootPath;
+}
+
+const AssetRegistry::AssetEntry* AssetRegistry::FindEntry(const std::string& assetId) const noexcept
+{
+    auto it = m_entryLookup.find(assetId);
+    if (it == m_entryLookup.end())
+    {
+        return nullptr;
+    }
+    const size_t index = it->second;
+    if (index >= m_entries.size())
+    {
+        return nullptr;
+    }
+    return &m_entries[index];
 }
 
 AssetRegistry::GltfImportResult AssetRegistry::ImportGltf(const std::string& gltfPath)

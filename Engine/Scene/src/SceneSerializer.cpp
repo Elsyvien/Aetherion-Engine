@@ -329,7 +329,12 @@ std::shared_ptr<Scene> SceneSerializer::CreateDefaultScene() const
 
     if (auto assets = m_context.GetAssetRegistry())
     {
-        assets->Scan(std::filesystem::current_path().string());
+        auto root = assets->GetRootPath();
+        if (root.empty())
+        {
+            root = std::filesystem::current_path();
+        }
+        assets->Scan(root.string());
     }
 
     return scene;
