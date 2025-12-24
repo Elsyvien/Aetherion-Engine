@@ -3,6 +3,9 @@
 #include <QWidget>
 #include <QString>
 #include <memory>
+#include <vector>
+
+#include "Aetherion/Assets/AssetRegistry.h"
 
 class QLabel;
 class QSlider;
@@ -35,6 +38,7 @@ public:
     void SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry);
     void SetMeshAsset(const QString& assetId);
     void ClearPreview();
+    void HandleAssetChanges(const std::vector<Assets::AssetRegistry::AssetChange>& changes);
 
 protected:
     void resizeEvent(QResizeEvent* event) override;

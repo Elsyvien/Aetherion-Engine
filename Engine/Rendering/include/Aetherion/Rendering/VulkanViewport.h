@@ -11,16 +11,12 @@
 
 #include <vulkan/vulkan.h>
 
+#include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Rendering/RenderView.h"
 
 namespace Aetherion::Rendering
 {
 class VulkanContext;
-}
-
-namespace Aetherion::Assets
-{
-class AssetRegistry;
 }
 
 namespace Aetherion::Rendering
@@ -74,6 +70,7 @@ public:
     void Resize(int width, int height);
     void RenderFrame(float deltaTimeSeconds, const RenderView& view);
     void Shutdown();
+    void HandleAssetChanges(const std::vector<Assets::AssetRegistry::AssetChange>& changes);
 
     [[nodiscard]] bool IsReady() const noexcept { return m_ready; }
     void SetLoggingEnabled(bool enabled) noexcept { m_verboseLogging = enabled; }
@@ -152,6 +149,7 @@ private:
         VkImageView view{VK_NULL_HANDLE};
         VkSampler sampler{VK_NULL_HANDLE};
         VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
+        VkDescriptorPool descriptorPool{VK_NULL_HANDLE};
         uint32_t width{0};
         uint32_t height{0};
     };
@@ -224,7 +222,9 @@ private:
     VkPipeline m_linePipeline{VK_NULL_HANDLE};
     VkPipeline m_overlayPipeline{VK_NULL_HANDLE};
     VkPipeline m_pickingPipeline{VK_NULL_HANDLE};
+    VkPipeline m_pickingPipelineUint{VK_NULL_HANDLE};
     VkPipeline m_postProcessPipeline{VK_NULL_HANDLE};
+    VkPipeline m_postProcessPipelineUint{VK_NULL_HANDLE};
 
     std::vector<VkFramebuffer> m_framebuffers;
     std::array<VkFramebuffer, kMaxFramesInFlight> m_sceneFramebuffers{};
@@ -264,6 +264,7 @@ private:
     VkDeviceMemory m_lightGizmoVertexMemory{VK_NULL_HANDLE};
     uint32_t m_lightGizmoVertexCount{0};
     VkSampler m_textureSampler{VK_NULL_HANDLE};
+    VkSampler m_postProcessSampler{VK_NULL_HANDLE};
     GpuTexture m_defaultTexture{};
     std::array<VkBuffer, kMaxFramesInFlight> m_uniformBuffers{};
     std::array<VkDeviceMemory, kMaxFramesInFlight> m_uniformMemories{};
@@ -316,13 +317,16 @@ private:
     void DestroySceneResources();
     void DestroyPickingResources();
     void ProcessDeferredDeletions();
-    void EnqueueDeletion(std::function<void()>&& callback);
+    void EnqueueDeletion(std::function<void()>&& callback, uint32_t frames = kMaxFramesInFlight);
+    void FlushDeferredDeletions();
+    VkDescriptorPool CreateTextureDescriptorPoolInternal();
 
 #ifdef __APPLE__
     void UpdateMetalLayerSize(int width, int height);
 #endif
 
     void CreateSyncObjects();
+    void CreateQueryPools();
     [[nodiscard]] std::vector<DrawInstance> InstancesFromView(const RenderView& view, float timeSeconds) const;
 
     [[nodiscard]] const GpuMesh* ResolveMesh(const std::string& assetId);

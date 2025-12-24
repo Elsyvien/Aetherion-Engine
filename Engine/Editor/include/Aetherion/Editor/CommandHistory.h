@@ -12,6 +12,9 @@ class CommandHistory
 public:
     void Push(std::unique_ptr<Command> cmd)
     {
+        // Execute the command first
+        cmd->Do();
+
         // If we have redos, clear them
         while (!m_redoStack.empty())
         {
@@ -27,7 +30,6 @@ public:
             }
         }
 
-        cmd->Do();
         m_undoStack.push(std::move(cmd));
     }
 

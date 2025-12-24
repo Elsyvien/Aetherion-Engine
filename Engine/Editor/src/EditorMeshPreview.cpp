@@ -273,8 +273,8 @@ void EditorMeshPreview::onRenderFrame()
     instance.meshAssetId = m_currentAssetId.toStdString();
     if (m_assetRegistry)
     {
-        const std::string stem = std::filesystem::path(instance.meshAssetId).stem().string();
-        if (const auto* cached = m_assetRegistry->GetMesh(stem); cached && !cached->textureIds.empty())
+        if (const auto* cached = m_assetRegistry->GetMesh(instance.meshAssetId);
+            cached && !cached->textureIds.empty())
         {
             instance.albedoTextureId = cached->textureIds.front();
         }
@@ -378,5 +378,43 @@ void EditorMeshPreview::ApplyAutoFit()
                               padding);
     m_viewport->SetCameraRotation(m_rotationY, m_rotationX);
     m_pendingFit = false;
+}
+
+void EditorMeshPreview::HandleAssetChanges(const std::vector<Assets::AssetRegistry::AssetChange>& changes)
+{
+    if (changes.empty())
+    {
+        return;
+    }
+
+    if (m_viewport)
+    {
+        m_viewport->HandleAssetChanges(changes);
+    }
+
+    if (m_currentAssetId.isEmpty())
+    {
+        return;
+    }
+
+    const std::string currentId = m_currentAssetId.toStdString();
+    for (const auto& change : changes)
+    {
+        if (change.id != currentId)
+        {
+            continue;
+        }
+        if (change.kind == Assets::AssetRegistry::AssetChange::Kind::Removed)
+        {
+            ClearPreview();
+            break;
+        }
+        if (change.kind == Assets::AssetRegistry::AssetChange::Kind::Modified ||
+            change.kind == Assets::AssetRegistry::AssetChange::Kind::Moved)
+        {
+            m_pendingFit = true;
+            break;
+        }
+    }
 }
 } // namespace Aetherion::Editor

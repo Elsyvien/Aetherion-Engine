@@ -22,6 +22,12 @@ python3 tools/run_editor.py --log tools/logs/editor.log
 python3 tools/asset_report.py
 ```
 
+### Assets cooken (minimaler Runtime-Output)
+
+```bash
+python3 tools/cook_assets.py --assets assets --out build/cooked
+```
+
 ## macOS/Linux (Bash Wrapper)
 
 ```bash

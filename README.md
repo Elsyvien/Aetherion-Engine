@@ -101,6 +101,18 @@ Shader compilation outputs SPIR-V into `build-*/shaders/`.
 
 ## Notes
 
-- The project is actively evolving during the transition to a 3D engine.
+- The project is actively evolving during the transition to a 3D engine.        
 - Some subsystems are still placeholders (physics/audio/scripting), while rendering + editor are already functional.
 - Expect breaking changes while core systems solidify.
+
+## Rendering Notes
+
+Color space policy:
+- Albedo textures are loaded as sRGB and sampled as linear for lighting.
+- Lighting stays in linear space; scene color targets are linear formats.
+- Postprocess applies ACES tonemapping; gamma is only applied when the swapchain is not sRGB.
+
+Debug, picking, and profiling APIs:
+- `VulkanViewport::SetDebugViewMode(DebugViewMode::Final/Normals/Roughness/Metallic/Albedo/Depth/EntityId)`.
+- `VulkanViewport::RequestPick(x, y)` + `GetLastPickResult()` for ID-buffer picking (`SetPickFlipY(true)` if needed).
+- `VulkanViewport::GetLastFrameStats()` returns CPU/GPU timings per pass.

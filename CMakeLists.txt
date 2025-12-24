@@ -102,17 +102,32 @@ file(MAKE_DIRECTORY ${AETHERION_SHADER_OUT_DIR})
 set(AETHERION_SHADER_SOURCES
     ${AETHERION_SHADER_DIR}/viewport_triangle.vert
     ${AETHERION_SHADER_DIR}/viewport_triangle.frag
+    ${AETHERION_SHADER_DIR}/viewport_picking.frag
+    ${AETHERION_SHADER_DIR}/viewport_picking_uint.frag
+    ${AETHERION_SHADER_DIR}/viewport_postprocess.vert
+    ${AETHERION_SHADER_DIR}/viewport_postprocess.frag
+    ${AETHERION_SHADER_DIR}/viewport_postprocess_uint.frag
 )
 
 set(AETHERION_SHADER_SPV
     ${AETHERION_SHADER_OUT_DIR}/viewport_triangle.vert.spv
     ${AETHERION_SHADER_OUT_DIR}/viewport_triangle.frag.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_picking.frag.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_picking_uint.frag.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess.vert.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess.frag.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess_uint.frag.spv
 )
 
 add_custom_command(
     OUTPUT ${AETHERION_SHADER_SPV}
-    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_triangle.vert -o ${AETHERION_SHADER_OUT_DIR}/viewport_triangle.vert.spv
-    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_triangle.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_triangle.frag.spv
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_triangle.vert -o ${AETHERION_SHADER_OUT_DIR}/viewport_triangle.vert.spv  
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_triangle.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_triangle.frag.spv  
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_picking.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_picking.frag.spv  
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_picking_uint.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_picking_uint.frag.spv  
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_postprocess.vert -o ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess.vert.spv  
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_postprocess.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess.frag.spv  
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_postprocess_uint.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess_uint.frag.spv  
     DEPENDS ${AETHERION_SHADER_SOURCES}
     VERBATIM
 )

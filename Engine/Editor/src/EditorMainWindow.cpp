@@ -577,7 +577,35 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         
         if (m_gizmoMode == GizmoMode::Translate)
         {
-            ApplyTranslationDelta(dx * translateSpeed, -dy * translateSpeed, 0.0f);
+            // Screen-space translation
+            // Calculate Camera Basis
+            const float yawRad = m_viewport ? m_viewport->getCameraRotationY() * (3.14159265f / 180.0f) : 0.0f;
+            const float pitchRad = m_viewport ? m_viewport->getCameraRotationX() * (3.14159265f / 180.0f) : 0.0f;
+            
+            const float sinY = std::sin(yawRad);
+            const float cosY = std::cos(yawRad);
+            const float sinP = std::sin(pitchRad);
+            const float cosP = std::cos(pitchRad);
+
+            // Right Vector (Ground projected)
+            // Note: Matches EditorViewport strafe logic (Right = +X at Yaw 0)
+            const float rightX = cosY;
+            const float rightY = 0.0f;
+            const float rightZ = -sinY;
+
+            // Up Vector (Perpendicular to View and Right)
+            const float upX = sinY * sinP;
+            const float upY = cosP;
+            const float upZ = cosY * sinP;
+
+            // Apply translation along camera plane
+            // Mouse dx -> moves along Right
+            // Mouse dy (positive down) -> moves along -Up
+            const float tx = (rightX * dx - upX * dy) * translateSpeed;
+            const float ty = (rightY * dx - upY * dy) * translateSpeed;
+            const float tz = (rightZ * dx - upZ * dy) * translateSpeed;
+
+            ApplyTranslationDelta(tx, ty, tz);
         }
         else if (m_gizmoMode == GizmoMode::Rotate)
         {
@@ -652,6 +680,18 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
 
     AttachVulkanLogSink();
     RefreshAssetBrowser();
+    if (auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr)
+    {
+        if (auto registry = ctx->GetAssetRegistry())
+        {
+            m_assetChangeSerial = registry->GetChangeSerial();
+        }
+    }
+
+    m_assetWatchTimer = new QTimer(this);
+    m_assetWatchTimer->setInterval(500);
+    connect(m_assetWatchTimer, &QTimer::timeout, this, &EditorMainWindow::PollAssetChanges);
+    m_assetWatchTimer->start();
 
     connect(m_selection, &EditorSelection::SelectionChanged, this, [this](Aetherion::Core::EntityId) {
         AppendConsole(m_console, tr("Selection: entity changed"), ConsoleSeverity::Info);
@@ -1257,8 +1297,19 @@ void EditorMainWindow::RefreshAssetBrowser()
 
         for (const auto* entry : list)
         {
+            std::filesystem::path displayPath = entry->path;
+            std::error_code ec;
+            if (!registry->GetRootPath().empty())
+            {
+                auto relative = std::filesystem::relative(entry->path, registry->GetRootPath(), ec);
+                if (!ec && !relative.empty())
+                {
+                    displayPath = relative;
+                }
+            }
+            const QString label = QString::fromStdString(displayPath.generic_string());
             const QString id = QString::fromStdString(entry->id);
-            items.push_back({QString("  %1").arg(id), id, false});
+            items.push_back({QString("  %1").arg(label), id, false});
         }
     }
 
@@ -1282,11 +1333,83 @@ void EditorMainWindow::RescanAssets()
     }
     registry->Scan(root.string());
     RefreshAssetBrowser();
+    m_assetChangeSerial = registry->GetChangeSerial();
     if (m_inspectorPanel)
     {
         m_inspectorPanel->SetAssetRegistry(registry);
     }
     statusBar()->showMessage(tr("Assets rescanned"), 2000);
+}
+
+void EditorMainWindow::PollAssetChanges()
+{
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+    if (!registry)
+    {
+        return;
+    }
+
+    registry->Rescan();
+
+    std::vector<Assets::AssetRegistry::AssetChange> changes;
+    registry->GetChangesSince(m_assetChangeSerial, changes);
+    if (changes.empty())
+    {
+        return;
+    }
+    m_assetChangeSerial = registry->GetChangeSerial();
+
+    bool selectionRemoved = false;
+    if (!m_selectedAssetId.isEmpty())
+    {
+        const std::string selectedId = m_selectedAssetId.toStdString();
+        for (const auto& change : changes)
+        {
+            if (change.id == selectedId &&
+                change.kind == Assets::AssetRegistry::AssetChange::Kind::Removed)
+            {
+                selectionRemoved = true;
+                break;
+            }
+        }
+    }
+
+    RefreshAssetBrowser();
+
+    if (selectionRemoved)
+    {
+        if (m_assetBrowser)
+        {
+            m_assetBrowser->ClearSelection();
+        }
+        if (m_meshPreview)
+        {
+            m_meshPreview->ClearPreview();
+        }
+        if (m_inspectorPanel)
+        {
+            m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
+        }
+        if (m_auxPanel)
+        {
+            m_auxPanel->SetAssetText(tr("None"));
+        }
+        m_selectedAssetId.clear();
+    }
+    else if (!m_selectedAssetId.isEmpty() && m_inspectorPanel)
+    {
+        m_inspectorPanel->SetSelectedAsset(m_selectedAssetId);
+    }
+
+    if (m_vulkanViewport)
+    {
+        m_vulkanViewport->HandleAssetChanges(changes);
+    }
+    if (m_meshPreview)
+    {
+        m_meshPreview->HandleAssetChanges(changes);
+    }
 }
 
 void EditorMainWindow::ImportGltfAsset()
@@ -1366,6 +1489,7 @@ void EditorMainWindow::ImportGltfAsset()
 
     registry->Scan(rootPath.string());
     RefreshAssetBrowser();
+    m_assetChangeSerial = registry->GetChangeSerial();
     if (m_inspectorPanel)
     {
         m_inspectorPanel->SetAssetRegistry(registry);
@@ -1418,7 +1542,7 @@ void EditorMainWindow::AddAssetToScene(const QString& assetId)
     }
 
     // Create the entity name from asset path
-    std::filesystem::path assetPath(idStr);
+    std::filesystem::path assetPath = entry->path;
     std::string entityName = assetPath.stem().string();
     if (entityName.empty())
     {
@@ -1436,8 +1560,7 @@ void EditorMainWindow::AddAssetToScene(const QString& assetId)
     meshRenderer->SetMeshAssetId(idStr);
     meshRenderer->SetColor(1.0f, 1.0f, 1.0f);
     {
-        const std::string stem = std::filesystem::path(idStr).stem().string();
-        if (const auto* cached = registry->GetMesh(stem); cached && !cached->textureIds.empty())
+        if (const auto* cached = registry->GetMesh(idStr); cached && !cached->textureIds.empty())
         {
             meshRenderer->SetAlbedoTextureId(cached->textureIds.front());
         }
@@ -1509,6 +1632,11 @@ void EditorMainWindow::DeleteAsset(const QString& assetId)
     std::error_code ec;
     if (std::filesystem::exists(entry->path, ec) && std::filesystem::remove(entry->path, ec))
     {
+        const std::filesystem::path metaPath = Assets::AssetRegistry::GetMetadataPathForAsset(entry->path);
+        if (std::filesystem::exists(metaPath, ec))
+        {
+            std::filesystem::remove(metaPath, ec);
+        }
         AppendConsole(m_console, tr("Deleted asset: %1").arg(assetId), ConsoleSeverity::Info);
         statusBar()->showMessage(tr("Asset deleted: %1").arg(assetId), 3000);
         RescanAssets();
@@ -1575,6 +1703,14 @@ void EditorMainWindow::RenameAsset(const QString& assetId)
     {
         AppendConsole(m_console, tr("Failed to rename asset: %1").arg(QString::fromStdString(ec.message())), ConsoleSeverity::Error);
         return;
+    }
+
+    const std::filesystem::path oldMeta = Assets::AssetRegistry::GetMetadataPathForAsset(oldPath);
+    const std::filesystem::path newMeta = Assets::AssetRegistry::GetMetadataPathForAsset(newPath);
+    if (std::filesystem::exists(oldMeta, ec))
+    {
+        std::filesystem::rename(oldMeta, newMeta, ec);
+        ec.clear();
     }
 
     AppendConsole(m_console, tr("Renamed asset: %1 -> %2").arg(oldName).arg(newName), ConsoleSeverity::Info);

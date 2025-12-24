@@ -156,7 +156,20 @@ void EditorInspectorPanel::RebuildUi()
     {
         if (m_showingAsset)
         {
-            const QString displayName = m_assetId.trimmed().isEmpty() ? tr("Asset") : m_assetId.trimmed();
+            const QString assetIdText = m_assetId.trimmed().isEmpty() ? tr("Asset") : m_assetId.trimmed();
+
+            const auto registry = m_assetRegistry;
+            const Assets::AssetRegistry::AssetEntry* entry = nullptr;
+            if (registry && !assetIdText.endsWith('/'))
+            {
+                entry = registry->FindEntry(assetIdText.toStdString());
+            }
+
+            QString displayName = assetIdText;
+            if (entry)
+            {
+                displayName = QString::fromStdString(entry->path.filename().string());
+            }
 
             auto* title = new QLabel(displayName, m_content);
             title->setAlignment(Qt::AlignTop | Qt::AlignLeft);
@@ -166,17 +179,15 @@ void EditorInspectorPanel::RebuildUi()
             auto* form = new QFormLayout(formHost);
             form->setLabelAlignment(Qt::AlignLeft);
 
-            const bool isFolder = displayName.endsWith('/');
+            const bool isFolder = assetIdText.endsWith('/');
             const QString type = isFolder ? tr("Folder") : tr("Asset");
             form->addRow(tr("Type"), new QLabel(type, formHost));
 
-            const QString normalized = isFolder ? displayName.left(displayName.size() - 1) : displayName;
+            const QString normalized = isFolder ? assetIdText.left(assetIdText.size() - 1) : assetIdText;
             form->addRow(tr("Id"), new QLabel(normalized, formHost));
 
-            const auto registry = m_assetRegistry;
-            const Assets::AssetRegistry::AssetEntry* entry = nullptr;
             QLabel* previewLabel = nullptr;
-            if (!isFolder && registry)
+            if (!isFolder && registry && !entry)
             {
                 const std::string id = normalized.toStdString();
                 entry = registry->FindEntry(id);

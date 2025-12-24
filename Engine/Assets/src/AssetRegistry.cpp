@@ -39,6 +39,214 @@ bool PathHasSegment(const std::filesystem::path& path, const std::string& segmen
     return false;
 }
 
+bool HasSuffix(const std::string& value, const std::string& suffix)
+{
+    if (value.size() < suffix.size())
+    {
+        return false;
+    }
+    return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+bool IsMetadataPath(const std::filesystem::path& path)
+{
+    const std::string filename = ToLower(path.filename().string());
+    return HasSuffix(filename, ".asset.json");
+}
+
+std::filesystem::path BuildMetadataPath(const std::filesystem::path& assetPath)
+{
+    std::filesystem::path metaPath = assetPath;
+    metaPath += ".asset.json";
+    return metaPath;
+}
+
+std::string GenerateGuid()
+{
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<int> dist(0, 15);
+    const char* digits = "0123456789abcdef";
+
+    std::string guid;
+    guid.reserve(36);
+    for (int i = 0; i < 32; ++i)
+    {
+        if (i == 8 || i == 12 || i == 16 || i == 20)
+        {
+            guid.push_back('-');
+        }
+        guid.push_back(digits[dist(gen)]);
+    }
+    return guid;
+}
+
+const char* AssetTypeToString(AssetRegistry::AssetType type)
+{
+    switch (type)
+    {
+    case AssetRegistry::AssetType::Texture:
+        return "Texture";
+    case AssetRegistry::AssetType::Mesh:
+        return "Mesh";
+    case AssetRegistry::AssetType::Audio:
+        return "Audio";
+    case AssetRegistry::AssetType::Script:
+        return "Script";
+    case AssetRegistry::AssetType::Scene:
+        return "Scene";
+    case AssetRegistry::AssetType::Shader:
+        return "Shader";
+    case AssetRegistry::AssetType::Other:
+    default:
+        return "Other";
+    }
+}
+
+bool ReadMetadataFile(const std::filesystem::path& metaPath,
+                      std::string& outId,
+                      std::string* outSource,
+                      std::string* outType)
+{
+    std::ifstream input(metaPath);
+    if (!input.is_open())
+    {
+        return false;
+    }
+
+    std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    input.close();
+
+    std::smatch match;
+    std::regex idRegex("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+    if (std::regex_search(content, match, idRegex) && match.size() >= 2)
+    {
+        outId = match[1].str();
+    }
+    else
+    {
+        return false;
+    }
+
+    if (outSource)
+    {
+        std::regex sourceRegex("\\\"source\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+        if (std::regex_search(content, match, sourceRegex) && match.size() >= 2)
+        {
+            *outSource = match[1].str();
+        }
+    }
+
+    if (outType)
+    {
+        std::regex typeRegex("\\\"type\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+        if (std::regex_search(content, match, typeRegex) && match.size() >= 2)
+        {
+            *outType = match[1].str();
+        }
+    }
+
+    return true;
+}
+
+void WriteMetadataFile(const std::filesystem::path& metaPath,
+                       const std::string& id,
+                       AssetRegistry::AssetType type,
+                       const std::string& source)
+{
+    std::ofstream output(metaPath, std::ios::trunc);
+    if (!output.is_open())
+    {
+        return;
+    }
+
+    output << "{\n";
+    output << "  \"version\": 1,\n";
+    output << "  \"id\": \"" << id << "\",\n";
+    output << "  \"type\": \"" << AssetTypeToString(type) << "\",\n";
+    output << "  \"source\": \"" << source << "\"\n";
+    output << "}\n";
+    output.close();
+}
+
+bool EnsureMetadataForAsset(const std::filesystem::path& assetPath,
+                            const std::filesystem::path& rootPath,
+                            AssetRegistry::AssetType type,
+                            std::string& outId)
+{
+    std::error_code ec;
+    std::filesystem::path relative = std::filesystem::relative(assetPath, rootPath, ec);
+    std::string sourceLabel = (!ec && !relative.empty())
+                                  ? relative.generic_string()
+                                  : assetPath.filename().generic_string();
+
+    const std::filesystem::path metaPath = BuildMetadataPath(assetPath);
+    std::string existingId;
+    std::string metaSource;
+    std::string metaType;
+    bool writeMeta = false;
+
+    if (std::filesystem::exists(metaPath, ec))
+    {
+        if (!ReadMetadataFile(metaPath, existingId, &metaSource, &metaType))
+        {
+            existingId.clear();
+        }
+    }
+
+    if (existingId.empty())
+    {
+        existingId = GenerateGuid();
+        writeMeta = true;
+    }
+
+    if (metaSource.empty() || metaSource != sourceLabel ||
+        metaType.empty() || metaType != AssetTypeToString(type))
+    {
+        writeMeta = true;
+    }
+
+    if (writeMeta)
+    {
+        WriteMetadataFile(metaPath, existingId, type, sourceLabel);
+    }
+
+    outId = existingId;
+    return true;
+}
+
+std::filesystem::file_time_type SafeWriteTime(const std::filesystem::path& path)
+{
+    std::error_code ec;
+    auto time = std::filesystem::last_write_time(path, ec);
+    if (ec)
+    {
+        return {};
+    }
+    return time;
+}
+
+std::string MakePathKey(const std::filesystem::path& path, const std::filesystem::path& root)
+{
+    std::error_code ec;
+    std::filesystem::path normalized = std::filesystem::weakly_canonical(path, ec);
+    if (ec)
+    {
+        normalized = path.lexically_normal();
+        ec.clear();
+    }
+
+    if (!root.empty())
+    {
+        auto rel = std::filesystem::relative(normalized, root, ec);
+        if (!ec && !rel.empty())
+        {
+            normalized = rel;
+        }
+    }
+    return normalized.generic_string();
+}
+
 AssetRegistry::AssetType ClassifyAssetType(const std::filesystem::path& path)
 {
     const std::string ext = ToLower(path.extension().string());
@@ -76,6 +284,81 @@ void TransformPosition(const cgltf_float* matrix, const float in[3], float out[3
     out[0] = static_cast<float>(matrix[0] * in[0] + matrix[4] * in[1] + matrix[8] * in[2] + matrix[12]);
     out[1] = static_cast<float>(matrix[1] * in[0] + matrix[5] * in[1] + matrix[9] * in[2] + matrix[13]);
     out[2] = static_cast<float>(matrix[2] * in[0] + matrix[6] * in[1] + matrix[10] * in[2] + matrix[14]);
+}
+
+void TransformDirection(const cgltf_float* matrix, const float in[3], float out[3])
+{
+    out[0] = static_cast<float>(matrix[0] * in[0] + matrix[4] * in[1] + matrix[8] * in[2]);
+    out[1] = static_cast<float>(matrix[1] * in[0] + matrix[5] * in[1] + matrix[9] * in[2]);
+    out[2] = static_cast<float>(matrix[2] * in[0] + matrix[6] * in[1] + matrix[10] * in[2]);
+}
+
+bool ComputeNormalMatrix(const cgltf_float* matrix, float out[9])
+{
+    const float a00 = static_cast<float>(matrix[0]);
+    const float a01 = static_cast<float>(matrix[4]);
+    const float a02 = static_cast<float>(matrix[8]);
+    const float a10 = static_cast<float>(matrix[1]);
+    const float a11 = static_cast<float>(matrix[5]);
+    const float a12 = static_cast<float>(matrix[9]);
+    const float a20 = static_cast<float>(matrix[2]);
+    const float a21 = static_cast<float>(matrix[6]);
+    const float a22 = static_cast<float>(matrix[10]);
+
+    const float det = a00 * (a11 * a22 - a12 * a21) -
+                      a01 * (a10 * a22 - a12 * a20) +
+                      a02 * (a10 * a21 - a11 * a20);
+    if (std::abs(det) < 1e-8f)
+    {
+        return false;
+    }
+
+    const float invDet = 1.0f / det;
+    const float i00 = (a11 * a22 - a12 * a21) * invDet;
+    const float i01 = (a02 * a21 - a01 * a22) * invDet;
+    const float i02 = (a01 * a12 - a02 * a11) * invDet;
+    const float i10 = (a12 * a20 - a10 * a22) * invDet;
+    const float i11 = (a00 * a22 - a02 * a20) * invDet;
+    const float i12 = (a02 * a10 - a00 * a12) * invDet;
+    const float i20 = (a10 * a21 - a11 * a20) * invDet;
+    const float i21 = (a01 * a20 - a00 * a21) * invDet;
+    const float i22 = (a00 * a11 - a01 * a10) * invDet;
+
+    out[0] = i00;
+    out[1] = i10;
+    out[2] = i20;
+    out[3] = i01;
+    out[4] = i11;
+    out[5] = i21;
+    out[6] = i02;
+    out[7] = i12;
+    out[8] = i22;
+    return true;
+}
+
+void TransformNormal(const float normalMatrix[9], const float in[3], float out[3])
+{
+    out[0] = normalMatrix[0] * in[0] + normalMatrix[3] * in[1] + normalMatrix[6] * in[2];
+    out[1] = normalMatrix[1] * in[0] + normalMatrix[4] * in[1] + normalMatrix[7] * in[2];
+    out[2] = normalMatrix[2] * in[0] + normalMatrix[5] * in[1] + normalMatrix[8] * in[2];
+}
+
+void NormalizeVector(float v[3], const float fallback[3])
+{
+    const float lenSq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+    if (lenSq > 0.0f)
+    {
+        const float invLen = 1.0f / std::sqrt(lenSq);
+        v[0] *= invLen;
+        v[1] *= invLen;
+        v[2] *= invLen;
+    }
+    else
+    {
+        v[0] = fallback[0];
+        v[1] = fallback[1];
+        v[2] = fallback[2];
+    }
 }
 
 void ComputeMeshBounds(AssetRegistry::MeshData& mesh)
@@ -358,6 +641,10 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
     {
         mesh.uvs.resize(mesh.positions.size(), {0.0f, 0.0f});
     }
+    if (mesh.tangents.size() < mesh.positions.size())
+    {
+        mesh.tangents.resize(mesh.positions.size(), {1.0f, 0.0f, 0.0f, 1.0f});
+    }
     ComputeMeshNormals(mesh);
     ComputeMeshBounds(mesh);
     return true;
@@ -390,64 +677,133 @@ namespace Aetherion::Assets
 {
 void AssetRegistry::Scan(const std::string& rootPath)
 {
+    std::unordered_map<std::string, FileState> previousStates = m_fileStates;
+    std::unordered_map<std::string, AssetType> previousTypes;
+    for (const auto& entry : m_entries)
+    {
+        previousTypes.emplace(entry.id, entry.type);
+    }
+
     m_placeholderAssets.clear();
     m_entries.clear();
     m_entryLookup.clear();
-    m_meshData.clear();
+    m_pathToId.clear();
 
     std::error_code ec;
-    m_rootPath = std::filesystem::absolute(rootPath, ec);
+    std::filesystem::path nextRoot = std::filesystem::absolute(rootPath, ec);
     if (ec)
     {
         ec.clear();
-        m_rootPath = std::filesystem::path(rootPath);
+        nextRoot = std::filesystem::path(rootPath);
     }
+    const bool rootChanged = (!m_rootPath.empty() && nextRoot != m_rootPath);
+    m_rootPath = nextRoot;
     m_placeholderAssets.emplace("root", m_rootPath.string());
 
-    if (!std::filesystem::exists(m_rootPath, ec))
+    if (rootChanged)
     {
-        return;
+        previousStates.clear();
+        m_meshData.clear();
+        m_meshes.clear();
+        m_textures.clear();
+        m_materials.clear();
+        m_changeLog.clear();
+        m_changeSerial = 0;
     }
 
-    const auto options = std::filesystem::directory_options::skip_permission_denied;
-    for (auto it = std::filesystem::recursive_directory_iterator(m_rootPath, options, ec);
-         it != std::filesystem::recursive_directory_iterator();
-         it.increment(ec))
+    std::unordered_map<std::string, FileState> nextStates;
+    std::unordered_map<std::string, AssetType> nextTypes;
+
+    if (std::filesystem::exists(m_rootPath, ec))
     {
-        if (ec)
+        const auto options = std::filesystem::directory_options::skip_permission_denied;
+        for (auto it = std::filesystem::recursive_directory_iterator(m_rootPath, options, ec);
+             it != std::filesystem::recursive_directory_iterator();
+             it.increment(ec))
         {
-            ec.clear();
-            continue;
+            if (ec)
+            {
+                ec.clear();
+                continue;
+            }
+
+            const auto& entry = *it;
+            if (!entry.is_regular_file(ec))
+            {
+                continue;
+            }
+
+            if (IsMetadataPath(entry.path()))
+            {
+                continue;
+            }
+
+            const auto filename = entry.path().filename().string();
+            if (!filename.empty() && filename.front() == '.')
+            {
+                continue;
+            }
+
+            std::filesystem::path relative = std::filesystem::relative(entry.path(), m_rootPath, ec);
+            std::string sourceLabel = (!ec && !relative.empty())
+                                          ? relative.generic_string()
+                                          : entry.path().filename().generic_string();
+            if (sourceLabel.empty())
+            {
+                continue;
+            }
+
+            const std::filesystem::path metaPath = BuildMetadataPath(entry.path());
+            std::string assetId;
+            std::string metaSource;
+            std::string metaType;
+            bool writeMeta = false;
+
+            if (std::filesystem::exists(metaPath, ec))
+            {
+                if (!ReadMetadataFile(metaPath, assetId, &metaSource, &metaType))
+                {
+                    assetId.clear();
+                }
+            }
+
+            if (assetId.empty())
+            {
+                assetId = GenerateGuid();
+                writeMeta = true;
+            }
+
+            const AssetType type = ClassifyAssetType(entry.path());
+            if (metaSource.empty() || metaSource != sourceLabel)
+            {
+                writeMeta = true;
+            }
+            if (metaType.empty() || metaType != AssetTypeToString(type))
+            {
+                writeMeta = true;
+            }
+
+            if (writeMeta)
+            {
+                WriteMetadataFile(metaPath, assetId, type, sourceLabel);
+            }
+
+            AssetEntry asset{};
+            asset.id = assetId;
+            asset.path = entry.path();
+            asset.type = type;
+
+            m_entryLookup.emplace(asset.id, m_entries.size());
+            m_entries.push_back(std::move(asset));
+            m_pathToId.emplace(MakePathKey(entry.path(), m_rootPath), assetId);
+
+            FileState state{};
+            state.path = entry.path();
+            state.assetTime = SafeWriteTime(entry.path());
+            state.metaTime = SafeWriteTime(metaPath);
+            nextStates.emplace(assetId, state);
+            nextTypes.emplace(assetId, type);
         }
-
-        const auto& entry = *it;
-        if (!entry.is_regular_file(ec))
-        {
-            continue;
-        }
-
-        const auto filename = entry.path().filename().string();
-        if (!filename.empty() && filename.front() == '.')
-        {
-            continue;
-        }
-
-        std::filesystem::path relative = std::filesystem::relative(entry.path(), m_rootPath, ec);
-        std::string id = (!ec && !relative.empty())
-                             ? relative.generic_string()
-                             : entry.path().filename().generic_string();
-        if (id.empty())
-        {
-            continue;
-        }
-
-        AssetEntry asset{};
-        asset.id = std::move(id);
-        asset.path = entry.path();
-        asset.type = ClassifyAssetType(entry.path());
-
-        m_entryLookup.emplace(asset.id, m_entries.size());
-        m_entries.push_back(std::move(asset));
     }
 
     std::sort(m_entries.begin(), m_entries.end(), [](const AssetEntry& a, const AssetEntry& b) {
@@ -465,6 +821,94 @@ void AssetRegistry::Scan(const std::string& rootPath)
     {
         m_entryLookup.emplace(m_entries[i].id, i);
     }
+
+    std::vector<AssetChange> scanChanges;
+    auto recordChange = [this, &scanChanges](const std::string& id, AssetType type, AssetChange::Kind kind) {
+        AssetChange change{};
+        change.id = id;
+        change.type = type;
+        change.kind = kind;
+        change.serial = ++m_changeSerial;
+        m_changeLog.push_back(change);
+        scanChanges.push_back(change);
+    };
+
+    for (const auto& [id, state] : nextStates)
+    {
+        auto prevIt = previousStates.find(id);
+        if (prevIt == previousStates.end())
+        {
+            recordChange(id, nextTypes[id], AssetChange::Kind::Added);
+            continue;
+        }
+
+        const FileState& prev = prevIt->second;
+        if (prev.path != state.path)
+        {
+            recordChange(id, nextTypes[id], AssetChange::Kind::Moved);
+            continue;
+        }
+
+        if (prev.assetTime != state.assetTime || prev.metaTime != state.metaTime)
+        {
+            const bool onlyMeta = (prev.assetTime == state.assetTime) && (prev.metaTime != state.metaTime);
+            recordChange(id, nextTypes[id], onlyMeta ? AssetChange::Kind::Metadata : AssetChange::Kind::Modified);
+        }
+    }
+
+    for (const auto& [id, prev] : previousStates)
+    {
+        if (nextStates.find(id) != nextStates.end())
+        {
+            continue;
+        }
+        AssetType type = AssetType::Other;
+        if (auto typeIt = previousTypes.find(id); typeIt != previousTypes.end())
+        {
+            type = typeIt->second;
+        }
+        else
+        {
+            type = ClassifyAssetType(prev.path);
+        }
+        recordChange(id, type, AssetChange::Kind::Removed);
+    }
+
+    for (const auto& change : scanChanges)
+    {
+        if (change.kind == AssetChange::Kind::Removed ||
+            change.kind == AssetChange::Kind::Modified ||
+            change.kind == AssetChange::Kind::Moved)
+        {
+            m_meshData.erase(change.id);
+            m_meshes.erase(change.id);
+            m_textures.erase(change.id);
+
+            if (change.type == AssetType::Mesh)
+            {
+                for (auto it = m_materials.begin(); it != m_materials.end();)
+                {
+                    if (it->first.rfind(change.id + ":", 0) == 0)
+                    {
+                        it = m_materials.erase(it);
+                    }
+                    else
+                    {
+                        ++it;
+                    }
+                }
+            }
+        }
+    }
+
+    const size_t maxChanges = 2048;
+    if (m_changeLog.size() > maxChanges)
+    {
+        m_changeLog.erase(m_changeLog.begin(),
+                          m_changeLog.begin() + static_cast<std::ptrdiff_t>(m_changeLog.size() - maxChanges));
+    }
+
+    m_fileStates = std::move(nextStates);
 }
 
 void AssetRegistry::Rescan()
@@ -482,7 +926,7 @@ bool AssetRegistry::HasAsset(const std::string& assetId) const
 {
     return m_placeholderAssets.find(assetId) != m_placeholderAssets.end() ||
            m_entryLookup.find(assetId) != m_entryLookup.end() || m_meshes.find(assetId) != m_meshes.end() ||
-           m_textures.find(assetId) != m_textures.end() ||
+           m_textures.find(assetId) != m_textures.end() || m_materials.find(assetId) != m_materials.end() ||
            m_meshData.find(assetId) != m_meshData.end();
 }
 
@@ -594,6 +1038,7 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
     MeshData mesh{};
     bool loadedNormals = false;
     bool loadedUvs = false;
+    bool loadedTangents = false;
 
     auto appendPrimitive = [&](const cgltf_primitive& primitive, const cgltf_float* matrix) {
         if (primitive.type != cgltf_primitive_type_triangles)
@@ -605,6 +1050,7 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
         const cgltf_accessor* colorAccessor = nullptr;
         const cgltf_accessor* normalAccessor = nullptr;
         const cgltf_accessor* uvAccessor = nullptr;
+        const cgltf_accessor* tangentAccessor = nullptr;
         for (cgltf_size attrIndex = 0; attrIndex < primitive.attributes_count; ++attrIndex)
         {
             const cgltf_attribute& attr = primitive.attributes[attrIndex];
@@ -619,6 +1065,10 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
             else if (attr.type == cgltf_attribute_type_normal)
             {
                 normalAccessor = attr.data;
+            }
+            else if (attr.type == cgltf_attribute_type_tangent)
+            {
+                tangentAccessor = attr.data;
             }
             else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0)
             {
@@ -637,6 +1087,8 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
         mesh.normals.reserve(baseVertex + positionAccessor->count);
         mesh.uvs.reserve(baseVertex + positionAccessor->count);
 
+        float normalMatrix[9] = {};
+        const bool hasNormalMatrix = matrix ? ComputeNormalMatrix(matrix, normalMatrix) : false;
         for (cgltf_size i = 0; i < positionAccessor->count; ++i)
         {
             float values[3] = {0.0f, 0.0f, 0.0f};
@@ -670,6 +1122,16 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
                 cgltf_accessor_read_float(normalAccessor, i, normal, 3);
                 loadedNormals = true;
             }
+            if (hasNormalMatrix)
+            {
+                float transformed[3];
+                TransformNormal(normalMatrix, normal, transformed);
+                normal[0] = transformed[0];
+                normal[1] = transformed[1];
+                normal[2] = transformed[2];
+            }
+            const float defaultNormal[3] = {0.0f, 0.0f, 1.0f};
+            NormalizeVector(normal, defaultNormal);
             mesh.normals.push_back({normal[0], normal[1], normal[2]});
 
             float uv[2] = {0.0f, 0.0f};
@@ -679,6 +1141,24 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
                 loadedUvs = true;
             }
             mesh.uvs.push_back({uv[0], uv[1]});
+
+            float tangent[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+            if (tangentAccessor && i < tangentAccessor->count)
+            {
+                cgltf_accessor_read_float(tangentAccessor, i, tangent, 4);
+                loadedTangents = true;
+            }
+            if (hasNormalMatrix)
+            {
+                float transformed[3];
+                TransformNormal(normalMatrix, tangent, transformed);
+                tangent[0] = transformed[0];
+                tangent[1] = transformed[1];
+                tangent[2] = transformed[2];
+            }
+            const float defaultTangent[3] = {1.0f, 0.0f, 0.0f};
+            NormalizeVector(tangent, defaultTangent);
+            mesh.tangents.push_back({tangent[0], tangent[1], tangent[2], tangent[3]});
         }
 
         if (primitive.indices)
@@ -772,6 +1252,10 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
     {
         mesh.uvs.resize(mesh.positions.size(), {0.0f, 0.0f});
     }
+    if (!loadedTangents || mesh.tangents.size() < mesh.positions.size())
+    {
+        mesh.tangents.resize(mesh.positions.size(), {1.0f, 0.0f, 0.0f, 1.0f});
+    }
     ComputeMeshBounds(mesh);
 
     auto& stored = m_meshData[assetId];
@@ -779,7 +1263,7 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
     return &stored;
 }
 
-AssetRegistry::GltfImportResult AssetRegistry::ImportGltf(const std::string& gltfPath)
+AssetRegistry::GltfImportResult AssetRegistry::ImportGltf(const std::string& gltfPath, bool forceReimport)
 {
     GltfImportResult result{};
 
@@ -791,61 +1275,143 @@ AssetRegistry::GltfImportResult AssetRegistry::ImportGltf(const std::string& glt
     }
 
     source = std::filesystem::absolute(source);
-    const std::string id = source.stem().string();
+    const std::filesystem::path root = m_rootPath.empty() ? source.parent_path() : m_rootPath;
 
-    // Return cached entry if available.
-    if (auto cached = m_meshes.find(id); cached != m_meshes.end())
+    std::string meshId;
+    EnsureMetadataForAsset(source, root, AssetType::Mesh, meshId);
+
+    if (!forceReimport)
     {
-        result.success = true;
-        result.id = id;
-        result.textures = cached->second.textureIds;
-        result.message = "Cached GLTF";
+        if (auto cached = m_meshes.find(meshId); cached != m_meshes.end())
+        {
+            result.success = true;
+            result.id = meshId;
+            result.textures = cached->second.textureIds;
+            result.materials = cached->second.materialIds;
+            result.message = "Cached GLTF";
+            return result;
+        }
+    }
+
+    cgltf_options options{};
+    cgltf_data* data = nullptr;
+    cgltf_result parseResult = cgltf_parse_file(&options, source.string().c_str(), &data);
+    if (parseResult != cgltf_result_success || !data)
+    {
+        if (data)
+        {
+            cgltf_free(data);
+        }
+        result.message = "Unable to parse GLTF";
         return result;
     }
 
-    std::ifstream input(source, std::ios::binary);
-    if (!input.is_open())
+    parseResult = cgltf_load_buffers(&options, data, source.string().c_str());
+    if (parseResult != cgltf_result_success)
     {
-        result.message = "Unable to open GLTF";
+        cgltf_free(data);
+        result.message = "Unable to load GLTF buffers";
         return result;
     }
-
-    std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    input.close();
-
-    // Naive texture URI extraction; sufficient for editor preview/caching.
-    std::regex uriRegex("\\\"uri\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
-    std::smatch match;
-    std::string::const_iterator searchStart(content.cbegin());
 
     CachedMesh mesh{};
-    mesh.id = id;
+    mesh.id = meshId;
     mesh.source = source;
+    std::unordered_set<std::string> uniqueTextures;
 
-    while (std::regex_search(searchStart, content.cend(), match, uriRegex))
+    std::vector<std::string> imageIds;
+    imageIds.reserve(data->images_count);
+    for (cgltf_size i = 0; i < data->images_count; ++i)
     {
-        if (match.size() >= 2)
-        {
-            std::filesystem::path texPath = source.parent_path() / match[1].str();
-            const std::string texId = texPath.filename().string();
-            mesh.textureIds.push_back(texId);
+        const cgltf_image& image = data->images[i];
+        std::string texId;
 
-            if (m_textures.find(texId) == m_textures.end())
+        if (image.uri && image.uri[0] != '\0')
+        {
+            std::filesystem::path texPath = source.parent_path() / image.uri;
+            if (std::filesystem::exists(texPath))
             {
-                CachedTexture tex{};
-                tex.id = texId;
-                tex.path = texPath;
-                m_textures.emplace(texId, tex);
+                EnsureMetadataForAsset(texPath, root, AssetType::Texture, texId);
+                if (!texId.empty())
+                {
+                    CachedTexture tex{};
+                    tex.id = texId;
+                    tex.path = texPath;
+                    m_textures[texId] = tex;
+                    if (uniqueTextures.emplace(texId).second)
+                    {
+                        mesh.textureIds.push_back(texId);
+                    }
+                }
+            }
+        }
+        imageIds.push_back(texId);
+    }
+
+    std::vector<std::string> textureToImageId;
+    textureToImageId.reserve(data->textures_count);
+    for (cgltf_size i = 0; i < data->textures_count; ++i)
+    {
+        const cgltf_texture& tex = data->textures[i];
+        std::string imageId;
+        if (tex.image)
+        {
+            const cgltf_size imageIndex = static_cast<cgltf_size>(tex.image - data->images);
+            if (imageIndex < imageIds.size())
+            {
+                imageId = imageIds[imageIndex];
+            }
+        }
+        textureToImageId.push_back(imageId);
+    }
+
+    for (cgltf_size i = 0; i < data->materials_count; ++i)
+    {
+        const cgltf_material& material = data->materials[i];
+        std::string matId = meshId + ":mat:" + std::to_string(i);
+
+        CachedMaterial cached{};
+        cached.id = matId;
+        cached.name = material.name ? material.name : std::string();
+
+        if (material.has_pbr_metallic_roughness)
+        {
+            const auto& pbr = material.pbr_metallic_roughness;
+            cached.baseColor = {pbr.base_color_factor[0],
+                                pbr.base_color_factor[1],
+                                pbr.base_color_factor[2],
+                                pbr.base_color_factor[3]};
+            cached.metallic = pbr.metallic_factor;
+            cached.roughness = pbr.roughness_factor;
+            if (pbr.base_color_texture.texture)
+            {
+                const cgltf_size texIndex =
+                    static_cast<cgltf_size>(pbr.base_color_texture.texture - data->textures);
+                if (texIndex < textureToImageId.size())
+                {
+                    cached.albedoTextureId = textureToImageId[texIndex];
+                }
             }
         }
 
-        searchStart = match.suffix().first;
+        m_materials[matId] = cached;
+        mesh.materialIds.push_back(matId);
+        result.materials.push_back(matId);
+        if (!cached.albedoTextureId.empty())
+        {
+            if (uniqueTextures.emplace(cached.albedoTextureId).second)
+            {
+                mesh.textureIds.push_back(cached.albedoTextureId);
+            }
+        }
     }
 
-    m_meshes.emplace(id, mesh);
+    cgltf_free(data);
+
+    m_meshes[meshId] = mesh;
 
     result.success = true;
-    result.id = id;
+    result.id = meshId;
     result.textures = mesh.textureIds;
     result.message = "Imported GLTF";
     return result;
@@ -869,5 +1435,37 @@ const AssetRegistry::CachedTexture* AssetRegistry::GetTexture(const std::string&
         return nullptr;
     }
     return &it->second;
+}
+
+const AssetRegistry::CachedMaterial* AssetRegistry::GetMaterial(const std::string& id) const
+{
+    auto it = m_materials.find(id);
+    if (it == m_materials.end())
+    {
+        return nullptr;
+    }
+    return &it->second;
+}
+
+std::uint64_t AssetRegistry::GetChangeSerial() const noexcept
+{
+    return m_changeSerial;
+}
+
+void AssetRegistry::GetChangesSince(std::uint64_t serial, std::vector<AssetChange>& out) const
+{
+    out.clear();
+    for (const auto& change : m_changeLog)
+    {
+        if (change.serial > serial)
+        {
+            out.push_back(change);
+        }
+    }
+}
+
+std::filesystem::path AssetRegistry::GetMetadataPathForAsset(const std::filesystem::path& assetPath)
+{
+    return BuildMetadataPath(assetPath);
 }
 } // namespace Aetherion::Assets

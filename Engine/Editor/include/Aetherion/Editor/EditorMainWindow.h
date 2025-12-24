@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <cstdint>
 
 #include <QByteArray>
 #include <QElapsedTimer>
@@ -94,6 +95,7 @@ private:
     QSize m_surfaceSize{};
     bool m_surfaceInitialized{false};
     class QTimer* m_renderTimer = nullptr;
+    class QTimer* m_assetWatchTimer = nullptr;
     QElapsedTimer m_frameTimer;
     QLabel* m_fpsLabel = nullptr;
     QElapsedTimer m_fpsTimer;
@@ -124,6 +126,7 @@ private:
     QByteArray m_defaultLayoutGeometry;
     EditorAuxPanel* m_auxPanel = nullptr;
     QString m_selectedAssetId;
+    std::uint64_t m_assetChangeSerial{0};
 
     std::unique_ptr<CommandHistory> m_commandHistory;
     QAction* m_undoAction = nullptr;
@@ -142,6 +145,7 @@ private:
     void OpenSettingsDialog();
     void RefreshAssetBrowser();
     void RescanAssets();
+    void PollAssetChanges();
     void ImportGltfAsset();
     void AddAssetToScene(const QString& assetId);
     void DeleteAsset(const QString& assetId);
