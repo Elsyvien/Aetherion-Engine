@@ -7,7 +7,9 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <random>
 #include <regex>
+#include <unordered_set>
 #include <sstream>
 
 #define CGLTF_IMPLEMENTATION

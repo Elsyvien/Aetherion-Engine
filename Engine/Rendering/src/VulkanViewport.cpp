@@ -61,6 +61,9 @@ struct FrameUniformObject
     float lightDir[4];
     float lightColor[4];
     float ambientColor[4];
+    float cameraPos[4];
+    float frameParams[4];
+    float materialParams[4];
 };
 
 void Mat4Identity(float out[16])
@@ -243,6 +246,13 @@ bool IsSrgbFormat(VkFormat format)
     return format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB;
 }
 
+bool FormatSupports(VkPhysicalDevice gpu, VkFormat format, VkFormatFeatureFlags features)
+{
+    VkFormatProperties props{};
+    vkGetPhysicalDeviceFormatProperties(gpu, format, &props);
+    return (props.optimalTilingFeatures & features) == features;
+}
+
 VkFormat FindDepthFormat(VkPhysicalDevice gpu)
 {
     const VkFormat candidates[] = {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
@@ -256,6 +266,47 @@ VkFormat FindDepthFormat(VkPhysicalDevice gpu)
         }
     }
     throw std::runtime_error("Failed to find suitable depth format");
+}
+
+VkFormat FindSceneColorFormat(VkPhysicalDevice gpu)
+{
+    const VkFormatFeatureFlags needed =
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+    const VkFormat candidates[] = {
+        VK_FORMAT_R16G16B16A16_SFLOAT,
+        VK_FORMAT_R11G11B10_UFLOAT_PACK32,
+        VK_FORMAT_R8G8B8A8_UNORM,
+        VK_FORMAT_B8G8R8A8_UNORM,
+    };
+    for (VkFormat format : candidates)
+    {
+        if (FormatSupports(gpu, format, needed))
+        {
+            return format;
+        }
+    }
+    return VK_FORMAT_R8G8B8A8_UNORM;
+}
+
+struct PickingFormatInfo
+{
+    VkFormat format{VK_FORMAT_R8G8B8A8_UNORM};
+    bool isUint{false};
+};
+
+PickingFormatInfo FindPickingFormat(VkPhysicalDevice gpu)
+{
+    const VkFormatFeatureFlags needed = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+    if (FormatSupports(gpu, VK_FORMAT_R32_UINT, needed))
+    {
+        return {VK_FORMAT_R32_UINT, true};
+    }
+    if (FormatSupports(gpu, VK_FORMAT_R8G8B8A8_UNORM, needed))
+    {
+        return {VK_FORMAT_R8G8B8A8_UNORM, false};
+    }
+    return {VK_FORMAT_R8G8B8A8_UNORM, false};
 }
 
 void CreateImage(VkPhysicalDevice gpu,
@@ -2779,8 +2830,10 @@ std::vector<VulkanViewport::DrawInstance> VulkanViewport::InstancesFromView(cons
                 continue;
             }
 
-            DrawInstance draw{};
-            draw.entityId = instance.entityId;
+        DrawInstance draw{};
+        draw.entityId = instance.entityId;
+        draw.constants.entityId = static_cast<uint32_t>(instance.entityId);
+        draw.constants.flags = 0;
 
             if (instance.hasModel)
             {

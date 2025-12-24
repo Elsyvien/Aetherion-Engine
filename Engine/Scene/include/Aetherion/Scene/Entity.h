@@ -25,6 +25,7 @@ public:
     void SetName(std::string name);
 
     void AddComponent(std::shared_ptr<Component> component);
+    void RemoveComponent(const std::shared_ptr<Component>& component);
     [[nodiscard]] const std::vector<std::shared_ptr<Component>>& GetComponents() const noexcept;
 
     template <typename T>

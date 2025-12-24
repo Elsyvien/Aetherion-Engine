@@ -33,6 +33,11 @@ void Entity::AddComponent(std::shared_ptr<Component> component)
     m_components.push_back(std::move(component));
 }
 
+void Entity::RemoveComponent(const std::shared_ptr<Component>& component)
+{
+    std::erase(m_components, component);
+}
+
 const std::vector<std::shared_ptr<Component>>& Entity::GetComponents() const noexcept
 {
     return m_components;

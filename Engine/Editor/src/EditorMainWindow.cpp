@@ -2014,6 +2014,12 @@ bool EditorMainWindow::LoadSceneFromPath(const std::filesystem::path& path)
         m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
     }
 
+    if (m_commandHistory)
+    {
+        m_commandHistory->Clear();
+        UpdateUndoRedoState();
+    }
+
     SetSceneDirty(false);
     statusBar()->showMessage(tr("Scene loaded"), 2000);
     return true;
@@ -2059,6 +2065,12 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
     }
     m_scenePath = GetDefaultScenePath();
     SetSceneDirty(false);
+
+    if (m_commandHistory)
+    {
+        m_commandHistory->Clear();
+        UpdateUndoRedoState();
+    }
 
     if (m_selection)
     {
@@ -2246,6 +2258,9 @@ void EditorMainWindow::CreateDockPanels()
     inspectorDock->setAttribute(Qt::WA_NativeWindow, true);
     m_inspectorDock = inspectorDock;
     m_inspectorPanel = new EditorInspectorPanel(inspectorDock);
+    m_inspectorPanel->SetCommandExecutor([this](std::unique_ptr<Command> cmd) {
+        ExecuteCommand(std::move(cmd));
+    });
     inspectorDock->setWidget(m_inspectorPanel);
     inspectorDock->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, inspectorDock);

@@ -1,6 +1,9 @@
 #include "Aetherion/Editor/EditorInspectorPanel.h"
 
 #include <QLabel>
+#include <QPushButton>
+#include <QMenu>
+#include <QAction>
 #include <algorithm>
 #include <QCheckBox>
 #include <QComboBox>
@@ -17,6 +20,8 @@
 #include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/TransformComponent.h"
+#include "Aetherion/Editor/Commands/TransformCommand.h"
+#include "Aetherion/Editor/Commands/ComponentCommands.h"
 
 namespace
 {
@@ -289,11 +294,32 @@ void EditorInspectorPanel::RebuildUi()
         return s;
     };
 
+    auto makeComponentHeader = [this](const QString& title, std::shared_ptr<Scene::Component> component) {
+        auto* container = new QWidget(m_content);
+        auto* layout = new QHBoxLayout(container);
+        layout->setContentsMargins(0, 0, 0, 0);
+        
+        auto* label = new QLabel(title, container);
+        label->setStyleSheet("font-weight: bold;");
+        layout->addWidget(label);
+        layout->addStretch();
+        
+        auto* removeBtn = new QPushButton(tr("X"), container);
+        removeBtn->setFixedSize(20, 20);
+        removeBtn->setToolTip(tr("Remove Component"));
+        connect(removeBtn, &QPushButton::clicked, this, [this, component] {
+            if (m_commandExecutor) {
+                m_commandExecutor(std::make_unique<RemoveComponentCommand>(m_entity, component));
+            }
+        });
+        layout->addWidget(removeBtn);
+        
+        return container;
+    };
+
     if (transform)
     {
-        auto* transformLabel = new QLabel(tr("Transform"), m_content);
-        transformLabel->setStyleSheet("font-weight: bold;");
-        m_contentLayout->addWidget(transformLabel);
+        m_contentLayout->addWidget(makeComponentHeader(tr("Transform"), transform));
 
         auto* formHost = new QWidget(m_content);
         auto* form = new QFormLayout(formHost);
@@ -335,27 +361,36 @@ void EditorInspectorPanel::RebuildUi()
                 return;
             }
 
-            transform->SetPosition(static_cast<float>(m_posX->value()),
-                                   static_cast<float>(m_posY->value()),
-                                   static_cast<float>(m_posZ->value()));
-            transform->SetRotationDegrees(static_cast<float>(m_rotX->value()),
-                                          static_cast<float>(m_rotY->value()),
-                                          static_cast<float>(m_rotZ->value()));
-            transform->SetScale(static_cast<float>(m_scaleX->value()),
-                                static_cast<float>(m_scaleY->value()),
-                                static_cast<float>(m_scaleZ->value()));
+            // Capture old state from component
+            TransformData oldData;
+            oldData.position = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
+            oldData.rotation = {transform->GetRotationXDegrees(), transform->GetRotationYDegrees(), transform->GetRotationZDegrees()};
+            oldData.scale = {transform->GetScaleX(), transform->GetScaleY(), transform->GetScaleZ()};
+
+            // Calculate new state from UI
+            TransformData newData;
+            newData.position = {static_cast<float>(m_posX->value()), static_cast<float>(m_posY->value()), static_cast<float>(m_posZ->value())};
+            newData.rotation = {static_cast<float>(m_rotX->value()), static_cast<float>(m_rotY->value()), static_cast<float>(m_rotZ->value())};
+            newData.scale = {static_cast<float>(m_scaleX->value()), static_cast<float>(m_scaleY->value()), static_cast<float>(m_scaleZ->value())};
+
+            // Use Command if available
+            if (m_commandExecutor)
+            {
+                m_commandExecutor(std::make_unique<TransformCommand>(m_entity, oldData, newData));
+            }
+            else
+            {
+                // Fallback direct application
+                transform->SetPosition(newData.position[0], newData.position[1], newData.position[2]);
+                transform->SetRotationDegrees(newData.rotation[0], newData.rotation[1], newData.rotation[2]);
+                transform->SetScale(newData.scale[0], newData.scale[1], newData.scale[2]);
+                emit sceneModified();
+            }
 
             emit transformChanged(m_entity->GetId(),
-                                  static_cast<float>(m_posX->value()),
-                                  static_cast<float>(m_posY->value()),
-                                  static_cast<float>(m_posZ->value()),
-                                  static_cast<float>(m_rotX->value()),
-                                  static_cast<float>(m_rotY->value()),
-                                  static_cast<float>(m_rotZ->value()),
-                                  static_cast<float>(m_scaleX->value()),
-                                  static_cast<float>(m_scaleY->value()),
-                                  static_cast<float>(m_scaleZ->value()));
-            emit sceneModified();
+                                  newData.position[0], newData.position[1], newData.position[2],
+                                  newData.rotation[0], newData.rotation[1], newData.rotation[2],
+                                  newData.scale[0], newData.scale[1], newData.scale[2]);
         };
 
         connect(m_posX, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
@@ -374,9 +409,7 @@ void EditorInspectorPanel::RebuildUi()
 
     if (mesh)
     {
-        auto* meshLabel = new QLabel(tr("Mesh Renderer"), m_content);
-        meshLabel->setStyleSheet("font-weight: bold;");
-        m_contentLayout->addWidget(meshLabel);
+        m_contentLayout->addWidget(makeComponentHeader(tr("Mesh Renderer"), mesh));
 
         auto* formHost = new QWidget(m_content);
         auto* form = new QFormLayout(formHost);
@@ -499,9 +532,7 @@ void EditorInspectorPanel::RebuildUi()
 
     if (light)
     {
-        auto* lightLabel = new QLabel(tr("Light"), m_content);
-        lightLabel->setStyleSheet("font-weight: bold;");
-        m_contentLayout->addWidget(lightLabel);
+        m_contentLayout->addWidget(makeComponentHeader(tr("Light"), light));
 
         auto* hintLabel = new QLabel(tr("Direction uses Transform rotation (X=Pitch, Y=Yaw)."), m_content);
         hintLabel->setStyleSheet("color: #8a8a8a;");
@@ -577,6 +608,37 @@ void EditorInspectorPanel::RebuildUi()
     }
 
     m_contentLayout->addStretch(1);
+
+    auto* addCompBtn = new QPushButton(tr("Add Component"), m_content);
+    connect(addCompBtn, &QPushButton::clicked, this, [this] {
+        if (!m_entity) return;
+        
+        QMenu menu;
+        if (!m_entity->GetComponent<Scene::TransformComponent>()) {
+            menu.addAction(tr("Transform"), [this] {
+                auto comp = std::make_shared<Scene::TransformComponent>();
+                if (m_commandExecutor) m_commandExecutor(std::make_unique<AddComponentCommand>(m_entity, comp));
+            });
+        }
+        if (!m_entity->GetComponent<Scene::MeshRendererComponent>()) {
+            menu.addAction(tr("Mesh Renderer"), [this] {
+                auto comp = std::make_shared<Scene::MeshRendererComponent>();
+                if (m_commandExecutor) m_commandExecutor(std::make_unique<AddComponentCommand>(m_entity, comp));
+            });
+        }
+        if (!m_entity->GetComponent<Scene::LightComponent>()) {
+            menu.addAction(tr("Light"), [this] {
+                auto comp = std::make_shared<Scene::LightComponent>();
+                if (m_commandExecutor) m_commandExecutor(std::make_unique<AddComponentCommand>(m_entity, comp));
+            });
+        }
+        
+        if (!menu.isEmpty()) {
+            menu.exec(QCursor::pos());
+        }
+    });
+    m_contentLayout->addWidget(addCompBtn);
+
     m_buildingUi = false;
 
     if (transform)

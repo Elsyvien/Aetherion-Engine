@@ -20,6 +20,15 @@
 *   **Focus (F)**: Pressing 'F' or clicking the "Focus" button in the viewport centers the camera on the selected entity.
 *   **Bounds Awareness**: The camera calculates the optimal distance based on the mesh's bounding box to ensure the object fills the view.
 
+## Inspector Integration
+
+*   **Transform Edits**: Modifying Position, Rotation, or Scale in the Inspector uses `TransformCommand`.
+    *   **Merge Policy**: Consecutive edits to the same entity's transform are merged into a single Undo step (e.g., dragging a spinner or typing quickly).
+*   **Component Operations**:
+    *   **Add Component**: "Add Component" button at the bottom of the Inspector creates an Undoable action.
+    *   **Remove Component**: "X" button on component headers removes the component (Undoable).
+*   **Renaming**: Renaming an entity via the Hierarchy context menu or other means uses `RenameEntityCommand`.
+
 ## Architecture
 
 *   **Command Pattern**: Implemented in `Engine/Editor/include/Aetherion/Editor/Command.h`.
