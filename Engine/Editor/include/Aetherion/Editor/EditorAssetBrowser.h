@@ -28,35 +28,50 @@ public:
 
     void SetItems(const std::vector<Item>& items);
     void ClearSelection();
+    
     QString GetSelectedAssetId() const;
     void FocusFilter();
 
+    // History navigation
+    void NavigateBack();
+    void NavigateForward();
+
 signals:
-    void AssetSelected(const QString& assetId);
-    void AssetSelectionCleared();
+    void AssetSelected(QString id);
     void AssetActivated();
+    void AssetDroppedOnScene(QString id);
+    void AssetShowInExplorerRequested(QString id);
+    void AssetRenameRequested(QString id);
+    void AssetDeleteRequested(QString id);
+    void AssetSelectionCleared();
+    
+    // New signal for navigation
+    void NavigateToPathRequested(QString path);
     void RescanRequested();
-    void AssetDroppedOnScene(const QString& assetId);
-    void AssetDeleteRequested(const QString& assetId);
-    void AssetRenameRequested(const QString& assetId);
-    void AssetShowInExplorerRequested(const QString& assetId);
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
 
-private slots:
-    void onFilterTextChanged(const QString& text);
-    void showContextMenu(const QPoint& pos);
-
 private:
-    void updateVisibleItems();
     void setupContextMenu();
+    void showContextMenu(const QPoint& pos);
+    void updateVisibleItems();
+    void updateNavigationButtons();
+    void onFilterTextChanged(const QString& text);
 
     QListWidget* m_list = nullptr;
-    QToolButton* m_rescanButton = nullptr;
     QLineEdit* m_filterEdit = nullptr;
+    QToolButton* m_rescanButton = nullptr;
+    QToolButton* m_backButton = nullptr;
+    QToolButton* m_forwardButton = nullptr;
     QMenu* m_contextMenu = nullptr;
+
     std::vector<Item> m_allItems;
     QString m_filterText;
+
+    // History
+    QString m_currentPath;
+    std::vector<QString> m_backStack;
+    std::vector<QString> m_forwardStack;
 };
 } // namespace Aetherion::Editor

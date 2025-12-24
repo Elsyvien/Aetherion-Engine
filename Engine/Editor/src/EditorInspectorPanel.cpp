@@ -18,13 +18,43 @@
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/LightComponent.h"
+#include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/TransformComponent.h"
 #include "Aetherion/Editor/Commands/TransformCommand.h"
 #include "Aetherion/Editor/Commands/ComponentCommands.h"
+#include <QToolButton>
 
 namespace
 {
+// Helper class for collapsible headers
+class CollapsibleHeader : public QWidget
+{
+public:
+    CollapsibleHeader(const QString& title, QWidget* content, QWidget* parent = nullptr)
+        : QWidget(parent), m_content(content)
+    {
+        auto* layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+
+        auto* headerBtn = new QPushButton(title, this);
+        headerBtn->setCheckable(true);
+        headerBtn->setChecked(true);
+        headerBtn->setStyleSheet("QPushButton { text-align: left; font-weight: bold; padding: 5px; background-color: #404040; border: none; } QPushButton:checked { background-color: #505050; }");
+        
+        layout->addWidget(headerBtn);
+        layout->addWidget(m_content);
+
+        connect(headerBtn, &QPushButton::toggled, this, [this](bool checked) {
+            m_content->setVisible(checked);
+        });
+    }
+
+private:
+    QWidget* m_content;
+};
+
 QString FormatBytes(long long bytes)
 {
     if (bytes < 0)
@@ -286,8 +316,9 @@ void EditorInspectorPanel::RebuildUi()
     auto transform = m_entity->GetComponent<Scene::TransformComponent>();
     auto mesh = m_entity->GetComponent<Scene::MeshRendererComponent>();
     auto light = m_entity->GetComponent<Scene::LightComponent>();
+    auto camera = m_entity->GetComponent<Scene::CameraComponent>();
 
-    if (!transform && !mesh && !light)
+    if (!transform && !mesh && !light && !camera)
     {
         auto* noEditable = new QLabel(tr("No editable components on selected entity."), m_content);
         noEditable->setAlignment(Qt::AlignTop | Qt::AlignLeft);
@@ -305,33 +336,54 @@ void EditorInspectorPanel::RebuildUi()
         return s;
     };
 
-    auto makeComponentHeader = [this](const QString& title, std::shared_ptr<Scene::Component> component) {
-        auto* container = new QWidget(m_content);
-        auto* layout = new QHBoxLayout(container);
-        layout->setContentsMargins(0, 0, 0, 0);
+    auto makeComponentHeader = [this](const QString& title, std::shared_ptr<Scene::Component> component, QWidget* contentWidget) {
+        // Header container with title and remove button
+        auto* headerContainer = new QWidget();
+        auto* headerLayout = new QHBoxLayout(headerContainer);
+        headerLayout->setContentsMargins(5, 5, 5, 5);
+        headerContainer->setStyleSheet("background-color: #353535; border-radius: 4px;");
+
+        auto* toggleBtn = new QToolButton(headerContainer);
+        toggleBtn->setArrowType(Qt::DownArrow);
+        toggleBtn->setStyleSheet("border: none;");
+        toggleBtn->setCheckable(true);
+        toggleBtn->setChecked(true);
         
-        auto* label = new QLabel(title, container);
+        auto* label = new QLabel(title, headerContainer);
         label->setStyleSheet("font-weight: bold;");
-        layout->addWidget(label);
-        layout->addStretch();
         
-        auto* removeBtn = new QPushButton(tr("X"), container);
+        auto* removeBtn = new QPushButton("X", headerContainer);
         removeBtn->setFixedSize(20, 20);
+        removeBtn->setStyleSheet("QPushButton { border-radius: 10px; color: #aaa; } QPushButton:hover { background-color: #c00; color: white; }");
         removeBtn->setToolTip(tr("Remove Component"));
+
+        headerLayout->addWidget(toggleBtn);
+        headerLayout->addWidget(label, 1);
+        headerLayout->addWidget(removeBtn);
+
         connect(removeBtn, &QPushButton::clicked, this, [this, component] {
             if (m_commandExecutor) {
                 m_commandExecutor(std::make_unique<RemoveComponentCommand>(m_entity, component));
             }
         });
-        layout->addWidget(removeBtn);
+
+        connect(toggleBtn, &QToolButton::toggled, contentWidget, [contentWidget, toggleBtn](bool checked) {
+            contentWidget->setVisible(checked);
+            toggleBtn->setArrowType(checked ? Qt::DownArrow : Qt::RightArrow);
+        });
+
+        auto* container = new QWidget(m_content);
+        auto* containerLayout = new QVBoxLayout(container);
+        containerLayout->setContentsMargins(0, 0, 0, 4);
+        containerLayout->setSpacing(2);
+        containerLayout->addWidget(headerContainer);
+        containerLayout->addWidget(contentWidget);
         
         return container;
     };
 
     if (transform)
     {
-        m_contentLayout->addWidget(makeComponentHeader(tr("Transform"), transform));
-
         auto* formHost = new QWidget(m_content);
         auto* form = new QFormLayout(formHost);
         form->setLabelAlignment(Qt::AlignLeft);
@@ -415,13 +467,11 @@ void EditorInspectorPanel::RebuildUi()
         connect(m_scaleZ, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
 
         formHost->setLayout(form);
-        m_contentLayout->addWidget(formHost);
+        m_contentLayout->addWidget(makeComponentHeader(tr("Transform"), transform, formHost));
     }
 
     if (mesh)
     {
-        m_contentLayout->addWidget(makeComponentHeader(tr("Mesh Renderer"), mesh));
-
         auto* formHost = new QWidget(m_content);
         auto* form = new QFormLayout(formHost);
         form->setLabelAlignment(Qt::AlignLeft);
@@ -538,20 +588,18 @@ void EditorInspectorPanel::RebuildUi()
         }
 
         formHost->setLayout(form);
-        m_contentLayout->addWidget(formHost);
+        m_contentLayout->addWidget(makeComponentHeader(tr("Mesh Renderer"), mesh, formHost));
     }
 
     if (light)
     {
-        m_contentLayout->addWidget(makeComponentHeader(tr("Light"), light));
-
-        auto* hintLabel = new QLabel(tr("Direction uses Transform rotation (X=Pitch, Y=Yaw)."), m_content);
-        hintLabel->setStyleSheet("color: #8a8a8a;");
-        m_contentLayout->addWidget(hintLabel);
-
         auto* formHost = new QWidget(m_content);
         auto* form = new QFormLayout(formHost);
         form->setLabelAlignment(Qt::AlignLeft);
+
+        auto* hintLabel = new QLabel(tr("Direction uses Transform rotation (X=Pitch, Y=Yaw)."), m_content);
+        hintLabel->setStyleSheet("color: #8a8a8a;");
+        form->addRow(hintLabel);
 
         m_lightEnabled = new QCheckBox(m_content);
         m_lightEnabled->setChecked(light->IsEnabled());
@@ -615,7 +663,72 @@ void EditorInspectorPanel::RebuildUi()
         connect(m_lightAmbientB, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
 
         formHost->setLayout(form);
-        m_contentLayout->addWidget(formHost);
+        m_contentLayout->addWidget(makeComponentHeader(tr("Light"), light, formHost));
+    }
+
+    if (camera)
+    {
+        auto* formHost = new QWidget(m_content);
+        auto* form = new QFormLayout(formHost);
+        form->setLabelAlignment(Qt::AlignLeft);
+
+        auto* projCombo = new QComboBox(m_content);
+        projCombo->addItem(tr("Perspective"), 0);
+        projCombo->addItem(tr("Orthographic"), 1);
+        projCombo->setCurrentIndex(static_cast<int>(camera->GetProjectionType()));
+
+        auto* fovSpin = makeSpin(1.0, 179.0, 1.0);
+        fovSpin->setValue(camera->GetVerticalFov());
+
+        auto* nearSpin = makeSpin(0.001, 10000.0, 0.1);
+        nearSpin->setValue(camera->GetNearClip());
+
+        auto* farSpin = makeSpin(0.001, 10000.0, 10.0);
+        farSpin->setValue(camera->GetFarClip());
+
+        auto* orthoSizeSpin = makeSpin(0.1, 10000.0, 1.0);
+        orthoSizeSpin->setValue(camera->GetOrthographicSize());
+
+        auto* primaryCheck = new QCheckBox(m_content);
+        primaryCheck->setChecked(camera->IsPrimary());
+
+        form->addRow(tr("Projection"), projCombo);
+        form->addRow(tr("Vertical FOV"), fovSpin);
+        form->addRow(tr("Near Clip"), nearSpin);
+        form->addRow(tr("Far Clip"), farSpin);
+        form->addRow(tr("Ortho Size"), orthoSizeSpin);
+        form->addRow(tr("Primary"), primaryCheck);
+
+        auto updateVisibility = [fovSpin, orthoSizeSpin, projCombo]() {
+            bool isPersp = (projCombo->currentIndex() == 0);
+            fovSpin->setEnabled(isPersp);
+            orthoSizeSpin->setEnabled(!isPersp);
+        };
+        updateVisibility();
+
+        auto updateCamera = [this, camera, projCombo, fovSpin, nearSpin, farSpin, orthoSizeSpin, primaryCheck, updateVisibility]() {
+            if (m_buildingUi || !m_entity) return;
+
+            camera->SetProjectionType(static_cast<Scene::CameraComponent::ProjectionType>(projCombo->currentData().toInt()));
+            camera->SetVerticalFov(static_cast<float>(fovSpin->value()));
+            camera->SetNearClip(static_cast<float>(nearSpin->value()));
+            camera->SetFarClip(static_cast<float>(farSpin->value()));
+            camera->SetOrthographicSize(static_cast<float>(orthoSizeSpin->value()));
+            camera->SetPrimary(primaryCheck->isChecked());
+            
+            updateVisibility();
+            emit sceneModified();
+        };
+
+        connect(projCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [updateCamera](int){ updateCamera(); });
+        connect(fovSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateCamera](double){ updateCamera(); });
+        connect(nearSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateCamera](double){ updateCamera(); });
+        connect(farSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateCamera](double){ updateCamera(); });
+        connect(orthoSizeSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateCamera](double){ updateCamera(); });
+        connect(primaryCheck, &QCheckBox::toggled, this, [updateCamera](bool){ updateCamera(); });
+
+        formHost->setLayout(form);
+        m_contentLayout->addWidget(makeComponentHeader(tr("Camera"), camera, formHost));
     }
 
     m_contentLayout->addStretch(1);
@@ -640,6 +753,12 @@ void EditorInspectorPanel::RebuildUi()
         if (!m_entity->GetComponent<Scene::LightComponent>()) {
             menu.addAction(tr("Light"), [this] {
                 auto comp = std::make_shared<Scene::LightComponent>();
+                if (m_commandExecutor) m_commandExecutor(std::make_unique<AddComponentCommand>(m_entity, comp));
+            });
+        }
+        if (!m_entity->GetComponent<Scene::CameraComponent>()) {
+            menu.addAction(tr("Camera"), [this] {
+                auto comp = std::make_shared<Scene::CameraComponent>();
                 if (m_commandExecutor) m_commandExecutor(std::make_unique<AddComponentCommand>(m_entity, comp));
             });
         }

@@ -13,6 +13,7 @@
 #include "Aetherion/Runtime/EngineContext.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/LightComponent.h"
+#include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
@@ -23,67 +24,91 @@ using namespace Aetherion;
 
 std::string ExtractStringValue(const std::string& source, const std::string& key)
 {
-    const std::regex pattern("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
-    std::smatch match;
-    if (std::regex_search(source, match, pattern) && match.size() > 1)
-    {
-        return match[1];
-    }
-    return {};
+    const std::string needle = std::string("\"") + key + "\"";
+    size_t pos = source.find(needle);
+    if (pos == std::string::npos) return {};
+    pos = source.find(':', pos + needle.size());
+    if (pos == std::string::npos) return {};
+    pos = source.find('"', pos);
+    if (pos == std::string::npos) return {};
+    size_t start = pos + 1;
+    size_t end = source.find('"', start);
+    if (end == std::string::npos) return {};
+    return source.substr(start, end - start);
 }
 
 std::optional<std::uint64_t> ExtractUint64(const std::string& source, const std::string& key)
 {
-    const std::regex pattern("\"" + key + "\"\\s*:\\s*([0-9]+)");
-    std::smatch match;
-    if (std::regex_search(source, match, pattern) && match.size() > 1)
-    {
-        return static_cast<std::uint64_t>(std::stoull(match[1]));
-    }
-    return std::nullopt;
+    const std::string needle = std::string("\"") + key + "\"";
+    size_t pos = source.find(needle);
+    if (pos == std::string::npos) return std::nullopt;
+    pos = source.find(':', pos + needle.size());
+    if (pos == std::string::npos) return std::nullopt;
+    // find first digit
+    size_t start = source.find_first_of("0123456789", pos);
+    if (start == std::string::npos) return std::nullopt;
+    size_t end = start;
+    while (end < source.size() && std::isdigit(static_cast<unsigned char>(source[end]))) ++end;
+    return static_cast<std::uint64_t>(std::stoull(source.substr(start, end - start)));
 }
 
 std::optional<float> ExtractFloat(const std::string& source, const std::string& key)
 {
-    const std::regex pattern("\"" + key + "\"\\s*:\\s*(-?[0-9]+(?:\\.[0-9]+)?)");
-    std::smatch match;
-    if (std::regex_search(source, match, pattern) && match.size() > 1)
+    const std::string needle = std::string("\"") + key + "\"";
+    size_t pos = source.find(needle);
+    if (pos == std::string::npos) return std::nullopt;
+    pos = source.find(':', pos + needle.size());
+    if (pos == std::string::npos) return std::nullopt;
+    // find start of number (including '-')
+    size_t start = source.find_first_of("-0123456789", pos);
+    if (start == std::string::npos) return std::nullopt;
+    size_t end = start;
+    while (end < source.size())
     {
-        return std::stof(match[1]);
+        char c = source[end];
+        if (!(std::isdigit(static_cast<unsigned char>(c)) || c == '.' || c == '-')) break;
+        ++end;
     }
-    return std::nullopt;
+    try { return std::stof(source.substr(start, end - start)); }
+    catch (...) { return std::nullopt; }
 }
 
 std::vector<float> ExtractFloatArray(const std::string& source, const std::string& key)
 {
-    const std::regex pattern("\"" + key + "\"\\s*:\\s*\\[([^\\]]*)\\]");
-    std::smatch match;
-    if (std::regex_search(source, match, pattern) && match.size() > 1)
+    std::vector<float> values;
+    const std::string needle = std::string("\"") + key + "\"";
+    size_t pos = source.find(needle);
+    if (pos == std::string::npos) return values;
+    pos = source.find('[', pos + needle.size());
+    if (pos == std::string::npos) return values;
+    size_t end = source.find(']', pos);
+    if (end == std::string::npos) return values;
+    std::string body = source.substr(pos + 1, end - pos - 1);
+    std::stringstream stream(body);
+    std::string token;
+    while (std::getline(stream, token, ','))
     {
-        std::vector<float> values;
-        std::stringstream stream(match[1]);
-        std::string token;
-        while (std::getline(stream, token, ','))
-        {
-            if (token.empty())
-            {
-                continue;
-            }
-            values.push_back(std::stof(token));
-        }
-        return values;
+        // trim
+        size_t a = token.find_first_not_of(" \t\n\r");
+        if (a == std::string::npos) continue;
+        size_t b = token.find_last_not_of(" \t\n\r");
+        std::string part = token.substr(a, b - a + 1);
+        try { values.push_back(std::stof(part)); } catch (...) { }
     }
-    return {};
+    return values;
 }
 
 bool ExtractBool(const std::string& source, const std::string& key, bool defaultValue)
 {
-    const std::regex pattern("\"" + key + "\"\\s*:\\s*(true|false)");
-    std::smatch match;
-    if (std::regex_search(source, match, pattern) && match.size() > 1)
-    {
-        return match[1] == "true";
-    }
+    const std::string needle = std::string("\"") + key + "\"";
+    size_t pos = source.find(needle);
+    if (pos == std::string::npos) return defaultValue;
+    pos = source.find(':', pos + needle.size());
+    if (pos == std::string::npos) return defaultValue;
+    size_t start = source.find_first_not_of(" \t\n\r", pos + 1);
+    if (start == std::string::npos) return defaultValue;
+    if (source.compare(start, 4, "true") == 0) return true;
+    if (source.compare(start, 5, "false") == 0) return false;
     return defaultValue;
 }
 
@@ -179,25 +204,21 @@ bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path
         out << "      \"components\": {\n";
 
         bool wroteComponent = false;
-        if (auto transform = entity->GetComponent<TransformComponent>())
+        if (auto transform = entity->GetComponent<TransformComponent>()) // Removed the erroneous 'сля'
         {
             out << "        \"Transform\": {\n";
-            out << "          \"position\": [" << transform->GetPositionX() << ", " << transform->GetPositionY() << ", "
-                << transform->GetPositionZ() << "],\n";
-            out << "          \"rotation\": [" << transform->GetRotationXDegrees() << ", " << transform->GetRotationYDegrees()
-                << ", " << transform->GetRotationZDegrees() << "],\n";
-            out << "          \"scale\": [" << transform->GetScaleX() << ", " << transform->GetScaleY() << ", "
-                << transform->GetScaleZ() << "],\n";
+            out << "          \"position\": [" << transform->GetPositionX() << ", " << transform->GetPositionY() << ", " << transform->GetPositionZ() << "],\n";
+            out << "          \"rotation\": [" << transform->GetRotationXDegrees() << ", " << transform->GetRotationYDegrees() << ", " << transform->GetRotationZDegrees() << "],\n";
+            out << "          \"scale\": [" << transform->GetScaleX() << ", " << transform->GetScaleY() << ", " << transform->GetScaleZ() << "],\n";
             out << "          \"parent\": " << transform->GetParentId() << "\n";
             out << "        }";
             wroteComponent = true;
         }
 
-        if (auto mesh = entity->GetComponent<MeshRendererComponent>())
-        {
+        if (auto mesh = entity->GetComponent<MeshRendererComponent>()){
             if (wroteComponent)
             {
-                out << ",\n";
+                out << " ,\n";
             }
             out << "        \"MeshRenderer\": {\n";
             const auto color = mesh->GetColor();
@@ -210,11 +231,10 @@ bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path
             wroteComponent = true;
         }
 
-        if (auto light = entity->GetComponent<LightComponent>())
-        {
+        if (auto light = entity->GetComponent<LightComponent>()){
             if (wroteComponent)
             {
-                out << ",\n";
+                out << " ,\n";
             }
             out << "        \"Light\": {\n";
             const auto color = light->GetColor();
@@ -223,6 +243,22 @@ bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path
             out << "          \"lightColor\": [" << color[0] << ", " << color[1] << ", " << color[2] << "],\n";
             out << "          \"lightIntensity\": " << light->GetIntensity() << ",\n";
             out << "          \"ambientColor\": [" << ambient[0] << ", " << ambient[1] << ", " << ambient[2] << "]\n";
+            out << "        }";
+            wroteComponent = true;
+        }
+
+        if (auto camera = entity->GetComponent<CameraComponent>()){
+            if (wroteComponent)
+            {
+                out << " ,\n";
+            }
+            out << "        \"Camera\": {\n";
+            out << "          \"projectionType\": " << static_cast<int>(camera->GetProjectionType()) << ",\n";
+            out << "          \"verticalFov\": " << camera->GetVerticalFov() << ",\n";
+            out << "          \"nearClip\": " << camera->GetNearClip() << ",\n";
+            out << "          \"farClip\": " << camera->GetFarClip() << ",\n";
+            out << "          \"orthographicSize\": " << camera->GetOrthographicSize() << ",\n";
+            out << "          \"isPrimary\": " << (camera->IsPrimary() ? "true" : "false") << "\n";
             out << "        }";
             wroteComponent = true;
         }
@@ -350,6 +386,28 @@ std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) 
             entity->AddComponent(light);
         }
 
+        const auto cameraProjection = ExtractUint64(block, "projectionType");
+        const auto cameraFov = ExtractFloat(block, "verticalFov");
+        const auto cameraNear = ExtractFloat(block, "nearClip");
+        const auto cameraFar = ExtractFloat(block, "farClip");
+        const auto cameraOrthoSize = ExtractFloat(block, "orthographicSize");
+        const auto cameraPrimary = ExtractBool(block, "isPrimary", false);
+
+        if (cameraProjection.has_value() || block.find("\"Camera\"") != std::string::npos)
+        {
+            auto camera = std::make_shared<CameraComponent>();
+            if (cameraProjection.has_value())
+            {
+                camera->SetProjectionType(static_cast<CameraComponent::ProjectionType>(*cameraProjection));
+            }
+            if (cameraFov.has_value()) camera->SetVerticalFov(*cameraFov);
+            if (cameraNear.has_value()) camera->SetNearClip(*cameraNear);
+            if (cameraFar.has_value()) camera->SetFarClip(*cameraFar);
+            if (cameraOrthoSize.has_value()) camera->SetOrthographicSize(*cameraOrthoSize);
+            camera->SetPrimary(cameraPrimary);
+            entity->AddComponent(camera);
+        }
+
         scene->AddEntity(entity);
     }
 
@@ -407,6 +465,24 @@ std::shared_ptr<Scene> SceneSerializer::CreateDefaultScene() const
     lightEntity->AddComponent(lightTransform);
     lightEntity->AddComponent(light);
     scene->AddEntity(lightEntity);
+
+    auto cubeEntity = std::make_shared<Entity>(3, "Cube");
+    auto cubeTransform = std::make_shared<TransformComponent>();
+    cubeTransform->SetPosition(-2.0f, 0.0f, 0.0f);
+    auto cubeMesh = std::make_shared<MeshRendererComponent>();
+    cubeMesh->SetMeshAssetId("assets/meshes/cube.gltf");
+    cubeEntity->AddComponent(cubeTransform);
+    cubeEntity->AddComponent(cubeMesh);
+    scene->AddEntity(cubeEntity);
+
+    auto sphereEntity = std::make_shared<Entity>(4, "Sphere");
+    auto sphereTransform = std::make_shared<TransformComponent>();
+    sphereTransform->SetPosition(2.0f, 0.0f, 0.0f);
+    auto sphereMesh = std::make_shared<MeshRendererComponent>();
+    sphereMesh->SetMeshAssetId("assets/meshes/sphere.gltf");
+    sphereEntity->AddComponent(sphereTransform);
+    sphereEntity->AddComponent(sphereMesh);
+    scene->AddEntity(sphereEntity);
 
     if (auto assets = m_context.GetAssetRegistry())
     {

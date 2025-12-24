@@ -483,6 +483,8 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         if (m_viewport)
         {
             m_viewport->updateCamera(dt);
+            // Smoothly interpolate interactive transform target if active
+            UpdateInteractiveTransform(dt);
         }
 
         auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
@@ -684,15 +686,23 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
 
                     float delta = tCurr - tPrev;
                     
-                    if (m_activeGizmoAxis == GizmoAxis::X) ApplyTranslationDelta(delta, 0, 0);
-                    else if (m_activeGizmoAxis == GizmoAxis::Y) ApplyTranslationDelta(0, delta, 0);
-                    else if (m_activeGizmoAxis == GizmoAxis::Z) ApplyTranslationDelta(0, 0, delta);
+                    if (m_interactiveTransformActive)
+                    {
+                        if (m_activeGizmoAxis == GizmoAxis::X) UpdateInteractiveTransformTarget(delta, 0, 0);
+                        else if (m_activeGizmoAxis == GizmoAxis::Y) UpdateInteractiveTransformTarget(0, delta, 0);
+                        else if (m_activeGizmoAxis == GizmoAxis::Z) UpdateInteractiveTransformTarget(0, 0, delta);
+                    }
+                    else
+                    {
+                        if (m_activeGizmoAxis == GizmoAxis::X) ApplyTranslationDelta(delta, 0, 0);
+                        else if (m_activeGizmoAxis == GizmoAxis::Y) ApplyTranslationDelta(0, delta, 0);
+                        else if (m_activeGizmoAxis == GizmoAxis::Z) ApplyTranslationDelta(0, 0, delta);
+                    }
                 }
             }
             else
             {
                 // Screen-space translation
-                // Calculate Camera Basis
                 const float yawRad = m_viewport ? m_viewport->getCameraRotationY() * (3.14159265f / 180.0f) : 0.0f;
                 const float pitchRad = m_viewport ? m_viewport->getCameraRotationX() * (3.14159265f / 180.0f) : 0.0f;
                 
@@ -701,32 +711,58 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                 const float sinP = std::sin(pitchRad);
                 const float cosP = std::cos(pitchRad);
 
-                // Right Vector (Ground projected)
                 const float rightX = cosY;
                 const float rightY = 0.0f;
                 const float rightZ = -sinY;
 
-                // Up Vector (Perpendicular to View and Right)
                 const float upX = sinY * sinP;
                 const float upY = cosP;
                 const float upZ = cosY * sinP;
 
-                // Apply translation along camera plane
                 const float tx = (rightX * dx - upX * dy) * translateSpeed;
                 const float ty = (rightY * dx - upY * dy) * translateSpeed;
                 const float tz = (rightZ * dx - upZ * dy) * translateSpeed;
 
-                ApplyTranslationDelta(tx, ty, tz);
+                if (m_interactiveTransformActive)
+                {
+                    UpdateInteractiveTransformTarget(tx, ty, tz);
+                }
+                else
+                {
+                    ApplyTranslationDelta(tx, ty, tz);
+                }
             }
         }
         else if (m_gizmoMode == GizmoMode::Rotate)
         {
-            ApplyRotationDelta(dx * rotateSpeed);
+            if (m_interactiveTransformActive)
+            {
+                UpdateInteractiveTransformTarget(0,0,0); // rotation handled separately if needed
+            }
+            else
+            {
+                ApplyRotationDelta(dx * rotateSpeed);
+            }
         }
         else if (m_gizmoMode == GizmoMode::Scale)
         {
-            ApplyScaleDelta(-dy * scaleSpeed);
+            if (m_interactiveTransformActive)
+            {
+                UpdateInteractiveTransformTarget(0,0,0); // scaling during interactive drag not implemented here
+            }
+            else
+            {
+                ApplyScaleDelta(-dy * scaleSpeed);
+            }
         }
+    });
+
+    connect(m_viewport, &EditorViewport::gizmoDragStarted, this, [this]() {
+        BeginInteractiveTransform();
+    });
+
+    connect(m_viewport, &EditorViewport::gizmoDragEnded, this, [this]() {
+        EndInteractiveTransform();
     });
 
     auto* secondaryPlaceholder = new QWidget(centerSplit);
@@ -854,6 +890,8 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                 m_inspectorDock->show();
                 m_inspectorDock->raise();
             }
+            // QoL: Focus camera on double-click
+            FocusCameraOnSelection();
         });
 
         connect(m_hierarchyPanel,
@@ -2749,7 +2787,7 @@ void EditorMainWindow::ActivateModeTab(int index)
 
 bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
 {
-    if (watched == m_viewport)
+    if (watched == m_viewport || (m_viewport && watched == m_viewport->surfaceWidget()))
     {
         if (event->type() == QEvent::MouseButtonPress)
         {
@@ -2818,6 +2856,17 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
             if (keyEvent->isAutoRepeat())
             {
                 return false;
+            }
+
+            // If the viewport or its native surface has focus, allow it to handle movement keys (W/A/S/D/Q/E)
+            if (m_viewport && (m_viewport->hasFocus() || (m_viewport->surfaceWidget() && m_viewport->surfaceWidget()->hasFocus())))
+            {
+                const int k = keyEvent->key();
+                if (k == Qt::Key_W || k == Qt::Key_A || k == Qt::Key_S || k == Qt::Key_D || k == Qt::Key_Q || k == Qt::Key_E)
+                {
+                    // Let the viewport handle these keys for camera movement
+                    return false;
+                }
             }
 
             const bool snapping = m_snapToggleAction ? m_snapToggleAction->isChecked() : false;
@@ -2972,6 +3021,83 @@ void EditorMainWindow::ApplyScaleDelta(float deltaUniform)
     newData.scale[2] = std::max(0.001f, newData.scale[2] + deltaUniform);
 
     ExecuteCommand(std::make_unique<TransformCommand>(entity, oldData, newData));
+}
+
+void EditorMainWindow::BeginInteractiveTransform()
+{
+    if (!m_selection) return;
+    auto entity = m_selection->GetSelectedEntity();
+    if (!entity) return;
+
+    auto transform = entity->GetComponent<Scene::TransformComponent>();
+    if (!transform) return;
+
+    m_interactiveEntity = entity;
+    m_interactiveTransformActive = true;
+
+    m_interactiveOldData.position = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
+    m_interactiveOldData.rotation = {transform->GetRotationXDegrees(), transform->GetRotationYDegrees(), transform->GetRotationZDegrees()};
+    m_interactiveOldData.scale = {transform->GetScaleX(), transform->GetScaleY(), transform->GetScaleZ()};
+
+    m_interactiveCurrentData = m_interactiveOldData;
+    m_interactiveTargetData = m_interactiveOldData;
+}
+
+void EditorMainWindow::UpdateInteractiveTransformTarget(float dx, float dy, float dz)
+{
+    if (!m_interactiveTransformActive || !m_interactiveEntity) return;
+
+    m_interactiveTargetData.position[0] += dx;
+    m_interactiveTargetData.position[1] += dy;
+    m_interactiveTargetData.position[2] += dz;
+}
+
+void EditorMainWindow::EndInteractiveTransform()
+{
+    if (!m_interactiveTransformActive || !m_interactiveEntity) return;
+
+    // Ensure final target applied before creating command
+    auto entity = m_interactiveEntity;
+    auto transform = entity->GetComponent<Scene::TransformComponent>();
+    if (transform)
+    {
+        transform->SetPosition(m_interactiveTargetData.position[0], m_interactiveTargetData.position[1], m_interactiveTargetData.position[2]);
+        transform->SetRotationDegrees(m_interactiveTargetData.rotation[0], m_interactiveTargetData.rotation[1], m_interactiveTargetData.rotation[2]);
+        transform->SetScale(m_interactiveTargetData.scale[0], m_interactiveTargetData.scale[1], m_interactiveTargetData.scale[2]);
+    }
+
+    // Push a single command representing the full change
+    ExecuteCommand(std::make_unique<TransformCommand>(entity, m_interactiveOldData, m_interactiveTargetData));
+
+    m_interactiveTransformActive = false;
+    m_interactiveEntity.reset();
+}
+
+void EditorMainWindow::UpdateInteractiveTransform(float deltaTime)
+{
+    if (!m_interactiveTransformActive || !m_interactiveEntity) return;
+
+    auto entity = m_interactiveEntity;
+    auto transform = entity->GetComponent<Scene::TransformComponent>();
+    if (!transform) return;
+
+    // Interpolate current towards target for smoothing
+    const float rate = 15.0f; // higher = faster follow
+    const float alpha = 1.0f - std::exp(-rate * deltaTime);
+
+    for (int i = 0; i < 3; ++i)
+    {
+        m_interactiveCurrentData.position[i] = m_interactiveCurrentData.position[i] +
+            (m_interactiveTargetData.position[i] - m_interactiveCurrentData.position[i]) * alpha;
+        m_interactiveCurrentData.rotation[i] = m_interactiveCurrentData.rotation[i] +
+            (m_interactiveTargetData.rotation[i] - m_interactiveCurrentData.rotation[i]) * alpha;
+        m_interactiveCurrentData.scale[i] = m_interactiveCurrentData.scale[i] +
+            (m_interactiveTargetData.scale[i] - m_interactiveCurrentData.scale[i]) * alpha;
+    }
+
+    transform->SetPosition(m_interactiveCurrentData.position[0], m_interactiveCurrentData.position[1], m_interactiveCurrentData.position[2]);
+    transform->SetRotationDegrees(m_interactiveCurrentData.rotation[0], m_interactiveCurrentData.rotation[1], m_interactiveCurrentData.rotation[2]);
+    transform->SetScale(m_interactiveCurrentData.scale[0], m_interactiveCurrentData.scale[1], m_interactiveCurrentData.scale[2]);
 }
 
 void EditorMainWindow::RefreshSelectedEntityUi()

@@ -1,0 +1,42 @@
+{
+  "name": "Main Scene",
+  "entities": [
+    {
+      "id": 1,
+      "name": "Viewport Quad",
+      "components": {
+        "Transform": {
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0],
+          "scale": [1, 1, 1],
+          "parent": 0
+        },
+        "MeshRenderer": {
+          "visible": true,
+          "color": [1, 1, 1],
+          "rotationSpeed": 15,
+          "albedoTexture": "",
+          "meshId": ""
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Directional Light",
+      "components": {
+        "Transform": {
+          "position": [0, 0, 0],
+          "rotation": [-55, 215, 0],
+          "scale": [1, 1, 1],
+          "parent": 0
+        },
+        "Light": {
+          "lightEnabled": true,
+          "lightColor": [1, 1, 1],
+          "lightIntensity": 1,
+          "ambientColor": [0.18, 0.18, 0.2]
+        }
+      }
+    }
+  ]
+}

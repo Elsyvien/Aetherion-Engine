@@ -40,6 +40,8 @@ signals:
     void cameraChanged();
     void focusRequested();
     void gizmoDrag(float dx, float dy);
+    void gizmoDragStarted();
+    void gizmoDragEnded();
 
 protected:
     void showEvent(QShowEvent* e) override;
@@ -59,6 +61,7 @@ private:
     QWidget* m_overlayWidget = nullptr;
     QToolButton* m_focusButton = nullptr;
     QLabel* m_focusHint = nullptr;
+    QLabel* m_speedLabel = nullptr;
 
     // Camera state
     float m_cameraX = 0.0f;

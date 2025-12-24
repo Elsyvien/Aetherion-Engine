@@ -13,6 +13,7 @@
 #include "Aetherion/Core/Types.h"
 #include "Aetherion/Editor/EditorSettings.h"
 #include "Aetherion/Editor/CommandHistory.h"
+#include "Aetherion/Editor/Commands/TransformCommand.h"
 
 class QAction;
 class QActionGroup;
@@ -143,6 +144,18 @@ private:
     std::unique_ptr<CommandHistory> m_commandHistory;
     QAction* m_undoAction = nullptr;
     QAction* m_redoAction = nullptr;
+
+    // Interactive transform state for smooth dragging
+    bool m_interactiveTransformActive = false;
+    std::shared_ptr<Scene::Entity> m_interactiveEntity;
+    TransformData m_interactiveOldData;
+    TransformData m_interactiveTargetData;
+    TransformData m_interactiveCurrentData;
+
+    void BeginInteractiveTransform();
+    void UpdateInteractiveTransformTarget(float dx, float dy, float dz);
+    void EndInteractiveTransform();
+    void UpdateInteractiveTransform(float deltaTime);
 
     void CreateMenuBarContent();
     void CreateToolBarContent();

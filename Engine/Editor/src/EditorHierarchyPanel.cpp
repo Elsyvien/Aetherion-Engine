@@ -13,6 +13,7 @@
 #include "Aetherion/Editor/EditorSelection.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/LightComponent.h"
+#include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
@@ -154,6 +155,7 @@ void EditorHierarchyPanel::BindScene(std::shared_ptr<Scene::Scene> scene)
 
     const QString sceneName = QString::fromStdString(m_scene->GetName().empty() ? std::string("Scene") : m_scene->GetName());
     auto* root = new QTreeWidgetItem(m_tree, QStringList{sceneName});
+    root->setIcon(0, QIcon(":/aetherion/editor_icon.png"));
     root->setExpanded(true);
 
     // First pass: create items and lookup without parenting.
@@ -169,15 +171,21 @@ void EditorHierarchyPanel::BindScene(std::shared_ptr<Scene::Scene> scene)
         item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(static_cast<qulonglong>(entity->GetId())));
 
         // Set icon based on component type
-        if (entity->GetComponent<Scene::LightComponent>())
+        if (entity->GetComponent<Scene::CameraComponent>())
         {
-            // Sun/light icon - using a yellow circle Unicode character
-            item->setText(0, QString::fromUtf8("☀ ") + name);
+            item->setIcon(0, QIcon(":/aetherion/icons/camera.svg"));
+        }
+        else if (entity->GetComponent<Scene::LightComponent>())
+        {
+            item->setIcon(0, QIcon(":/aetherion/icons/light.svg"));
         }
         else if (entity->GetComponent<Scene::MeshRendererComponent>())
         {
-            // Mesh/cube icon
-            item->setText(0, QString::fromUtf8("⬢ ") + name);
+            item->setIcon(0, QIcon(":/aetherion/icons/mesh.svg"));
+        }
+        else
+        {
+            item->setIcon(0, QIcon(":/aetherion/icons/entity.svg"));
         }
 
         m_itemLookup.insert(static_cast<qulonglong>(entity->GetId()), item);

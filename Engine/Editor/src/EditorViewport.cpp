@@ -12,6 +12,7 @@
 #include <QTimer>
 #include <QWindow>
 #include <cmath>
+#include <QDebug>
 
 namespace Aetherion::Editor
 {
@@ -70,8 +71,13 @@ EditorViewport::EditorViewport(QWidget* parent)
     m_focusHint->setObjectName("focusHint");
     m_focusHint->setFocusPolicy(Qt::NoFocus);
 
+    m_speedLabel = new QLabel(tr("1x"), m_overlayWidget);
+    m_speedLabel->setStyleSheet("color: #e0e0e0; padding-left: 8px; font-weight: bold;");
+    m_speedLabel->setFocusPolicy(Qt::NoFocus);
+
     overlayLayout->addWidget(m_focusButton);
     overlayLayout->addWidget(m_focusHint);
+    overlayLayout->addWidget(m_speedLabel);
 
     m_overlayWidget->raise();
     UpdateOverlayGeometry();
@@ -182,11 +188,13 @@ void EditorViewport::resizeEvent(QResizeEvent* e)
 
 void EditorViewport::mousePressEvent(QMouseEvent* e)
 {
+    setFocus();
     m_lastMousePos = e->pos();
 
     if (e->button() == Qt::LeftButton)
     {
         m_isGizmoDragging = true;
+        emit gizmoDragStarted();
         e->accept();
         return;
     }
@@ -213,6 +221,7 @@ void EditorViewport::mouseReleaseEvent(QMouseEvent* e)
     if (e->button() == Qt::LeftButton)
     {
         m_isGizmoDragging = false;
+        emit gizmoDragEnded();
         e->accept();
         return;
     }
@@ -328,16 +337,22 @@ void EditorViewport::wheelEvent(QWheelEvent* e)
 
 void EditorViewport::updateCamera(float deltaTime)
 {
-    float speed = 5.0f * m_cameraZoom; // Base speed
-    
+    float speedMult = 1.0f;
     if (m_keyFast)
     {
-        speed *= 4.0f; // Sprint
+        speedMult = 4.0f;
     }
     if (m_keySlow)
     {
-        speed *= 0.1f; // Precision
+        speedMult = 0.1f;
     }
+
+    if (m_speedLabel)
+    {
+        m_speedLabel->setText(QString::number(speedMult, 'g', 2) + "x");
+    }
+
+    float speed = 5.0f * m_cameraZoom * speedMult; // Base speed
 
     const float moveAmount = speed * deltaTime;
     const float yawRad = m_cameraRotationY * 3.14159265f / 180.0f;
@@ -346,8 +361,11 @@ void EditorViewport::updateCamera(float deltaTime)
 
     if (m_keyForward)
     {
-        m_cameraX -= moveAmount * std::sin(yawRad);
-        m_cameraZ -= moveAmount * std::cos(yawRad);
+        float dx = moveAmount * std::sin(yawRad);
+        float dz = moveAmount * std::cos(yawRad);
+        qDebug() << "Forward: " << m_keyForward << " Yaw: " << m_cameraRotationY << " Rad: " << yawRad << " Sin: " << std::sin(yawRad) << " Cos: " << std::cos(yawRad) << " dX: " << dx << " dZ: " << dz;
+        m_cameraX -= dx;
+        m_cameraZ -= dz;
         changed = true;
     }
     if (m_keyBackward)
@@ -381,12 +399,14 @@ void EditorViewport::updateCamera(float deltaTime)
 
     if (changed)
     {
+        qDebug() << "Camera Updated: " << m_cameraX << m_cameraY << m_cameraZ;
         emit cameraChanged();
     }
 }
 
 void EditorViewport::keyPressEvent(QKeyEvent* e)
 {
+    qDebug() << "KeyPress: " << e->key();
     bool handled = true;
 
     switch (e->key())

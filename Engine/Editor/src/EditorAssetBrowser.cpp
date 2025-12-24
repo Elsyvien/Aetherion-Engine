@@ -31,11 +31,25 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
     headerLayout->setContentsMargins(0, 0, 0, 0);
 
     auto* header = new QLabel(tr("Asset Browser"), headerRow);
+    
+    m_backButton = new QToolButton(headerRow);
+    m_backButton->setText(tr("<"));
+    m_backButton->setToolTip(tr("Back"));
+    m_backButton->setEnabled(false);
+    
+    m_forwardButton = new QToolButton(headerRow);
+    m_forwardButton->setText(tr(">"));
+    m_forwardButton->setToolTip(tr("Forward"));
+    m_forwardButton->setEnabled(false);
+
     m_rescanButton = new QToolButton(headerRow);
     m_rescanButton->setText(tr("Rescan"));
     m_rescanButton->setToolTip(tr("Rescan assets"));
+
     headerLayout->addWidget(header);
     headerLayout->addStretch(1);
+    headerLayout->addWidget(m_backButton);
+    headerLayout->addWidget(m_forwardButton);
     headerLayout->addWidget(m_rescanButton);
 
     // Search/filter field
@@ -48,6 +62,7 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
     m_list->setDragDropMode(QAbstractItemView::DragOnly);
     m_list->setSelectionMode(QAbstractItemView::SingleSelection);
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_list->setIconSize(QSize(24, 24)); // Larger icons
 
     layout->addWidget(headerRow);
     layout->addWidget(m_filterEdit);
@@ -58,11 +73,14 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
 
     connect(m_filterEdit, &QLineEdit::textChanged, this, &EditorAssetBrowser::onFilterTextChanged);
     connect(m_list, &QListWidget::customContextMenuRequested, this, &EditorAssetBrowser::showContextMenu);
-
+    
+    connect(m_backButton, &QToolButton::clicked, this, &EditorAssetBrowser::NavigateBack);
+    connect(m_forwardButton, &QToolButton::clicked, this, &EditorAssetBrowser::NavigateForward);
+    
     connect(m_list, &QListWidget::currentItemChanged, this, [this](QListWidgetItem* current, QListWidgetItem* previous) {
         const std::string cur = current ? current->text().toStdString() : std::string("<null>");
         const std::string prev = previous ? previous->text().toStdString() : std::string("<null>");
-        std::cerr << "[EditorAssetBrowser] currentItemChanged: prev='" << prev << "' cur='" << cur << "'" << std::endl;
+        // std::cerr << "[EditorAssetBrowser] currentItemChanged: prev='" << prev << "' cur='" << cur << "'" << std::endl;
 
         if (!current)
         {
@@ -91,7 +109,20 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
             {
                 id = item->text();
             }
-            if (!id.trimmed().isEmpty() && !id.endsWith('/'))
+            
+            if (id.endsWith('/')) {
+                // Navigate into folder
+                 if (!m_currentPath.isEmpty()) {
+                    m_backStack.push_back(m_currentPath);
+                }
+                m_currentPath = id;
+                m_forwardStack.clear();
+                updateNavigationButtons();
+                // Logic to actually change view would go here, 
+                // but currently we just filter visible items or assume flat list for now.
+                // For a proper folder structure, we would filter m_allItems based on m_currentPath.
+            }
+            else if (!id.trimmed().isEmpty())
             {
                 emit AssetDroppedOnScene(id);
             }
@@ -103,6 +134,32 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
     {
         connect(m_rescanButton, &QToolButton::clicked, this, &EditorAssetBrowser::RescanRequested);
     }
+}
+
+void EditorAssetBrowser::updateNavigationButtons()
+{
+    if (m_backButton) m_backButton->setEnabled(!m_backStack.empty());
+    if (m_forwardButton) m_forwardButton->setEnabled(!m_forwardStack.empty());
+}
+
+void EditorAssetBrowser::NavigateBack()
+{
+    if (m_backStack.empty()) return;
+    m_forwardStack.push_back(m_currentPath);
+    m_currentPath = m_backStack.back();
+    m_backStack.pop_back();
+    updateNavigationButtons();
+    // emit NavigateToPathRequested(m_currentPath); // If we had folder logic
+}
+
+void EditorAssetBrowser::NavigateForward()
+{
+    if (m_forwardStack.empty()) return;
+    m_backStack.push_back(m_currentPath);
+    m_currentPath = m_forwardStack.back();
+    m_forwardStack.pop_back();
+    updateNavigationButtons();
+    // emit NavigateToPathRequested(m_currentPath); // If we had folder logic
 }
 
 void EditorAssetBrowser::onFilterTextChanged(const QString& text)
@@ -157,6 +214,7 @@ void EditorAssetBrowser::updateVisibleItems()
                 font.setBold(true);
                 listItem->setFont(font);
                 listItem->setFlags(listItem->flags() & ~Qt::ItemIsDragEnabled);
+                listItem->setIcon(QIcon(":/aetherion/icons/folder.svg"));
             }
             continue;
         }
@@ -175,6 +233,7 @@ void EditorAssetBrowser::updateVisibleItems()
 
         auto* listItem = new QListWidgetItem(item.label, m_list);
         listItem->setData(Qt::UserRole, item.id);
+        listItem->setIcon(QIcon(":/aetherion/icons/file.svg"));
         
         // Set drag data for the item
         listItem->setFlags(listItem->flags() | Qt::ItemIsDragEnabled);

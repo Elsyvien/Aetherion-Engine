@@ -33,6 +33,7 @@ public:
         setMouseTracking(true);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         setMinimumSize(100, 100);
+        setFocusPolicy(Qt::StrongFocus);
     }
 };
 

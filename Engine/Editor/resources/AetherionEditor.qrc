@@ -1,5 +1,12 @@
 <RCC>
     <qresource prefix="/aetherion">
         <file alias="editor_icon.png">../../../assets/logos/logo2.png</file>
+        <file alias="icons/folder.svg">../../../assets/icons/folder.svg</file>
+        <file alias="icons/file.svg">../../../assets/icons/file.svg</file>
+        <file alias="icons/entity.svg">../../../assets/icons/entity.svg</file>
+        <file alias="icons/camera.svg">../../../assets/icons/camera.svg</file>
+        <file alias="icons/light.svg">../../../assets/icons/light.svg</file>
+        <file alias="icons/mesh.svg">../../../assets/icons/mesh.svg</file>
+        <file alias="icons/transform.svg">../../../assets/icons/transform.svg</file>
     </qresource>
 </RCC>
