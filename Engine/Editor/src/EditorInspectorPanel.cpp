@@ -290,21 +290,33 @@ void EditorInspectorPanel::RebuildUi()
 
         m_posX = makeSpin(-10.0, 10.0, 0.01);
         m_posY = makeSpin(-10.0, 10.0, 0.01);
+        m_posZ = makeSpin(-10.0, 10.0, 0.01);
+        m_rotX = makeSpin(-180.0, 180.0, 1.0);
+        m_rotY = makeSpin(-180.0, 180.0, 1.0);
         m_rotZ = makeSpin(-180.0, 180.0, 1.0);
         m_scaleX = makeSpin(0.001, 10.0, 0.01);
         m_scaleY = makeSpin(0.001, 10.0, 0.01);
+        m_scaleZ = makeSpin(0.001, 10.0, 0.01);
 
         m_posX->setValue(transform->GetPositionX());
         m_posY->setValue(transform->GetPositionY());
+        m_posZ->setValue(transform->GetPositionZ());
+        m_rotX->setValue(transform->GetRotationXDegrees());
+        m_rotY->setValue(transform->GetRotationYDegrees());
         m_rotZ->setValue(transform->GetRotationZDegrees());
         m_scaleX->setValue(transform->GetScaleX());
         m_scaleY->setValue(transform->GetScaleY());
+        m_scaleZ->setValue(transform->GetScaleZ());
 
         form->addRow(tr("Position X"), m_posX);
         form->addRow(tr("Position Y"), m_posY);
+        form->addRow(tr("Position Z"), m_posZ);
+        form->addRow(tr("Rotation X (deg)"), m_rotX);
+        form->addRow(tr("Rotation Y (deg)"), m_rotY);
         form->addRow(tr("Rotation Z (deg)"), m_rotZ);
         form->addRow(tr("Scale X"), m_scaleX);
         form->addRow(tr("Scale Y"), m_scaleY);
+        form->addRow(tr("Scale Z"), m_scaleZ);
 
         auto applyAndEmit = [this, transform]() {
             if (m_buildingUi || !m_entity)
@@ -312,24 +324,38 @@ void EditorInspectorPanel::RebuildUi()
                 return;
             }
 
-            transform->SetPosition(static_cast<float>(m_posX->value()), static_cast<float>(m_posY->value()));
-            transform->SetRotationZDegrees(static_cast<float>(m_rotZ->value()));
-            transform->SetScale(static_cast<float>(m_scaleX->value()), static_cast<float>(m_scaleY->value()));
+            transform->SetPosition(static_cast<float>(m_posX->value()),
+                                   static_cast<float>(m_posY->value()),
+                                   static_cast<float>(m_posZ->value()));
+            transform->SetRotationDegrees(static_cast<float>(m_rotX->value()),
+                                          static_cast<float>(m_rotY->value()),
+                                          static_cast<float>(m_rotZ->value()));
+            transform->SetScale(static_cast<float>(m_scaleX->value()),
+                                static_cast<float>(m_scaleY->value()),
+                                static_cast<float>(m_scaleZ->value()));
 
             emit transformChanged(m_entity->GetId(),
                                   static_cast<float>(m_posX->value()),
                                   static_cast<float>(m_posY->value()),
+                                  static_cast<float>(m_posZ->value()),
+                                  static_cast<float>(m_rotX->value()),
+                                  static_cast<float>(m_rotY->value()),
                                   static_cast<float>(m_rotZ->value()),
                                   static_cast<float>(m_scaleX->value()),
-                                  static_cast<float>(m_scaleY->value()));
+                                  static_cast<float>(m_scaleY->value()),
+                                  static_cast<float>(m_scaleZ->value()));
             emit sceneModified();
         };
 
         connect(m_posX, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
         connect(m_posY, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
+        connect(m_posZ, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
+        connect(m_rotX, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
+        connect(m_rotY, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
         connect(m_rotZ, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
         connect(m_scaleX, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
         connect(m_scaleY, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
+        connect(m_scaleZ, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [applyAndEmit](double) { applyAndEmit(); });
 
         formHost->setLayout(form);
         m_contentLayout->addWidget(formHost);
@@ -469,9 +495,13 @@ void EditorInspectorPanel::RebuildUi()
         emit transformChanged(m_entity->GetId(),
                               static_cast<float>(m_posX->value()),
                               static_cast<float>(m_posY->value()),
+                              static_cast<float>(m_posZ->value()),
+                              static_cast<float>(m_rotX->value()),
+                              static_cast<float>(m_rotY->value()),
                               static_cast<float>(m_rotZ->value()),
                               static_cast<float>(m_scaleX->value()),
-                              static_cast<float>(m_scaleY->value()));
+                              static_cast<float>(m_scaleY->value()),
+                              static_cast<float>(m_scaleZ->value()));
     }
 }
 } // namespace Aetherion::Editor

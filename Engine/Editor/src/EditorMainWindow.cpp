@@ -119,6 +119,28 @@ void Mat4RotationZ(float out[16], float radians)
     out[5] = c;
 }
 
+void Mat4RotationX(float out[16], float radians)
+{
+    Mat4Identity(out);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out[5] = c;
+    out[9] = -s;
+    out[6] = s;
+    out[10] = c;
+}
+
+void Mat4RotationY(float out[16], float radians)
+{
+    Mat4Identity(out);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out[0] = c;
+    out[8] = s;
+    out[2] = -s;
+    out[10] = c;
+}
+
 void Mat4Scale(float out[16], float x, float y, float z)
 {
     Mat4Identity(out);
@@ -130,13 +152,21 @@ void Mat4Scale(float out[16], float x, float y, float z)
 std::array<float, 16> BuildLocalMatrix(const Scene::TransformComponent& transform)
 {
     float t[16];
+    float rx[16];
+    float ry[16];
+    float rz[16];
+    float rzy[16];
     float r[16];
     float s[16];
     float tr[16];
     float local[16];
-    Mat4Translation(t, transform.GetPositionX(), transform.GetPositionY(), 0.0f);
-    Mat4RotationZ(r, transform.GetRotationZDegrees() * (3.14159265358979323846f / 180.0f));
-    Mat4Scale(s, transform.GetScaleX(), transform.GetScaleY(), 1.0f);
+    Mat4Translation(t, transform.GetPositionX(), transform.GetPositionY(), transform.GetPositionZ());
+    Mat4RotationX(rx, transform.GetRotationXDegrees() * (3.14159265358979323846f / 180.0f));
+    Mat4RotationY(ry, transform.GetRotationYDegrees() * (3.14159265358979323846f / 180.0f));
+    Mat4RotationZ(rz, transform.GetRotationZDegrees() * (3.14159265358979323846f / 180.0f));
+    Mat4Mul(rzy, rz, ry);
+    Mat4Mul(r, rzy, rx);
+    Mat4Scale(s, transform.GetScaleX(), transform.GetScaleY(), transform.GetScaleZ());
     Mat4Mul(tr, t, r);
     Mat4Mul(local, tr, s);
     std::array<float, 16> out{};
@@ -1188,8 +1218,8 @@ void EditorMainWindow::AddAssetToScene(const QString& assetId)
     auto newEntity = std::make_shared<Scene::Entity>(newId, entityName);
     
     auto transform = std::make_shared<Scene::TransformComponent>();
-    transform->SetPosition(0.0f, 0.0f);
-    transform->SetScale(1.0f, 1.0f);
+    transform->SetPosition(0.0f, 0.0f, 0.0f);
+    transform->SetScale(1.0f, 1.0f, 1.0f);
     
     auto meshRenderer = std::make_shared<Scene::MeshRendererComponent>();
     meshRenderer->SetMeshAssetId(idStr);
@@ -1454,11 +1484,15 @@ void EditorMainWindow::DuplicateEntity(Aetherion::Core::EntityId id)
         auto transform = std::make_shared<Scene::TransformComponent>();
         float px = sourceTransform->GetPositionX();
         float py = sourceTransform->GetPositionY();
-        transform->SetPosition(px + 0.5f, py);  // Offset slightly
+        float pz = sourceTransform->GetPositionZ();
+        transform->SetPosition(px + 0.5f, py, pz);  // Offset slightly
         float sx = sourceTransform->GetScaleX();
         float sy = sourceTransform->GetScaleY();
-        transform->SetScale(sx, sy);
-        transform->SetRotationZDegrees(sourceTransform->GetRotationZDegrees());
+        float sz = sourceTransform->GetScaleZ();
+        transform->SetScale(sx, sy, sz);
+        transform->SetRotationDegrees(sourceTransform->GetRotationXDegrees(),
+                                      sourceTransform->GetRotationYDegrees(),
+                                      sourceTransform->GetRotationZDegrees());
         newEntity->AddComponent(transform);
     }
 
@@ -1555,8 +1589,8 @@ void EditorMainWindow::CreateEmptyEntity(Aetherion::Core::EntityId parentId)
     auto newEntity = std::make_shared<Scene::Entity>(newId, "New Entity");
 
     auto transform = std::make_shared<Scene::TransformComponent>();
-    transform->SetPosition(0.0f, 0.0f);
-    transform->SetScale(1.0f, 1.0f);
+    transform->SetPosition(0.0f, 0.0f, 0.0f);
+    transform->SetScale(1.0f, 1.0f, 1.0f);
     
     if (parentId != 0)
     {
@@ -2197,7 +2231,7 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
         case Qt::Key_Left:
             if (m_gizmoMode == GizmoMode::Translate)
             {
-                ApplyTranslationDelta(-moveStep, 0.0f);
+                ApplyTranslationDelta(-moveStep, 0.0f, 0.0f);
             }
             else if (m_gizmoMode == GizmoMode::Rotate)
             {
@@ -2211,7 +2245,7 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
         case Qt::Key_Right:
             if (m_gizmoMode == GizmoMode::Translate)
             {
-                ApplyTranslationDelta(moveStep, 0.0f);
+                ApplyTranslationDelta(moveStep, 0.0f, 0.0f);
             }
             else if (m_gizmoMode == GizmoMode::Rotate)
             {
@@ -2225,7 +2259,7 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
         case Qt::Key_Up:
             if (m_gizmoMode == GizmoMode::Translate)
             {
-                ApplyTranslationDelta(0.0f, moveStep);
+                ApplyTranslationDelta(0.0f, moveStep, 0.0f);
             }
             else if (m_gizmoMode == GizmoMode::Scale)
             {
@@ -2235,7 +2269,7 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
         case Qt::Key_Down:
             if (m_gizmoMode == GizmoMode::Translate)
             {
-                ApplyTranslationDelta(0.0f, -moveStep);
+                ApplyTranslationDelta(0.0f, -moveStep, 0.0f);
             }
             else if (m_gizmoMode == GizmoMode::Scale)
             {
@@ -2250,7 +2284,7 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
     return QMainWindow::eventFilter(watched, event);
 }
 
-void EditorMainWindow::ApplyTranslationDelta(float dx, float dy)
+void EditorMainWindow::ApplyTranslationDelta(float dx, float dy, float dz)
 {
     if (!m_selection)
     {
@@ -2269,7 +2303,9 @@ void EditorMainWindow::ApplyTranslationDelta(float dx, float dy)
         return;
     }
 
-    transform->SetPosition(transform->GetPositionX() + dx, transform->GetPositionY() + dy);
+    transform->SetPosition(transform->GetPositionX() + dx,
+                           transform->GetPositionY() + dy,
+                           transform->GetPositionZ() + dz);
     SetSceneDirty(true);
     RefreshSelectedEntityUi();
 }
@@ -2293,7 +2329,9 @@ void EditorMainWindow::ApplyRotationDelta(float deltaDeg)
         return;
     }
 
-    transform->SetRotationZDegrees(transform->GetRotationZDegrees() + deltaDeg);
+    transform->SetRotationDegrees(transform->GetRotationXDegrees(),
+                                  transform->GetRotationYDegrees(),
+                                  transform->GetRotationZDegrees() + deltaDeg);
     SetSceneDirty(true);
     RefreshSelectedEntityUi();
 }
@@ -2319,7 +2357,8 @@ void EditorMainWindow::ApplyScaleDelta(float deltaUniform)
 
     const float newScaleX = std::max(0.001f, transform->GetScaleX() + deltaUniform);
     const float newScaleY = std::max(0.001f, transform->GetScaleY() + deltaUniform);
-    transform->SetScale(newScaleX, newScaleY);
+    const float newScaleZ = std::max(0.001f, transform->GetScaleZ() + deltaUniform);
+    transform->SetScale(newScaleX, newScaleY, newScaleZ);
     SetSceneDirty(true);
     RefreshSelectedEntityUi();
 }
@@ -2364,7 +2403,7 @@ void EditorMainWindow::FocusCameraOnSelection()
 
     float targetX = transform->GetPositionX();
     float targetY = transform->GetPositionY();
-    float targetZ = 0.0f;
+    float targetZ = transform->GetPositionZ();
     float radius = 0.5f;
 
     auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;

@@ -98,6 +98,28 @@ void Mat4RotationZ(float out[16], float radians)
     out[5] = c;
 }
 
+void Mat4RotationX(float out[16], float radians)
+{
+    Mat4Identity(out);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out[5] = c;
+    out[9] = -s;
+    out[6] = s;
+    out[10] = c;
+}
+
+void Mat4RotationY(float out[16], float radians)
+{
+    Mat4Identity(out);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out[0] = c;
+    out[8] = s;
+    out[2] = -s;
+    out[10] = c;
+}
+
 void Mat4Translation(float out[16], float x, float y, float z)
 {
     Mat4Identity(out);
@@ -2466,16 +2488,26 @@ std::vector<VulkanViewport::DrawInstance> VulkanViewport::InstancesFromView(cons
         const auto meshIt = meshLookup.find(id);
         const float spinDeg =
             (meshIt != meshLookup.end() && meshIt->second) ? meshIt->second->GetRotationSpeedDegPerSec() * timeSeconds : 0.0f;
-        const float radians = (transform->GetRotationZDegrees() + spinDeg) * (3.14159265358979323846f / 180.0f);
+        const float radiansX = transform->GetRotationXDegrees() * (3.14159265358979323846f / 180.0f);
+        const float radiansY = transform->GetRotationYDegrees() * (3.14159265358979323846f / 180.0f);
+        const float radiansZ = (transform->GetRotationZDegrees() + spinDeg) * (3.14159265358979323846f / 180.0f);
 
         float t[16];
-        Mat4Translation(t, transform->GetPositionX(), transform->GetPositionY(), 0.0f);
+        Mat4Translation(t, transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ());
 
+        float rx[16];
+        float ry[16];
+        float rz[16];
+        float rzy[16];
         float r[16];
-        Mat4RotationZ(r, radians);
+        Mat4RotationX(rx, radiansX);
+        Mat4RotationY(ry, radiansY);
+        Mat4RotationZ(rz, radiansZ);
+        Mat4Mul(rzy, rz, ry);
+        Mat4Mul(r, rzy, rx);
 
         float s[16];
-        Mat4Scale(s, transform->GetScaleX(), transform->GetScaleY(), 1.0f);
+        Mat4Scale(s, transform->GetScaleX(), transform->GetScaleY(), transform->GetScaleZ());
 
         float tr[16];
         Mat4Mul(tr, t, r);

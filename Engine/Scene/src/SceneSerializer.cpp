@@ -180,9 +180,12 @@ bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path
         if (auto transform = entity->GetComponent<TransformComponent>())
         {
             out << "        \"Transform\": {\n";
-            out << "          \"position\": [" << transform->GetPositionX() << ", " << transform->GetPositionY() << "],\n";
-            out << "          \"rotationZ\": " << transform->GetRotationZDegrees() << ",\n";
-            out << "          \"scale\": [" << transform->GetScaleX() << ", " << transform->GetScaleY() << "],\n";
+            out << "          \"position\": [" << transform->GetPositionX() << ", " << transform->GetPositionY() << ", "
+                << transform->GetPositionZ() << "],\n";
+            out << "          \"rotation\": [" << transform->GetRotationXDegrees() << ", " << transform->GetRotationYDegrees()
+                << ", " << transform->GetRotationZDegrees() << "],\n";
+            out << "          \"scale\": [" << transform->GetScaleX() << ", " << transform->GetScaleY() << ", "
+                << transform->GetScaleZ() << "],\n";
             out << "          \"parent\": " << transform->GetParentId() << "\n";
             out << "        }";
         }
@@ -237,22 +240,35 @@ std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) 
 
         const auto position = ExtractFloatArray(block, "position");
         const auto scale = ExtractFloatArray(block, "scale");
-        const auto rotation = ExtractFloat(block, "rotationZ");
+        const auto rotation = ExtractFloatArray(block, "rotation");
+        const auto rotationLegacy = ExtractFloat(block, "rotationZ");
         const auto parentId = ExtractUint64(block, "parent").value_or(0);
-        if (!position.empty() || !scale.empty() || rotation.has_value())
+        if (!position.empty() || !scale.empty() || !rotation.empty() || rotationLegacy.has_value())
         {
             auto transform = std::make_shared<TransformComponent>();
-            if (position.size() >= 2)
+            if (position.size() >= 3)
             {
-                transform->SetPosition(position[0], position[1]);
+                transform->SetPosition(position[0], position[1], position[2]);
             }
-            if (rotation.has_value())
+            else if (position.size() >= 2)
             {
-                transform->SetRotationZDegrees(*rotation);
+                transform->SetPosition(position[0], position[1], 0.0f);
             }
-            if (scale.size() >= 2)
+            if (rotation.size() >= 3)
             {
-                transform->SetScale(scale[0], scale[1]);
+                transform->SetRotationDegrees(rotation[0], rotation[1], rotation[2]);
+            }
+            else if (rotationLegacy.has_value())
+            {
+                transform->SetRotationDegrees(0.0f, 0.0f, *rotationLegacy);
+            }
+            if (scale.size() >= 3)
+            {
+                transform->SetScale(scale[0], scale[1], scale[2]);
+            }
+            else if (scale.size() >= 2)
+            {
+                transform->SetScale(scale[0], scale[1], 1.0f);
             }
             if (parentId != 0)
             {
