@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QDockWidget>
 #include <QFileDialog>
+#include <QFormLayout>
 #include <QInputDialog>
 #include <QLabel>
 #include <QMenuBar>
@@ -52,11 +53,79 @@
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/SceneSerializer.h"
 #include "Aetherion/Scene/TransformComponent.h"
+#include "Aetherion/Editor/Commands/TransformCommand.h"
+#include "Aetherion/Editor/Commands/EntityCommands.h"
 
 namespace Aetherion::Editor
 {
+class EditorAuxPanel final : public QWidget
+{
+public:
+    explicit EditorAuxPanel(QWidget* parent = nullptr)
+        : QWidget(parent)
+    {
+        auto* layout = new QVBoxLayout(this);
+        layout->setContentsMargins(8, 8, 8, 8);
+        layout->setSpacing(8);
+
+        auto* title = new QLabel(tr("Quick Info"), this);
+        QFont titleFont = title->font();
+        titleFont.setBold(true);
+        title->setFont(titleFont);
+        layout->addWidget(title);
+
+        auto* form = new QFormLayout();
+        form->setLabelAlignment(Qt::AlignLeft);
+        form->setFormAlignment(Qt::AlignTop);
+        form->setHorizontalSpacing(8);
+        form->setVerticalSpacing(4);
+
+        m_sceneValue = new QLabel(tr("--"), this);
+        m_entityValue = new QLabel(tr("--"), this);
+        m_assetValue = new QLabel(tr("--"), this);
+        m_cameraValue = new QLabel(tr("--"), this);
+        m_viewportValue = new QLabel(tr("--"), this);
+
+        m_sceneValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_entityValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_assetValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_cameraValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_viewportValue->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+        form->addRow(tr("Scene"), m_sceneValue);
+        form->addRow(tr("Selection"), m_entityValue);
+        form->addRow(tr("Asset"), m_assetValue);
+        form->addRow(tr("Camera"), m_cameraValue);
+        form->addRow(tr("Viewport"), m_viewportValue);
+
+        layout->addLayout(form);
+
+        auto* hints = new QLabel(tr("Shortcuts: F focus selection · Home reset camera · Ctrl+F focus asset filter"), this);
+        hints->setWordWrap(true);
+        hints->setStyleSheet("color: gray; font-style: italic;");
+        layout->addWidget(hints);
+
+        layout->addStretch(1);
+        setLayout(layout);
+    }
+
+    void SetSceneText(const QString& value) { m_sceneValue->setText(value); }
+    void SetEntityText(const QString& value) { m_entityValue->setText(value); }
+    void SetAssetText(const QString& value) { m_assetValue->setText(value); }
+    void SetCameraText(const QString& value) { m_cameraValue->setText(value); }
+    void SetViewportText(const QString& value) { m_viewportValue->setText(value); }
+
+private:
+    QLabel* m_sceneValue = nullptr;
+    QLabel* m_entityValue = nullptr;
+    QLabel* m_assetValue = nullptr;
+    QLabel* m_cameraValue = nullptr;
+    QLabel* m_viewportValue = nullptr;
+};
+
 namespace
 {
+
 ConsoleSeverity ToConsoleSeverity(Rendering::LogSeverity severity)
 {
     switch (severity)
@@ -282,6 +351,7 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     , m_runtimeApp(std::move(runtimeApp))
     , m_settings(settings)
 {
+    m_commandHistory = std::make_unique<CommandHistory>();
     m_settings.Clamp();
     m_validationEnabled = m_settings.validationEnabled;
     m_renderLoggingEnabled = m_settings.verboseLogging;
@@ -461,6 +531,11 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                 statusBar()->showMessage(tr("Viewport resize failed: %1").arg(QString::fromStdString(ex.what())));
             }
         }
+
+        if (m_auxPanel)
+        {
+            m_auxPanel->SetViewportText(tr("%1×%2").arg(width).arg(height));
+        }
     });
 
     // Connect camera changes from viewport to renderer
@@ -476,20 +551,51 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                 m_viewport->getCameraRotationX());
             m_vulkanViewport->SetCameraZoom(m_viewport->getCameraZoom());
         }
+
+        if (m_auxPanel && m_viewport)
+        {
+            m_auxPanel->SetCameraText(tr("pos(%1, %2, %3) rot(%4, %5) zoom %6")
+                                          .arg(QString::number(m_viewport->getCameraX(), 'f', 2))
+                                          .arg(QString::number(m_viewport->getCameraY(), 'f', 2))
+                                          .arg(QString::number(m_viewport->getCameraZ(), 'f', 2))
+                                          .arg(QString::number(m_viewport->getCameraRotationY(), 'f', 1))
+                                          .arg(QString::number(m_viewport->getCameraRotationX(), 'f', 1))
+                                          .arg(QString::number(m_viewport->getCameraZoom(), 'f', 2)));
+        }
     });
 
     connect(m_viewport, &EditorViewport::focusRequested, this, [this]() {
         FocusCameraOnSelection();
     });
 
+    connect(m_viewport, &EditorViewport::gizmoDrag, this, [this](float dx, float dy) {
+        if (!m_selection || !m_selection->GetSelectedEntity()) return;
+        
+        const float translateSpeed = 0.05f * (m_viewport ? m_viewport->getCameraZoom() : 1.0f);
+        const float rotateSpeed = 0.5f;
+        const float scaleSpeed = 0.01f;
+        
+        if (m_gizmoMode == GizmoMode::Translate)
+        {
+            ApplyTranslationDelta(dx * translateSpeed, -dy * translateSpeed, 0.0f);
+        }
+        else if (m_gizmoMode == GizmoMode::Rotate)
+        {
+            ApplyRotationDelta(dx * rotateSpeed);
+        }
+        else if (m_gizmoMode == GizmoMode::Scale)
+        {
+            ApplyScaleDelta(-dy * scaleSpeed);
+        }
+    });
 
     auto* secondaryPlaceholder = new QWidget(centerSplit);
-    secondaryPlaceholder->setMinimumWidth(220);
+    secondaryPlaceholder->setMinimumWidth(260);
     auto* secondaryLayout = new QVBoxLayout(secondaryPlaceholder);
     secondaryLayout->setContentsMargins(0, 0, 0, 0);
-    auto* secondaryLabel = new QLabel(tr("Auxiliary View (placeholder)"), secondaryPlaceholder);
-    secondaryLabel->setAlignment(Qt::AlignCenter);
-    secondaryLayout->addWidget(secondaryLabel);
+
+    m_auxPanel = new EditorAuxPanel(secondaryPlaceholder);
+    secondaryLayout->addWidget(m_auxPanel, 1);
     centerSplit->addWidget(secondaryPlaceholder);
     centerSplit->setStretchFactor(0, 1);
     centerSplit->setStretchFactor(1, 0);
@@ -518,6 +624,26 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     }
     m_scenePath = GetDefaultScenePath();
     UpdateWindowTitle();
+
+    if (m_auxPanel)
+    {
+        const QString sceneName = m_scene ? QString::fromStdString(m_scene->GetName()) : tr("--");
+        const QString scenePath = QString::fromStdString(m_scenePath.string());
+        m_auxPanel->SetSceneText(tr("%1 (%2)").arg(sceneName, scenePath));
+        m_auxPanel->SetEntityText(tr("None"));
+        m_auxPanel->SetAssetText(tr("None"));
+        if (m_viewport)
+        {
+            m_auxPanel->SetViewportText(tr("%1×%2").arg(m_surfaceSize.width()).arg(m_surfaceSize.height()));
+            m_auxPanel->SetCameraText(tr("pos(%1, %2, %3) rot(%4, %5) zoom %6")
+                                          .arg(QString::number(m_viewport->getCameraX(), 'f', 2))
+                                          .arg(QString::number(m_viewport->getCameraY(), 'f', 2))
+                                          .arg(QString::number(m_viewport->getCameraZ(), 'f', 2))
+                                          .arg(QString::number(m_viewport->getCameraRotationY(), 'f', 1))
+                                          .arg(QString::number(m_viewport->getCameraRotationX(), 'f', 1))
+                                          .arg(QString::number(m_viewport->getCameraZoom(), 'f', 2)));
+        }
+    }
     if (m_inspectorPanel)
     {
         auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
@@ -537,12 +663,33 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         {
             m_inspectorPanel->SetSelectedEntity(m_selection->GetSelectedEntity());
         }
+
+        if (m_auxPanel)
+        {
+            const auto entity = m_selection ? m_selection->GetSelectedEntity() : nullptr;
+            if (entity)
+            {
+                m_auxPanel->SetEntityText(tr("%1 (id %2)")
+                                              .arg(QString::fromStdString(entity->GetName()))
+                                              .arg(QString::number(static_cast<qulonglong>(entity->GetId()))));
+            }
+            else
+            {
+                m_auxPanel->SetEntityText(tr("None"));
+            }
+            // Keep asset line as-is.
+        }
     });
     connect(m_selection, &EditorSelection::SelectionCleared, this, [this]() {
         AppendConsole(m_console, tr("Selection: entity cleared"), ConsoleSeverity::Info);
         if (m_inspectorPanel)
         {
             m_inspectorPanel->SetSelectedEntity(nullptr);
+        }
+
+        if (m_auxPanel)
+        {
+            m_auxPanel->SetEntityText(tr("None"));
         }
     });
 
@@ -620,6 +767,12 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     {
         connect(m_assetBrowser, &EditorAssetBrowser::AssetSelected, this, [this](const QString& assetId) {
             AppendConsole(m_console, tr("AssetBrowser: selected '%1'").arg(assetId), ConsoleSeverity::Info);
+
+            m_selectedAssetId = assetId;
+            if (m_auxPanel)
+            {
+                m_auxPanel->SetAssetText(assetId);
+            }
             if (m_inspectorPanel)
             {
                 m_inspectorPanel->SetSelectedAsset(assetId);
@@ -646,6 +799,12 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         });
         connect(m_assetBrowser, &EditorAssetBrowser::AssetSelectionCleared, this, [this] {
             AppendConsole(m_console, tr("AssetBrowser: selection cleared"), ConsoleSeverity::Info);
+
+            m_selectedAssetId.clear();
+            if (m_auxPanel)
+            {
+                m_auxPanel->SetAssetText(tr("None"));
+            }
             // Keep current entity selection (if any) as source of truth.
             if (m_inspectorPanel)
             {
@@ -719,6 +878,17 @@ void EditorMainWindow::CreateMenuBarContent()
     });
 
     auto* editMenu = menuBar()->addMenu(tr("&Edit"));
+    m_undoAction = editMenu->addAction(tr("Undo"));
+    m_undoAction->setShortcut(QKeySequence::Undo);
+    connect(m_undoAction, &QAction::triggered, this, &EditorMainWindow::Undo);
+
+    m_redoAction = editMenu->addAction(tr("Redo"));
+    m_redoAction->setShortcut(QKeySequence::Redo);
+    connect(m_redoAction, &QAction::triggered, this, &EditorMainWindow::Redo);
+    
+    UpdateUndoRedoState();
+    editMenu->addSeparator();
+
     auto* preferences = editMenu->addAction(tr("Preferences"));
     connect(preferences, &QAction::triggered, this, &EditorMainWindow::OpenSettingsDialog);
     m_validationMenuAction = editMenu->addAction(tr("Enable Vulkan Validation Layers"));
@@ -1474,8 +1644,7 @@ void EditorMainWindow::DeleteEntity(Aetherion::Core::EntityId id)
         return;
     }
 
-    m_scene->RemoveEntity(id);
-    SetSceneDirty(true);
+    ExecuteCommand(std::make_unique<DeleteEntityCommand>(m_scene, entity));
 
     if (m_selection)
     {
@@ -1609,8 +1778,9 @@ void EditorMainWindow::RenameEntity(Aetherion::Core::EntityId id)
         return;
     }
 
-    entity->SetName(newName.toStdString());
-    SetSceneDirty(true);
+    ExecuteCommand(std::make_unique<RenameEntityCommand>(entity, oldName.toStdString(), newName.toStdString()));
+    // entity->SetName(newName.toStdString()); // Handled by Command
+    // SetSceneDirty(true); // Handled by ExecuteCommand
 
     if (m_hierarchyPanel)
     {
@@ -1652,8 +1822,8 @@ void EditorMainWindow::CreateEmptyEntity(Aetherion::Core::EntityId parentId)
     }
 
     newEntity->AddComponent(transform);
-    m_scene->AddEntity(newEntity);
-    SetSceneDirty(true);
+    
+    ExecuteCommand(std::make_unique<CreateEntityCommand>(m_scene, newEntity));
 
     if (m_hierarchyPanel)
     {
@@ -2418,81 +2588,63 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
 
 void EditorMainWindow::ApplyTranslationDelta(float dx, float dy, float dz)
 {
-    if (!m_selection)
-    {
-        return;
-    }
-
+    if (!m_selection) return;
     auto entity = m_selection->GetSelectedEntity();
-    if (!entity)
-    {
-        return;
-    }
-
+    if (!entity) return;
     auto transform = entity->GetComponent<Scene::TransformComponent>();
-    if (!transform)
-    {
-        return;
-    }
+    if (!transform) return;
 
-    transform->SetPosition(transform->GetPositionX() + dx,
-                           transform->GetPositionY() + dy,
-                           transform->GetPositionZ() + dz);
-    SetSceneDirty(true);
-    RefreshSelectedEntityUi();
+    TransformData oldData;
+    oldData.position = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
+    oldData.rotation = {transform->GetRotationXDegrees(), transform->GetRotationYDegrees(), transform->GetRotationZDegrees()};
+    oldData.scale = {transform->GetScaleX(), transform->GetScaleY(), transform->GetScaleZ()};
+
+    TransformData newData = oldData;
+    newData.position[0] += dx;
+    newData.position[1] += dy;
+    newData.position[2] += dz;
+
+    ExecuteCommand(std::make_unique<TransformCommand>(entity, oldData, newData));
 }
 
 void EditorMainWindow::ApplyRotationDelta(float deltaDeg)
 {
-    if (!m_selection)
-    {
-        return;
-    }
-
+    if (!m_selection) return;
     auto entity = m_selection->GetSelectedEntity();
-    if (!entity)
-    {
-        return;
-    }
-
+    if (!entity) return;
     auto transform = entity->GetComponent<Scene::TransformComponent>();
-    if (!transform)
-    {
-        return;
-    }
+    if (!transform) return;
 
-    transform->SetRotationDegrees(transform->GetRotationXDegrees(),
-                                  transform->GetRotationYDegrees(),
-                                  transform->GetRotationZDegrees() + deltaDeg);
-    SetSceneDirty(true);
-    RefreshSelectedEntityUi();
+    TransformData oldData;
+    oldData.position = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
+    oldData.rotation = {transform->GetRotationXDegrees(), transform->GetRotationYDegrees(), transform->GetRotationZDegrees()};
+    oldData.scale = {transform->GetScaleX(), transform->GetScaleY(), transform->GetScaleZ()};
+
+    TransformData newData = oldData;
+    newData.rotation[2] += deltaDeg; // Z-axis rotation as per original code
+
+    ExecuteCommand(std::make_unique<TransformCommand>(entity, oldData, newData));
 }
 
 void EditorMainWindow::ApplyScaleDelta(float deltaUniform)
 {
-    if (!m_selection)
-    {
-        return;
-    }
-
+    if (!m_selection) return;
     auto entity = m_selection->GetSelectedEntity();
-    if (!entity)
-    {
-        return;
-    }
-
+    if (!entity) return;
     auto transform = entity->GetComponent<Scene::TransformComponent>();
-    if (!transform)
-    {
-        return;
-    }
+    if (!transform) return;
 
-    const float newScaleX = std::max(0.001f, transform->GetScaleX() + deltaUniform);
-    const float newScaleY = std::max(0.001f, transform->GetScaleY() + deltaUniform);
-    const float newScaleZ = std::max(0.001f, transform->GetScaleZ() + deltaUniform);
-    transform->SetScale(newScaleX, newScaleY, newScaleZ);
-    SetSceneDirty(true);
-    RefreshSelectedEntityUi();
+    TransformData oldData;
+    oldData.position = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
+    oldData.rotation = {transform->GetRotationXDegrees(), transform->GetRotationYDegrees(), transform->GetRotationZDegrees()};
+    oldData.scale = {transform->GetScaleX(), transform->GetScaleY(), transform->GetScaleZ()};
+
+    TransformData newData = oldData;
+    newData.scale[0] = std::max(0.001f, newData.scale[0] + deltaUniform);
+    newData.scale[1] = std::max(0.001f, newData.scale[1] + deltaUniform);
+    newData.scale[2] = std::max(0.001f, newData.scale[2] + deltaUniform);
+
+    ExecuteCommand(std::make_unique<TransformCommand>(entity, oldData, newData));
 }
 
 void EditorMainWindow::RefreshSelectedEntityUi()
@@ -2566,4 +2718,43 @@ void EditorMainWindow::FocusCameraOnSelection()
 
     statusBar()->showMessage(tr("Focused on '%1'").arg(QString::fromStdString(entity->GetName())), 2000);
 }
+
+void EditorMainWindow::ExecuteCommand(std::unique_ptr<Command> cmd)
+{
+    if (!m_commandHistory || !cmd) return;
+    
+    m_commandHistory->Push(std::move(cmd));
+    SetSceneDirty(true);
+    UpdateUndoRedoState();
+    RefreshSelectedEntityUi();
+}
+
+void EditorMainWindow::Undo()
+{
+    if (m_commandHistory && m_commandHistory->CanUndo())
+    {
+        m_commandHistory->Undo();
+        SetSceneDirty(true);
+        UpdateUndoRedoState();
+        RefreshSelectedEntityUi();
+    }
+}
+
+void EditorMainWindow::Redo()
+{
+    if (m_commandHistory && m_commandHistory->CanRedo())
+    {
+        m_commandHistory->Redo();
+        SetSceneDirty(true);
+        UpdateUndoRedoState();
+        RefreshSelectedEntityUi();
+    }
+}
+
+void EditorMainWindow::UpdateUndoRedoState()
+{
+    if (m_undoAction) m_undoAction->setEnabled(m_commandHistory && m_commandHistory->CanUndo());
+    if (m_redoAction) m_redoAction->setEnabled(m_commandHistory && m_commandHistory->CanRedo());
+}
+
 } // namespace Aetherion::Editor

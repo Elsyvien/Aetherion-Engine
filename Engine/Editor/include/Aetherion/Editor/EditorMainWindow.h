@@ -6,10 +6,12 @@
 #include <QByteArray>
 #include <QElapsedTimer>
 #include <QMainWindow>
+#include <QString>
 #include <QSize>
 
 #include "Aetherion/Core/Types.h"
 #include "Aetherion/Editor/EditorSettings.h"
+#include "Aetherion/Editor/CommandHistory.h"
 
 class QAction;
 class QActionGroup;
@@ -40,6 +42,7 @@ class EditorInspectorPanel;
 class EditorAssetBrowser;
 class EditorConsole;
 class EditorSelection;
+class EditorAuxPanel;
 
 class EditorMainWindow : public QMainWindow
 {
@@ -118,6 +121,13 @@ private:
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorConsole* m_console = nullptr;
     QByteArray m_defaultLayoutState;
+    QByteArray m_defaultLayoutGeometry;
+    EditorAuxPanel* m_auxPanel = nullptr;
+    QString m_selectedAssetId;
+
+    std::unique_ptr<CommandHistory> m_commandHistory;
+    QAction* m_undoAction = nullptr;
+    QAction* m_redoAction = nullptr;
 
     void CreateMenuBarContent();
     void CreateToolBarContent();
@@ -163,6 +173,11 @@ private:
     void ApplyScaleDelta(float deltaUniform);
     void FocusCameraOnSelection();
     void RefreshSelectedEntityUi();
+    
+    void ExecuteCommand(std::unique_ptr<class Command> cmd);
+    void Undo();
+    void Redo();
+    void UpdateUndoRedoState();
 
 protected:
     void closeEvent(QCloseEvent* event) override;

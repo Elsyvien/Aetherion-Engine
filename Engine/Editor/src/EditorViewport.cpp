@@ -184,7 +184,13 @@ void EditorViewport::mousePressEvent(QMouseEvent* e)
 {
     m_lastMousePos = e->pos();
 
-    if (e->button() == Qt::MiddleButton)
+    if (e->button() == Qt::LeftButton)
+    {
+        m_isGizmoDragging = true;
+        e->accept();
+        return;
+    }
+    else if (e->button() == Qt::MiddleButton)
     {
         // Middle button: pan
         m_isPanning = true;
@@ -204,7 +210,13 @@ void EditorViewport::mousePressEvent(QMouseEvent* e)
 
 void EditorViewport::mouseReleaseEvent(QMouseEvent* e)
 {
-    if (e->button() == Qt::MiddleButton)
+    if (e->button() == Qt::LeftButton)
+    {
+        m_isGizmoDragging = false;
+        e->accept();
+        return;
+    }
+    else if (e->button() == Qt::MiddleButton)
     {
         m_isPanning = false;
         e->accept();
@@ -224,6 +236,13 @@ void EditorViewport::mouseMoveEvent(QMouseEvent* e)
 {
     const QPoint delta = e->pos() - m_lastMousePos;
     m_lastMousePos = e->pos();
+
+    if (m_isGizmoDragging)
+    {
+        emit gizmoDrag(static_cast<float>(delta.x()), static_cast<float>(delta.y()));
+        e->accept();
+        return;
+    }
 
     if (m_isPanning)
     {

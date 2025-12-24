@@ -1,12 +1,14 @@
 #pragma once
 
 #include <QWidget>
-
+#include <functional>
 #include <memory>
 
 #include <QString>
 
 #include "Aetherion/Core/Types.h"
+
+namespace Aetherion::Editor { class Command; }
 
 namespace Aetherion::Scene
 {
@@ -37,6 +39,9 @@ public:
     void SetSelectedEntity(std::shared_ptr<Scene::Entity> entity);
     void SetSelectedAsset(QString assetId);
     void SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry);
+
+    using CommandExecutor = std::function<void(std::unique_ptr<Command>)>;
+    void SetCommandExecutor(CommandExecutor executor) { m_commandExecutor = std::move(executor); }
 
 signals:
     void transformChanged(Aetherion::Core::EntityId entityId,
@@ -88,5 +93,6 @@ private:
     QDoubleSpinBox* m_lightAmbientB = nullptr;
 
     bool m_buildingUi = false;
+    CommandExecutor m_commandExecutor;
 };
 } // namespace Aetherion::Editor

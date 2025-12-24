@@ -3,6 +3,7 @@
 #include <QElapsedTimer>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QObject>
 #include <QResizeEvent>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -58,6 +59,7 @@ EditorMeshPreview::EditorMeshPreview(QWidget* parent)
     containerLayout->setContentsMargins(0, 0, 0, 0);
     
     m_surface = new EditorViewportSurface(m_viewportContainer);
+    m_surface->installEventFilter(this);
     containerLayout->addWidget(m_surface, 1);
     
     layout->addWidget(m_viewportContainer, 1);
@@ -211,6 +213,32 @@ void EditorMeshPreview::wheelEvent(QWheelEvent* event)
     }
 
     event->accept();
+}
+
+bool EditorMeshPreview::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_surface)
+    {
+        switch (event->type())
+        {
+        case QEvent::MouseButtonPress:
+            mousePressEvent(static_cast<QMouseEvent*>(event));
+            return event->isAccepted();
+        case QEvent::MouseButtonRelease:
+            mouseReleaseEvent(static_cast<QMouseEvent*>(event));
+            return event->isAccepted();
+        case QEvent::MouseMove:
+            mouseMoveEvent(static_cast<QMouseEvent*>(event));
+            return event->isAccepted();
+        case QEvent::Wheel:
+            wheelEvent(static_cast<QWheelEvent*>(event));
+            return event->isAccepted();
+        default:
+            break;
+        }
+    }
+
+    return QWidget::eventFilter(watched, event);
 }
 
 void EditorMeshPreview::onSurfaceReady()

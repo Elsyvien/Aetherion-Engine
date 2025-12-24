@@ -38,6 +38,7 @@ signals:
     void surfaceResized(int width, int height);
     void cameraChanged();
     void focusRequested();
+    void gizmoDrag(float dx, float dy);
 
 protected:
     void showEvent(QShowEvent* e) override;
@@ -69,6 +70,7 @@ private:
     // Mouse tracking
     bool m_isPanning = false;
     bool m_isRotating = false;
+    bool m_isGizmoDragging = false;
     QPoint m_lastMousePos;
     
     // Keyboard navigation state
