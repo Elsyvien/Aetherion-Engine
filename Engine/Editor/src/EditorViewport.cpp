@@ -264,7 +264,23 @@ void EditorViewport::mouseMoveEvent(QMouseEvent* e)
     }
     else if (m_isRotating)
     {
-        // Rotate the camera (orbit)
+        // FPS-style Look: Rotate around the camera position (Eye), not the target (Center).
+        // Eye = Center + Offset. We want Eye to remain fixed.
+        // NewCenter = Eye - NewOffset = (Center + OldOffset) - NewOffset
+        // NewCenter = Center + (OldOffset - NewOffset)
+
+        constexpr float kBaseDistance = 5.0f;
+        const float dist = kBaseDistance * m_cameraZoom;
+
+        // 1. Calculate Old Offset
+        const float oldYawRad = m_cameraRotationY * 3.14159265f / 180.0f;
+        const float oldPitchRad = m_cameraRotationX * 3.14159265f / 180.0f;
+
+        const float oldOffsetX = dist * std::cos(oldPitchRad) * std::sin(oldYawRad);
+        const float oldOffsetY = dist * std::sin(oldPitchRad);
+        const float oldOffsetZ = dist * std::cos(oldPitchRad) * std::cos(oldYawRad);
+
+        // 2. Update Rotation
         const float rotateSpeed = 0.3f;
         m_cameraRotationY += delta.x() * rotateSpeed;
         m_cameraRotationX += delta.y() * rotateSpeed;
@@ -272,6 +288,19 @@ void EditorViewport::mouseMoveEvent(QMouseEvent* e)
         // Clamp pitch to prevent gimbal lock
         if (m_cameraRotationX > 89.0f) m_cameraRotationX = 89.0f;
         if (m_cameraRotationX < -89.0f) m_cameraRotationX = -89.0f;
+        
+        // 3. Calculate New Offset
+        const float newYawRad = m_cameraRotationY * 3.14159265f / 180.0f;
+        const float newPitchRad = m_cameraRotationX * 3.14159265f / 180.0f;
+
+        const float newOffsetX = dist * std::cos(newPitchRad) * std::sin(newYawRad);
+        const float newOffsetY = dist * std::sin(newPitchRad);
+        const float newOffsetZ = dist * std::cos(newPitchRad) * std::cos(newYawRad);
+
+        // 4. Update Center
+        m_cameraX += (oldOffsetX - newOffsetX);
+        m_cameraY += (oldOffsetY - newOffsetY);
+        m_cameraZ += (oldOffsetZ - newOffsetZ);
         
         emit cameraChanged();
         e->accept();
@@ -297,62 +326,84 @@ void EditorViewport::wheelEvent(QWheelEvent* e)
     e->accept();
 }
 
+void EditorViewport::updateCamera(float deltaTime)
+{
+    float speed = 5.0f * m_cameraZoom; // Base speed
+    
+    if (m_keyFast)
+    {
+        speed *= 4.0f; // Sprint
+    }
+    if (m_keySlow)
+    {
+        speed *= 0.1f; // Precision
+    }
+
+    const float moveAmount = speed * deltaTime;
+    const float yawRad = m_cameraRotationY * 3.14159265f / 180.0f;
+    
+    bool changed = false;
+
+    if (m_keyForward)
+    {
+        m_cameraX -= moveAmount * std::sin(yawRad);
+        m_cameraZ -= moveAmount * std::cos(yawRad);
+        changed = true;
+    }
+    if (m_keyBackward)
+    {
+        m_cameraX += moveAmount * std::sin(yawRad);
+        m_cameraZ += moveAmount * std::cos(yawRad);
+        changed = true;
+    }
+    if (m_keyLeft)
+    {
+        m_cameraX -= moveAmount * std::cos(yawRad);
+        m_cameraZ += moveAmount * std::sin(yawRad);
+        changed = true;
+    }
+    if (m_keyRight)
+    {
+        m_cameraX += moveAmount * std::cos(yawRad);
+        m_cameraZ -= moveAmount * std::sin(yawRad);
+        changed = true;
+    }
+    if (m_keyUp)
+    {
+        m_cameraY += moveAmount;
+        changed = true;
+    }
+    if (m_keyDown)
+    {
+        m_cameraY -= moveAmount;
+        changed = true;
+    }
+
+    if (changed)
+    {
+        emit cameraChanged();
+    }
+}
+
 void EditorViewport::keyPressEvent(QKeyEvent* e)
 {
-    float moveSpeed = 0.1f * m_cameraZoom;
-    // QoL: speed modifiers
-    // Shift  -> faster
-    // Ctrl   -> slower
-    const auto mods = e->modifiers();
-    if (mods & Qt::ShiftModifier)
-    {
-        moveSpeed *= 3.0f;
-    }
-    if (mods & Qt::ControlModifier)
-    {
-        moveSpeed *= 0.25f;
-    }
-    const float yawRad = m_cameraRotationY * 3.14159265f / 180.0f;
     bool handled = true;
 
     switch (e->key())
     {
-    case Qt::Key_W:
-        // Move forward (into the scene)
-        m_cameraX -= moveSpeed * std::sin(yawRad);
-        m_cameraZ -= moveSpeed * std::cos(yawRad);
-        break;
-    case Qt::Key_S:
-        // Move backward
-        m_cameraX += moveSpeed * std::sin(yawRad);
-        m_cameraZ += moveSpeed * std::cos(yawRad);
-        break;
-    case Qt::Key_A:
-        // Strafe left
-        m_cameraX -= moveSpeed * std::cos(yawRad);
-        m_cameraZ += moveSpeed * std::sin(yawRad);
-        break;
-    case Qt::Key_D:
-        // Strafe right
-        m_cameraX += moveSpeed * std::cos(yawRad);
-        m_cameraZ -= moveSpeed * std::sin(yawRad);
-        break;
-    case Qt::Key_Q:
-        // Move down
-        m_cameraY -= moveSpeed;
-        break;
-    case Qt::Key_E:
-        // Move up
-        m_cameraY += moveSpeed;
-        break;
-    default:
-        handled = false;
-        break;
+    case Qt::Key_W: m_keyForward = true; break;
+    case Qt::Key_S: m_keyBackward = true; break;
+    case Qt::Key_A: m_keyLeft = true; break;
+    case Qt::Key_D: m_keyRight = true; break;
+    case Qt::Key_Q: m_keyDown = true; break;
+    case Qt::Key_E: m_keyUp = true; break;
+    case Qt::Key_Shift: m_keyFast = true; break;
+    case Qt::Key_Control: m_keySlow = true; break;
+    default: handled = false; break;
     }
 
     if (handled)
     {
-        emit cameraChanged();
         e->accept();
         return;
     }
@@ -362,6 +413,27 @@ void EditorViewport::keyPressEvent(QKeyEvent* e)
 
 void EditorViewport::keyReleaseEvent(QKeyEvent* e)
 {
+    bool handled = true;
+
+    switch (e->key())
+    {
+    case Qt::Key_W: m_keyForward = false; break;
+    case Qt::Key_S: m_keyBackward = false; break;
+    case Qt::Key_A: m_keyLeft = false; break;
+    case Qt::Key_D: m_keyRight = false; break;
+    case Qt::Key_Q: m_keyDown = false; break;
+    case Qt::Key_E: m_keyUp = false; break;
+    case Qt::Key_Shift: m_keyFast = false; break;
+    case Qt::Key_Control: m_keySlow = false; break;
+    default: handled = false; break;
+    }
+
+    if (handled)
+    {
+        e->accept();
+        return;
+    }
+
     QWidget::keyReleaseEvent(e);
 }
 } // namespace Aetherion::Editor

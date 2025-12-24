@@ -125,6 +125,81 @@ private:
 
 namespace
 {
+struct Vec3 { float x, y, z; };
+Vec3 operator-(const Vec3& a, const Vec3& b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+Vec3 operator+(const Vec3& a, const Vec3& b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+Vec3 operator*(const Vec3& a, float s) { return {a.x * s, a.y * s, a.z * s}; }
+float Dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+Vec3 Cross(const Vec3& a, const Vec3& b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
+Vec3 Normalize(const Vec3& v) { float l = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); return l > 0 ? v * (1.0f / l) : v; }
+
+// Returns t for L1 (P1 + t*D1) closest to L2 (P2 + s*D2)
+float ClosestPointLineLine(const Vec3& p1, const Vec3& d1, const Vec3& p2, const Vec3& d2)
+{
+    Vec3 r = p1 - p2;
+    float a = Dot(d1, d1);
+    float b = Dot(d1, d2);
+    float c = Dot(d1, r);
+    float e = Dot(d2, d2);
+    float f = Dot(d2, r);
+    float d = a * e - b * b;
+    if (d != 0.0f)
+    {
+        return (b * f - e * c) / d; // Parameter for L1
+    }
+    return 0.0f;
+}
+
+// Distance between two lines
+float DistLineLine(const Vec3& p1, const Vec3& d1, const Vec3& p2, const Vec3& d2)
+{
+    Vec3 w0 = p1 - p2;
+    float a = Dot(d1, d1);
+    float b = Dot(d1, d2);
+    float c = Dot(d2, d2);
+    float d = Dot(d1, w0);
+    float e = Dot(d2, w0);
+    float denom = a * c - b * b;
+    if (denom < 1e-5f) return 0.0f; // Parallel
+    float sc = (b * e - c * d) / denom;
+    float tc = (a * e - b * d) / denom;
+    Vec3 diff = w0 + (d1 * sc) - (d2 * tc);
+    return std::sqrt(Dot(diff, diff));
+}
+
+Vec3 GetCameraEye(const EditorViewport* vp)
+{
+    if (!vp) return {0, 0, 0};
+    const float yawRad = vp->getCameraRotationY() * (3.14159265f / 180.0f);
+    const float pitchRad = vp->getCameraRotationX() * (3.14159265f / 180.0f);
+    const float distance = std::max(0.01f, 5.0f * vp->getCameraZoom());
+
+    const float eyeX = vp->getCameraX() + distance * std::cos(pitchRad) * std::sin(yawRad);
+    const float eyeY = vp->getCameraY() + distance * std::sin(pitchRad);
+    const float eyeZ = vp->getCameraZ() + distance * std::cos(pitchRad) * std::cos(yawRad);
+    return {eyeX, eyeY, eyeZ};
+}
+
+Vec3 GetCameraRayDir(const EditorViewport* vp, int mx, int my, int w, int h)
+{
+    if (!vp || w <= 0 || h <= 0) return {0, 0, 1};
+    Vec3 eye = GetCameraEye(vp);
+    Vec3 center = {vp->getCameraX(), vp->getCameraY(), vp->getCameraZ()};
+    Vec3 f = Normalize(center - eye);
+    Vec3 up = {0.0f, 1.0f, 0.0f};
+    Vec3 r = Normalize(Cross(f, up));
+    Vec3 u = Cross(r, f);
+
+    const float fovRad = 60.0f * (3.14159265f / 180.0f);
+    const float aspect = static_cast<float>(w) / static_cast<float>(h);
+    const float tanHalfFov = std::tan(fovRad * 0.5f);
+
+    const float ndcX = (2.0f * (static_cast<float>(mx) + 0.5f) / static_cast<float>(w)) - 1.0f;
+    const float ndcY = 1.0f - (2.0f * (static_cast<float>(my) + 0.5f) / static_cast<float>(h));
+
+    Vec3 dir = f + (r * (ndcX * aspect * tanHalfFov)) + (u * (ndcY * tanHalfFov));
+    return Normalize(dir);
+}
 
 ConsoleSeverity ToConsoleSeverity(Rendering::LogSeverity severity)
 {
@@ -404,6 +479,12 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         const qint64 nanos = m_frameTimer.isValid() ? m_frameTimer.nsecsElapsed() : 0;
         const float dt = static_cast<float>(nanos) / 1'000'000'000.0f;
         m_frameTimer.restart();
+
+        if (m_viewport)
+        {
+            m_viewport->updateCamera(dt);
+        }
+
         auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
         auto renderView = ctx ? ctx->GetRenderView() : nullptr;
         const Rendering::RenderView* activeView = renderView.get();
@@ -571,41 +652,72 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     connect(m_viewport, &EditorViewport::gizmoDrag, this, [this](float dx, float dy) {
         if (!m_selection || !m_selection->GetSelectedEntity()) return;
         
-        const float translateSpeed = 0.05f * (m_viewport ? m_viewport->getCameraZoom() : 1.0f);
+        const float translateSpeed = 0.01f * (m_viewport ? m_viewport->getCameraZoom() : 1.0f);
         const float rotateSpeed = 0.5f;
         const float scaleSpeed = 0.01f;
         
         if (m_gizmoMode == GizmoMode::Translate)
         {
-            // Screen-space translation
-            // Calculate Camera Basis
-            const float yawRad = m_viewport ? m_viewport->getCameraRotationY() * (3.14159265f / 180.0f) : 0.0f;
-            const float pitchRad = m_viewport ? m_viewport->getCameraRotationX() * (3.14159265f / 180.0f) : 0.0f;
-            
-            const float sinY = std::sin(yawRad);
-            const float cosY = std::cos(yawRad);
-            const float sinP = std::sin(pitchRad);
-            const float cosP = std::cos(pitchRad);
+            if (m_activeGizmoAxis != GizmoAxis::None)
+            {
+                auto entity = m_selection->GetSelectedEntity();
+                auto transform = entity->GetComponent<Scene::TransformComponent>();
+                if (transform)
+                {
+                    Vec3 origin = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
+                    
+                    QPoint globalPos = QCursor::pos();
+                    QPoint localPos = m_viewport->surfaceWidget()->mapFromGlobal(globalPos);
 
-            // Right Vector (Ground projected)
-            // Note: Matches EditorViewport strafe logic (Right = +X at Yaw 0)
-            const float rightX = cosY;
-            const float rightY = 0.0f;
-            const float rightZ = -sinY;
+                    Vec3 rayOrigin = GetCameraEye(m_viewport);
+                    Vec3 rayDir = GetCameraRayDir(m_viewport, localPos.x(), localPos.y(), m_viewport->width(), m_viewport->height());
 
-            // Up Vector (Perpendicular to View and Right)
-            const float upX = sinY * sinP;
-            const float upY = cosP;
-            const float upZ = cosY * sinP;
+                    Vec3 axisDir = {0,0,0};
+                    if (m_activeGizmoAxis == GizmoAxis::X) axisDir = {1,0,0};
+                    else if (m_activeGizmoAxis == GizmoAxis::Y) axisDir = {0,1,0};
+                    else if (m_activeGizmoAxis == GizmoAxis::Z) axisDir = {0,0,1};
 
-            // Apply translation along camera plane
-            // Mouse dx -> moves along Right
-            // Mouse dy (positive down) -> moves along -Up
-            const float tx = (rightX * dx - upX * dy) * translateSpeed;
-            const float ty = (rightY * dx - upY * dy) * translateSpeed;
-            const float tz = (rightZ * dx - upZ * dy) * translateSpeed;
+                    float tCurr = ClosestPointLineLine(origin, axisDir, rayOrigin, rayDir);
+                    
+                    Vec3 prevRayDir = GetCameraRayDir(m_viewport, localPos.x() - static_cast<int>(dx), localPos.y() - static_cast<int>(dy), m_viewport->width(), m_viewport->height());
+                    float tPrev = ClosestPointLineLine(origin, axisDir, rayOrigin, prevRayDir);
 
-            ApplyTranslationDelta(tx, ty, tz);
+                    float delta = tCurr - tPrev;
+                    
+                    if (m_activeGizmoAxis == GizmoAxis::X) ApplyTranslationDelta(delta, 0, 0);
+                    else if (m_activeGizmoAxis == GizmoAxis::Y) ApplyTranslationDelta(0, delta, 0);
+                    else if (m_activeGizmoAxis == GizmoAxis::Z) ApplyTranslationDelta(0, 0, delta);
+                }
+            }
+            else
+            {
+                // Screen-space translation
+                // Calculate Camera Basis
+                const float yawRad = m_viewport ? m_viewport->getCameraRotationY() * (3.14159265f / 180.0f) : 0.0f;
+                const float pitchRad = m_viewport ? m_viewport->getCameraRotationX() * (3.14159265f / 180.0f) : 0.0f;
+                
+                const float sinY = std::sin(yawRad);
+                const float cosY = std::cos(yawRad);
+                const float sinP = std::sin(pitchRad);
+                const float cosP = std::cos(pitchRad);
+
+                // Right Vector (Ground projected)
+                const float rightX = cosY;
+                const float rightY = 0.0f;
+                const float rightZ = -sinY;
+
+                // Up Vector (Perpendicular to View and Right)
+                const float upX = sinY * sinP;
+                const float upY = cosP;
+                const float upZ = cosY * sinP;
+
+                // Apply translation along camera plane
+                const float tx = (rightX * dx - upX * dy) * translateSpeed;
+                const float ty = (rightY * dx - upY * dy) * translateSpeed;
+                const float tz = (rightZ * dx - upZ * dy) * translateSpeed;
+
+                ApplyTranslationDelta(tx, ty, tz);
+            }
         }
         else if (m_gizmoMode == GizmoMode::Rotate)
         {
@@ -2637,100 +2749,164 @@ void EditorMainWindow::ActivateModeTab(int index)
 
 bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
 {
-    if (watched == m_viewport && event && event->type() == QEvent::KeyPress)
+    if (watched == m_viewport)
     {
-        auto* keyEvent = static_cast<QKeyEvent*>(event);
-        if (keyEvent->isAutoRepeat())
+        if (event->type() == QEvent::MouseButtonPress)
         {
-            return false;
+            QMouseEvent* me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::LeftButton)
+            {
+                m_dragStartMouseX = me->x();
+                m_dragStartMouseY = me->y();
+                m_activeGizmoAxis = GizmoAxis::None;
+
+                if (m_selection && m_selection->GetSelectedEntity() && m_gizmoMode == GizmoMode::Translate)
+                {
+                    auto entity = m_selection->GetSelectedEntity();
+                    auto transform = entity->GetComponent<Scene::TransformComponent>();
+                    if (transform)
+                    {
+                        Vec3 origin = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
+                        Vec3 rayOrigin = GetCameraEye(m_viewport);
+                        Vec3 rayDir = GetCameraRayDir(m_viewport, me->x(), me->y(), m_viewport->width(), m_viewport->height());
+
+                        const float axisLen = 2.0f;
+                        // Heuristic threshold for picking
+                        float minDist = 0.25f * m_viewport->getCameraZoom(); 
+
+                        float tX = ClosestPointLineLine(origin, {1.0f, 0.0f, 0.0f}, rayOrigin, rayDir);
+                        float dX = DistLineLine(rayOrigin, rayDir, origin, {1.0f, 0.0f, 0.0f});
+                        if (dX < minDist && tX > -0.2f && tX < axisLen) // Allow slight back-pick for origin
+                        {
+                            minDist = dX;
+                            m_activeGizmoAxis = GizmoAxis::X;
+                        }
+
+                        float tY = ClosestPointLineLine(origin, {0.0f, 1.0f, 0.0f}, rayOrigin, rayDir);
+                        float dY = DistLineLine(rayOrigin, rayDir, origin, {0.0f, 1.0f, 0.0f});
+                        if (dY < minDist && tY > -0.2f && tY < axisLen)
+                        {
+                            minDist = dY;
+                            m_activeGizmoAxis = GizmoAxis::Y;
+                        }
+
+                        float tZ = ClosestPointLineLine(origin, {0.0f, 0.0f, 1.0f}, rayOrigin, rayDir);
+                        float dZ = DistLineLine(rayOrigin, rayDir, origin, {0.0f, 0.0f, 1.0f});
+                        if (dZ < minDist && tZ > -0.2f && tZ < axisLen)
+                        {
+                            m_activeGizmoAxis = GizmoAxis::Z;
+                        }
+
+                        if (m_activeGizmoAxis != GizmoAxis::None)
+                        {
+                             // Consume event? No, allow viewport to process drag, but we set state.
+                        }
+                    }
+                }
+            }
         }
-
-        const bool snapping = m_snapToggleAction ? m_snapToggleAction->isChecked() : false;
-        const float moveStep = snapping ? m_snapTranslateStep : 0.05f;
-        const float rotateStep = snapping ? m_snapRotateStep : 5.0f;
-        const float scaleStep = snapping ? m_snapScaleStep : 0.01f;
-
-        switch (keyEvent->key())
+        else if (event->type() == QEvent::MouseButtonRelease)
         {
-        case Qt::Key_Escape:
-            if (m_selection)
+            if (static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton)
             {
-                m_selection->Clear();
+                m_activeGizmoAxis = GizmoAxis::None;
             }
-            if (m_assetBrowser)
+        }
+        else if (event->type() == QEvent::KeyPress)
+        {
+            auto* keyEvent = static_cast<QKeyEvent*>(event);
+            if (keyEvent->isAutoRepeat())
             {
-                m_assetBrowser->ClearSelection();
+                return false;
             }
-            statusBar()->showMessage(tr("Selection cleared"), 1200);
-            return true;
-        case Qt::Key_W:
-            if (m_gizmoTranslateAction)
+
+            const bool snapping = m_snapToggleAction ? m_snapToggleAction->isChecked() : false;
+            const float moveStep = snapping ? m_snapTranslateStep : 0.05f;
+            const float rotateStep = snapping ? m_snapRotateStep : 5.0f;
+            const float scaleStep = snapping ? m_snapScaleStep : 0.01f;
+
+            switch (keyEvent->key())
             {
-                m_gizmoTranslateAction->trigger();
+            case Qt::Key_Escape:
+                if (m_selection)
+                {
+                    m_selection->Clear();
+                }
+                if (m_assetBrowser)
+                {
+                    m_assetBrowser->ClearSelection();
+                }
+                statusBar()->showMessage(tr("Selection cleared"), 1200);
+                return true;
+            case Qt::Key_W:
+                if (m_gizmoTranslateAction)
+                {
+                    m_gizmoTranslateAction->trigger();
+                }
+                return true;
+            case Qt::Key_E:
+                if (m_gizmoRotateAction)
+                {
+                    m_gizmoRotateAction->trigger();
+                }
+                return true;
+            case Qt::Key_R:
+                if (m_gizmoScaleAction)
+                {
+                    m_gizmoScaleAction->trigger();
+                }
+                return true;
+            case Qt::Key_Left:
+                if (m_gizmoMode == GizmoMode::Translate)
+                {
+                    ApplyTranslationDelta(-moveStep, 0.0f, 0.0f);
+                }
+                else if (m_gizmoMode == GizmoMode::Rotate)
+                {
+                    ApplyRotationDelta(-rotateStep);
+                }
+                else if (m_gizmoMode == GizmoMode::Scale)
+                {
+                    ApplyScaleDelta(-scaleStep);
+                }
+                return true;
+            case Qt::Key_Right:
+                if (m_gizmoMode == GizmoMode::Translate)
+                {
+                    ApplyTranslationDelta(moveStep, 0.0f, 0.0f);
+                }
+                else if (m_gizmoMode == GizmoMode::Rotate)
+                {
+                    ApplyRotationDelta(rotateStep);
+                }
+                else if (m_gizmoMode == GizmoMode::Scale)
+                {
+                    ApplyScaleDelta(scaleStep);
+                }
+                return true;
+            case Qt::Key_Up:
+                if (m_gizmoMode == GizmoMode::Translate)
+                {
+                    ApplyTranslationDelta(0.0f, moveStep, 0.0f);
+                }
+                else if (m_gizmoMode == GizmoMode::Scale)
+                {
+                    ApplyScaleDelta(scaleStep);
+                }
+                return true;
+            case Qt::Key_Down:
+                if (m_gizmoMode == GizmoMode::Translate)
+                {
+                    ApplyTranslationDelta(0.0f, -moveStep, 0.0f);
+                }
+                else if (m_gizmoMode == GizmoMode::Scale)
+                {
+                    ApplyScaleDelta(-scaleStep);
+                }
+                return true;
+            default:
+                break;
             }
-            return true;
-        case Qt::Key_E:
-            if (m_gizmoRotateAction)
-            {
-                m_gizmoRotateAction->trigger();
-            }
-            return true;
-        case Qt::Key_R:
-            if (m_gizmoScaleAction)
-            {
-                m_gizmoScaleAction->trigger();
-            }
-            return true;
-        case Qt::Key_Left:
-            if (m_gizmoMode == GizmoMode::Translate)
-            {
-                ApplyTranslationDelta(-moveStep, 0.0f, 0.0f);
-            }
-            else if (m_gizmoMode == GizmoMode::Rotate)
-            {
-                ApplyRotationDelta(-rotateStep);
-            }
-            else if (m_gizmoMode == GizmoMode::Scale)
-            {
-                ApplyScaleDelta(-scaleStep);
-            }
-            return true;
-        case Qt::Key_Right:
-            if (m_gizmoMode == GizmoMode::Translate)
-            {
-                ApplyTranslationDelta(moveStep, 0.0f, 0.0f);
-            }
-            else if (m_gizmoMode == GizmoMode::Rotate)
-            {
-                ApplyRotationDelta(rotateStep);
-            }
-            else if (m_gizmoMode == GizmoMode::Scale)
-            {
-                ApplyScaleDelta(scaleStep);
-            }
-            return true;
-        case Qt::Key_Up:
-            if (m_gizmoMode == GizmoMode::Translate)
-            {
-                ApplyTranslationDelta(0.0f, moveStep, 0.0f);
-            }
-            else if (m_gizmoMode == GizmoMode::Scale)
-            {
-                ApplyScaleDelta(scaleStep);
-            }
-            return true;
-        case Qt::Key_Down:
-            if (m_gizmoMode == GizmoMode::Translate)
-            {
-                ApplyTranslationDelta(0.0f, -moveStep, 0.0f);
-            }
-            else if (m_gizmoMode == GizmoMode::Scale)
-            {
-                ApplyScaleDelta(-scaleStep);
-            }
-            return true;
-        default:
-            break;
         }
     }
 

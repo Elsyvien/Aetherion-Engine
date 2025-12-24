@@ -74,6 +74,18 @@ private:
         Scale
     };
     GizmoMode m_gizmoMode{GizmoMode::Translate};
+
+    enum class GizmoAxis
+    {
+        None,
+        X,
+        Y,
+        Z
+    };
+    GizmoAxis m_activeGizmoAxis{GizmoAxis::None};
+    int m_dragStartMouseX{0};
+    int m_dragStartMouseY{0};
+
     QActionGroup* m_gizmoActionGroup = nullptr;
     QAction* m_gizmoTranslateAction = nullptr;
     QAction* m_gizmoRotateAction = nullptr;

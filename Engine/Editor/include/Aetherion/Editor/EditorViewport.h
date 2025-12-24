@@ -29,6 +29,7 @@ public:
     [[nodiscard]] float getCameraRotationX() const noexcept { return m_cameraRotationX; }
     [[nodiscard]] float getCameraZoom() const noexcept { return m_cameraZoom; }
     void resetCamera();
+    void updateCamera(float deltaTime);
     void SetCameraTarget(float x, float y, float z);
     void SetCameraZoom(float zoom);
 
@@ -80,5 +81,7 @@ private:
     bool m_keyRight = false;
     bool m_keyUp = false;
     bool m_keyDown = false;
+    bool m_keyFast = false;
+    bool m_keySlow = false;
 };
 } // namespace Aetherion::Editor

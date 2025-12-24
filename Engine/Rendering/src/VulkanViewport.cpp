@@ -3678,6 +3678,10 @@ void VulkanViewport::UpdateSelectionBuffer(const std::vector<DrawInstance>& inst
         return;
     }
 
+    std::vector<Vertex> vertices;
+    vertices.reserve(128); // Reserved size in CreateLineBuffers
+
+    // 1. Bounding Box
     const std::array<float, 3> minV = meshData->boundsMin;
     const std::array<float, 3> maxV = meshData->boundsMax;
     const std::array<std::array<float, 3>, 8> corners = {{
@@ -3703,17 +3707,87 @@ void VulkanViewport::UpdateSelectionBuffer(const std::vector<DrawInstance>& inst
         {0, 4}, {1, 5}, {2, 6}, {3, 7},
     }};
 
-    std::vector<Vertex> vertices;
-    vertices.reserve(edges.size() * 2);
     const float normal[3] = {0.0f, 0.0f, 1.0f};
-    const float color[4] = {1.0f, 0.85f, 0.15f, 1.0f};
+    const float boxColor[4] = {1.0f, 0.85f, 0.15f, 1.0f};
     for (const auto& edge : edges)
     {
         const auto& a = worldCorners[edge.first];
         const auto& b = worldCorners[edge.second];
-        vertices.push_back(Vertex{{a[0], a[1], a[2]}, {normal[0], normal[1], normal[2]}, {color[0], color[1], color[2], color[3]}, {0.0f, 0.0f}});
-        vertices.push_back(Vertex{{b[0], b[1], b[2]}, {normal[0], normal[1], normal[2]}, {color[0], color[1], color[2], color[3]}, {0.0f, 0.0f}});
+        vertices.push_back(Vertex{{a[0], a[1], a[2]}, {normal[0], normal[1], normal[2]}, {boxColor[0], boxColor[1], boxColor[2], boxColor[3]}, {0.0f, 0.0f}});
+        vertices.push_back(Vertex{{b[0], b[1], b[2]}, {normal[0], normal[1], normal[2]}, {boxColor[0], boxColor[1], boxColor[2], boxColor[3]}, {0.0f, 0.0f}});
     }
+
+    // 2. Translation Gizmo (Arrows)
+    const float origin[3] = {selected->constants.model[12], selected->constants.model[13], selected->constants.model[14]};
+    const float axisLen = 2.0f;
+    const float headLen = 0.4f;
+    const float headWidth = 0.1f;
+
+    auto addArrow = [&](const float dir[3], const float color[4]) {
+        float end[3] = {
+            origin[0] + dir[0] * axisLen,
+            origin[1] + dir[1] * axisLen,
+            origin[2] + dir[2] * axisLen
+        };
+        
+        // Shaft
+        vertices.push_back(Vertex{{origin[0], origin[1], origin[2]}, {0,0,1}, {color[0],color[1],color[2],1}, {0,0}});
+        vertices.push_back(Vertex{{end[0], end[1], end[2]}, {0,0,1}, {color[0],color[1],color[2],1}, {0,0}});
+        
+        // Calculate basis for arrowhead
+        float up[3] = {0.0f, 1.0f, 0.0f};
+        if (std::abs(dir[1]) > 0.99f) { up[0] = 1.0f; up[1] = 0.0f; } // Handle Y-axis case
+        
+        float right[3];
+        // right = dir x up
+        right[0] = dir[1]*up[2] - dir[2]*up[1];
+        right[1] = dir[2]*up[0] - dir[0]*up[2];
+        right[2] = dir[0]*up[1] - dir[1]*up[0];
+        // normalize right
+        float rLen = std::sqrt(right[0]*right[0] + right[1]*right[1] + right[2]*right[2]);
+        if (rLen > 0.0001f) { right[0]/=rLen; right[1]/=rLen; right[2]/=rLen; }
+        
+        float orthoUp[3];
+        // orthoUp = right x dir
+        orthoUp[0] = right[1]*dir[2] - right[2]*dir[1];
+        orthoUp[1] = right[2]*dir[0] - right[0]*dir[2];
+        orthoUp[2] = right[0]*dir[1] - right[1]*dir[0];
+
+        float baseCenter[3] = {
+            end[0] - dir[0] * headLen,
+            end[1] - dir[1] * headLen,
+            end[2] - dir[2] * headLen
+        };
+        
+        // 4 segments for cone
+        for(int i=0; i<4; ++i) {
+            float angle = i * 3.14159f / 2.0f;
+            float c = std::cos(angle) * headWidth;
+            float s = std::sin(angle) * headWidth;
+            
+            float p[3] = {
+                baseCenter[0] + right[0]*c + orthoUp[0]*s,
+                baseCenter[1] + right[1]*c + orthoUp[1]*s,
+                baseCenter[2] + right[2]*c + orthoUp[2]*s
+            };
+            
+            // Line from base point to tip
+            vertices.push_back(Vertex{{p[0], p[1], p[2]}, {0,0,1}, {color[0],color[1],color[2],1}, {0,0}});
+            vertices.push_back(Vertex{{end[0], end[1], end[2]}, {0,0,1}, {color[0],color[1],color[2],1}, {0,0}});
+        }
+    };
+
+    const float red[4] = {0.9f, 0.1f, 0.1f, 1.0f};
+    const float green[4] = {0.1f, 0.9f, 0.1f, 1.0f};
+    const float blue[4] = {0.1f, 0.1f, 0.9f, 1.0f};
+
+    const float xDir[3] = {1.0f, 0.0f, 0.0f};
+    const float yDir[3] = {0.0f, 1.0f, 0.0f};
+    const float zDir[3] = {0.0f, 0.0f, 1.0f};
+
+    addArrow(xDir, red);
+    addArrow(yDir, green);
+    addArrow(zDir, blue);
 
     void* data = nullptr;
     vkMapMemory(m_context->GetDevice(), m_selectionVertexMemory, 0, sizeof(Vertex) * vertices.size(), 0, &data);
