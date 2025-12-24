@@ -135,6 +135,7 @@ void EditorInspectorPanel::RebuildUi()
     m_colorB = nullptr;
     m_meshRotationSpeed = nullptr;
     m_meshAsset = nullptr;
+    m_meshTexture = nullptr;
 
     if (!m_entity)
     {
@@ -351,6 +352,9 @@ void EditorInspectorPanel::RebuildUi()
         m_meshAsset = new QComboBox(m_content);
         m_meshAsset->setEditable(true);
         m_meshAsset->setInsertPolicy(QComboBox::NoInsert);
+        m_meshTexture = new QComboBox(m_content);
+        m_meshTexture->setEditable(true);
+        m_meshTexture->setInsertPolicy(QComboBox::NoInsert);
 
         auto color = mesh->GetColor();
         m_colorR->setValue(color[0]);
@@ -363,8 +367,10 @@ void EditorInspectorPanel::RebuildUi()
         form->addRow(tr("Color B"), m_colorB);
         form->addRow(tr("Rotation Speed (deg/s)"), m_meshRotationSpeed);
         form->addRow(tr("Mesh Asset"), m_meshAsset);
+        form->addRow(tr("Albedo Texture"), m_meshTexture);
 
         m_meshAsset->addItem(tr("(None)"), QString());
+        m_meshTexture->addItem(tr("(None)"), QString());
         if (m_assetRegistry)
         {
             for (const auto& entry : m_assetRegistry->GetEntries())
@@ -375,6 +381,16 @@ void EditorInspectorPanel::RebuildUi()
                 }
                 const QString id = QString::fromStdString(entry.id);
                 m_meshAsset->addItem(id, id);
+            }
+
+            for (const auto& entry : m_assetRegistry->GetEntries())
+            {
+                if (entry.type != Assets::AssetRegistry::AssetType::Texture)
+                {
+                    continue;
+                }
+                const QString id = QString::fromStdString(entry.id);
+                m_meshTexture->addItem(id, id);
             }
         }
 
@@ -388,6 +404,18 @@ void EditorInspectorPanel::RebuildUi()
         {
             m_meshAsset->addItem(currentMeshId, currentMeshId);
             m_meshAsset->setCurrentIndex(m_meshAsset->count() - 1);
+        }
+
+        const QString currentTextureId = QString::fromStdString(mesh->GetAlbedoTextureId());
+        const int textureIndex = m_meshTexture->findData(currentTextureId);
+        if (textureIndex >= 0)
+        {
+            m_meshTexture->setCurrentIndex(textureIndex);
+        }
+        else if (!currentTextureId.isEmpty())
+        {
+            m_meshTexture->addItem(currentTextureId, currentTextureId);
+            m_meshTexture->setCurrentIndex(m_meshTexture->count() - 1);
         }
 
         auto updateMesh = [this, mesh]() {
@@ -406,6 +434,12 @@ void EditorInspectorPanel::RebuildUi()
                 const QString normalized = (meshId == tr("(None)")) ? QString() : meshId;
                 mesh->SetMeshAssetId(normalized.toStdString());
             }
+            if (m_meshTexture)
+            {
+                const QString texId = m_meshTexture->currentText().trimmed();
+                const QString normalized = (texId == tr("(None)")) ? QString() : texId;
+                mesh->SetAlbedoTextureId(normalized.toStdString());
+            }
             emit sceneModified();
         };
 
@@ -416,6 +450,10 @@ void EditorInspectorPanel::RebuildUi()
         if (m_meshAsset)
         {
             connect(m_meshAsset, &QComboBox::currentTextChanged, this, [updateMesh](const QString&) { updateMesh(); });
+        }
+        if (m_meshTexture)
+        {
+            connect(m_meshTexture, &QComboBox::currentTextChanged, this, [updateMesh](const QString&) { updateMesh(); });
         }
 
         formHost->setLayout(form);

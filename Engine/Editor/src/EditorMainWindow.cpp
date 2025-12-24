@@ -25,6 +25,9 @@
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -74,6 +77,121 @@ void AppendConsole(EditorConsole* console, const QString& message, ConsoleSeveri
     }
 }
 
+void Mat4Identity(float out[16])
+{
+    std::memset(out, 0, sizeof(float) * 16);
+    out[0] = 1.0f;
+    out[5] = 1.0f;
+    out[10] = 1.0f;
+    out[15] = 1.0f;
+}
+
+void Mat4Mul(float out[16], const float a[16], const float b[16])
+{
+    float r[16];
+    for (int c = 0; c < 4; ++c)
+    {
+        for (int rIdx = 0; rIdx < 4; ++rIdx)
+        {
+            r[c * 4 + rIdx] = a[0 * 4 + rIdx] * b[c * 4 + 0] + a[1 * 4 + rIdx] * b[c * 4 + 1] +
+                              a[2 * 4 + rIdx] * b[c * 4 + 2] + a[3 * 4 + rIdx] * b[c * 4 + 3];
+        }
+    }
+    std::memcpy(out, r, sizeof(r));
+}
+
+void Mat4Translation(float out[16], float x, float y, float z)
+{
+    Mat4Identity(out);
+    out[12] = x;
+    out[13] = y;
+    out[14] = z;
+}
+
+void Mat4RotationZ(float out[16], float radians)
+{
+    Mat4Identity(out);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out[0] = c;
+    out[4] = -s;
+    out[1] = s;
+    out[5] = c;
+}
+
+void Mat4Scale(float out[16], float x, float y, float z)
+{
+    Mat4Identity(out);
+    out[0] = x;
+    out[5] = y;
+    out[10] = z;
+}
+
+std::array<float, 16> BuildLocalMatrix(const Scene::TransformComponent& transform)
+{
+    float t[16];
+    float r[16];
+    float s[16];
+    float tr[16];
+    float local[16];
+    Mat4Translation(t, transform.GetPositionX(), transform.GetPositionY(), 0.0f);
+    Mat4RotationZ(r, transform.GetRotationZDegrees() * (3.14159265358979323846f / 180.0f));
+    Mat4Scale(s, transform.GetScaleX(), transform.GetScaleY(), 1.0f);
+    Mat4Mul(tr, t, r);
+    Mat4Mul(local, tr, s);
+    std::array<float, 16> out{};
+    std::memcpy(out.data(), local, sizeof(local));
+    return out;
+}
+
+std::array<float, 16> GetWorldMatrix(const Scene::Scene& scene, Core::EntityId id)
+{
+    auto entity = scene.FindEntityById(id);
+    if (!entity)
+    {
+        std::array<float, 16> identity{};
+        Mat4Identity(identity.data());
+        return identity;
+    }
+
+    auto transform = entity->GetComponent<Scene::TransformComponent>();
+    if (!transform)
+    {
+        std::array<float, 16> identity{};
+        Mat4Identity(identity.data());
+        return identity;
+    }
+
+    auto local = BuildLocalMatrix(*transform);
+    if (!transform->HasParent())
+    {
+        return local;
+    }
+
+    auto parent = GetWorldMatrix(scene, transform->GetParentId());
+    float world[16];
+    Mat4Mul(world, parent.data(), local.data());
+    std::array<float, 16> out{};
+    std::memcpy(out.data(), world, sizeof(world));
+    return out;
+}
+
+std::array<float, 3> TransformPoint(const std::array<float, 16>& m, const std::array<float, 3>& p)
+{
+    std::array<float, 3> out{};
+    out[0] = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12];
+    out[1] = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13];
+    out[2] = m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14];
+    return out;
+}
+
+float ExtractMaxScale(const std::array<float, 16>& m)
+{
+    const float sx = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+    const float sy = std::sqrt(m[4] * m[4] + m[5] * m[5] + m[6] * m[6]);
+    const float sz = std::sqrt(m[8] * m[8] + m[9] * m[9] + m[10] * m[10]);
+    return std::max(sx, std::max(sy, sz));
+}
 
 
 std::filesystem::path NormalizePath(const std::filesystem::path& path)
@@ -192,6 +310,12 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         if (!activeView)
         {
             activeView = &emptyView;
+        }
+        if (renderView)
+        {
+            renderView->selectedEntityId =
+                (m_selection && m_selection->GetSelectedEntity()) ? m_selection->GetSelectedEntity()->GetId()
+                                                                  : 0;
         }
         try
         {
@@ -1070,6 +1194,13 @@ void EditorMainWindow::AddAssetToScene(const QString& assetId)
     auto meshRenderer = std::make_shared<Scene::MeshRendererComponent>();
     meshRenderer->SetMeshAssetId(idStr);
     meshRenderer->SetColor(1.0f, 1.0f, 1.0f);
+    {
+        const std::string stem = std::filesystem::path(idStr).stem().string();
+        if (const auto* cached = registry->GetMesh(stem); cached && !cached->textureIds.empty())
+        {
+            meshRenderer->SetAlbedoTextureId(cached->textureIds.front());
+        }
+    }
     
     newEntity->AddComponent(transform);
     newEntity->AddComponent(meshRenderer);
@@ -1089,10 +1220,12 @@ void EditorMainWindow::AddAssetToScene(const QString& assetId)
     }
 
     SetSceneDirty(true);
-    
+
     const QString msg = tr("Added '%1' to scene as entity '%2'").arg(assetId).arg(QString::fromStdString(entityName));
     AppendConsole(m_console, msg, ConsoleSeverity::Info);
     statusBar()->showMessage(msg, 3000);
+
+    FocusCameraOnSelection();
 }
 
 void EditorMainWindow::DeleteAsset(const QString& assetId)
@@ -2229,14 +2362,35 @@ void EditorMainWindow::FocusCameraOnSelection()
         return;
     }
 
-    // Set the camera to focus on the selected entity's position
-    const float targetX = transform->GetPositionX();
-    const float targetY = transform->GetPositionY();
-    
+    float targetX = transform->GetPositionX();
+    float targetY = transform->GetPositionY();
+    float targetZ = 0.0f;
+    float radius = 0.5f;
+
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+    auto mesh = entity->GetComponent<Scene::MeshRendererComponent>();
+    if (mesh && registry && !mesh->GetMeshAssetId().empty() && m_scene)
+    {
+        if (const auto* meshData = registry->LoadMeshData(mesh->GetMeshAssetId()))
+        {
+            const auto world = GetWorldMatrix(*m_scene, entity->GetId());
+            const auto worldCenter = TransformPoint(world, meshData->boundsCenter);
+            const float maxScale = ExtractMaxScale(world);
+            targetX = worldCenter[0];
+            targetY = worldCenter[1];
+            targetZ = worldCenter[2];
+            radius = std::max(meshData->boundsRadius * maxScale, 0.01f);
+        }
+    }
+
+    if (m_viewport)
+    {
+        m_viewport->SetCameraTarget(targetX, targetY, targetZ);
+    }
     if (m_vulkanViewport)
     {
-        m_vulkanViewport->SetCameraPosition(targetX, targetY, 5.0f);
-        m_vulkanViewport->SetCameraZoom(1.0f);
+        m_vulkanViewport->FocusOnBounds(targetX, targetY, targetZ, radius);
     }
 
     statusBar()->showMessage(tr("Focused on '%1'").arg(QString::fromStdString(entity->GetName())), 2000);

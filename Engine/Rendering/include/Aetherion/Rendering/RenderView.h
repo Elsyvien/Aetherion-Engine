@@ -20,6 +20,7 @@ struct RenderInstance
     const Scene::TransformComponent* transform{nullptr};
     const Scene::MeshRendererComponent* mesh{nullptr};
     std::string meshAssetId;
+    std::string albedoTextureId;
     float model[16]{};
     bool hasModel{false};
 };
@@ -35,5 +36,6 @@ struct RenderView
     std::vector<RenderBatch> batches;
     std::unordered_map<Core::EntityId, const Scene::TransformComponent*> transforms;
     std::unordered_map<Core::EntityId, const Scene::MeshRendererComponent*> meshes;
+    Core::EntityId selectedEntityId{0};
 };
 } // namespace Aetherion::Rendering

@@ -8,6 +8,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <cmath>
+#include <filesystem>
 
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Rendering/RenderView.h"
@@ -115,6 +116,7 @@ void EditorMeshPreview::SetMeshAsset(const QString& assetId)
     m_rotationY = 0.0f;
     m_rotationX = 20.0f;
     m_zoom = 3.0f;
+    m_pendingFit = true;
 
     if (m_vulkanContext && m_surfaceReady)
     {
@@ -205,7 +207,7 @@ void EditorMeshPreview::wheelEvent(QWheelEvent* event)
 
     if (m_viewport)
     {
-        m_viewport->SetCameraPosition(0.0f, 0.0f, m_zoom);
+        m_viewport->SetCameraDistance(m_zoom);
     }
 
     event->accept();
@@ -241,6 +243,14 @@ void EditorMeshPreview::onRenderFrame()
     Rendering::RenderInstance instance;
     instance.entityId = 1;
     instance.meshAssetId = m_currentAssetId.toStdString();
+    if (m_assetRegistry)
+    {
+        const std::string stem = std::filesystem::path(instance.meshAssetId).stem().string();
+        if (const auto* cached = m_assetRegistry->GetMesh(stem); cached && !cached->textureIds.empty())
+        {
+            instance.albedoTextureId = cached->textureIds.front();
+        }
+    }
     instance.transform = nullptr;
     instance.mesh = nullptr;
     // Identity matrix
@@ -277,13 +287,15 @@ void EditorMeshPreview::initializeRenderer()
     {
         m_viewport = std::make_unique<Rendering::VulkanViewport>(m_vulkanContext, m_assetRegistry);
         m_viewport->SetLoggingEnabled(false);
-        m_viewport->Initialize(reinterpret_cast<void*>(m_surfaceHandle), 
-                               m_surfaceSize.width(), 
+        m_viewport->Initialize(reinterpret_cast<void*>(m_surfaceHandle),        
+                               m_surfaceSize.width(),
                                m_surfaceSize.height());
 
         // Set initial camera
-        m_viewport->SetCameraPosition(0.0f, 0.0f, m_zoom);
+        m_viewport->SetCameraPosition(0.0f, 0.0f, 0.0f);
         m_viewport->SetCameraRotation(m_rotationY, m_rotationX);
+        m_viewport->SetCameraDistance(m_zoom);
+        ApplyAutoFit();
 
         if (m_viewport->IsReady())
         {
@@ -300,11 +312,39 @@ void EditorMeshPreview::initializeRenderer()
 void EditorMeshPreview::shutdownRenderer()
 {
     m_renderTimer->stop();
-    
+
     if (m_viewport)
     {
         m_viewport->Shutdown();
         m_viewport.reset();
     }
+}
+
+void EditorMeshPreview::ApplyAutoFit()
+{
+    if (!m_pendingFit || !m_viewport || !m_assetRegistry || m_currentAssetId.isEmpty())
+    {
+        return;
+    }
+
+    const auto* meshData = m_assetRegistry->LoadMeshData(m_currentAssetId.toStdString());
+    if (!meshData)
+    {
+        return;
+    }
+
+    const float radius = std::max(meshData->boundsRadius, 0.01f);
+    const float padding = 1.35f;
+    const float fovRad = 60.0f * (3.14159265358979323846f / 180.0f);
+    const float distance = radius / std::sin(fovRad * 0.5f) * padding;
+
+    m_zoom = distance;
+    m_viewport->FocusOnBounds(meshData->boundsCenter[0],
+                              meshData->boundsCenter[1],
+                              meshData->boundsCenter[2],
+                              radius,
+                              padding);
+    m_viewport->SetCameraRotation(m_rotationY, m_rotationX);
+    m_pendingFit = false;
 }
 } // namespace Aetherion::Editor

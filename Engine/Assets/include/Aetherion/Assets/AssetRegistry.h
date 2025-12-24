@@ -49,8 +49,14 @@ public:
     struct MeshData
     {
         std::vector<std::array<float, 3>> positions;
+        std::vector<std::array<float, 3>> normals;
         std::vector<std::array<float, 4>> colors; // RGBA vertex colors
+        std::vector<std::array<float, 2>> uvs;
         std::vector<std::uint32_t> indices;
+        std::array<float, 3> boundsMin{0.0f, 0.0f, 0.0f};
+        std::array<float, 3> boundsMax{0.0f, 0.0f, 0.0f};
+        std::array<float, 3> boundsCenter{0.0f, 0.0f, 0.0f};
+        float boundsRadius{0.0f};
     };
 
     struct CachedMesh

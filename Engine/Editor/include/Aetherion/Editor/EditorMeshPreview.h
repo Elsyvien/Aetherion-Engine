@@ -50,6 +50,7 @@ private slots:
 private:
     void initializeRenderer();
     void shutdownRenderer();
+    void ApplyAutoFit();
 
     QLabel* m_header = nullptr;
     QLabel* m_assetLabel = nullptr;
@@ -72,5 +73,6 @@ private:
     float m_zoom = 3.0f;
     bool m_rotating = false;
     QPoint m_lastMousePos;
+    bool m_pendingFit = false;
 };
 } // namespace Aetherion::Editor

@@ -46,10 +46,13 @@ public:
     void SetCameraPosition(float x, float y, float z) noexcept;
     void SetCameraRotation(float yawDeg, float pitchDeg) noexcept;
     void SetCameraZoom(float zoom) noexcept;
+    void SetCameraDistance(float distance) noexcept;
     void ResetCamera() noexcept;
+    void FocusOnBounds(float centerX, float centerY, float centerZ, float radius, float padding = 1.25f) noexcept;
 
 private:
     static constexpr uint32_t kMaxFramesInFlight = 2;
+    static constexpr uint32_t kMaxTextureDescriptors = 128;
     struct InstancePushConstants
     {
         float model[16]{};
@@ -59,7 +62,9 @@ private:
     struct DrawInstance
     {
         InstancePushConstants constants{};
+        Core::EntityId entityId{0};
         std::string meshId;
+        std::string textureId;
     };
 
     struct GpuMesh
@@ -69,6 +74,17 @@ private:
         VkBuffer indexBuffer{VK_NULL_HANDLE};
         VkDeviceMemory indexMemory{VK_NULL_HANDLE};
         uint32_t indexCount{0};
+    };
+
+    struct GpuTexture
+    {
+        VkImage image{VK_NULL_HANDLE};
+        VkDeviceMemory memory{VK_NULL_HANDLE};
+        VkImageView view{VK_NULL_HANDLE};
+        VkSampler sampler{VK_NULL_HANDLE};
+        VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
+        uint32_t width{0};
+        uint32_t height{0};
     };
 
     struct FrameUniform
@@ -88,10 +104,11 @@ private:
     // Camera state
     float m_cameraX{0.0f};
     float m_cameraY{0.0f};
-    float m_cameraZ{5.0f};
+    float m_cameraZ{0.0f};
     float m_cameraYawDeg{30.0f};
     float m_cameraPitchDeg{25.0f};
     float m_cameraZoom{1.0f};
+    float m_cameraDistance{5.0f};
 
     void* m_nativeHandle{nullptr};
     int m_surfaceWidth{0};
@@ -116,11 +133,15 @@ private:
     VkRenderPass m_renderPass{VK_NULL_HANDLE};
 
     VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout m_textureDescriptorSetLayout{VK_NULL_HANDLE};
     VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
+    VkDescriptorPool m_textureDescriptorPool{VK_NULL_HANDLE};
     std::array<VkDescriptorSet, kMaxFramesInFlight> m_descriptorSets{};
 
     VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
     VkPipeline m_pipeline{VK_NULL_HANDLE};
+    VkPipeline m_linePipeline{VK_NULL_HANDLE};
+    VkPipeline m_overlayPipeline{VK_NULL_HANDLE};
 
     std::vector<VkFramebuffer> m_framebuffers;
 
@@ -132,6 +153,14 @@ private:
     VkBuffer m_indexBuffer{VK_NULL_HANDLE};
     VkDeviceMemory m_indexMemory{VK_NULL_HANDLE};
     uint32_t m_defaultIndexCount{0};
+    VkBuffer m_lineVertexBuffer{VK_NULL_HANDLE};
+    VkDeviceMemory m_lineVertexMemory{VK_NULL_HANDLE};
+    uint32_t m_lineVertexCount{0};
+    VkBuffer m_selectionVertexBuffer{VK_NULL_HANDLE};
+    VkDeviceMemory m_selectionVertexMemory{VK_NULL_HANDLE};
+    uint32_t m_selectionVertexCount{0};
+    VkSampler m_textureSampler{VK_NULL_HANDLE};
+    GpuTexture m_defaultTexture{};
     std::array<VkBuffer, kMaxFramesInFlight> m_uniformBuffers{};
     std::array<VkDeviceMemory, kMaxFramesInFlight> m_uniformMemories{};
     std::array<void*, kMaxFramesInFlight> m_uniformMapped{};
@@ -143,6 +172,8 @@ private:
     std::vector<VkFence> m_imagesInFlight;
     std::unordered_map<std::string, GpuMesh> m_meshCache;
     std::unordered_set<std::string> m_missingMeshes;
+    std::unordered_map<std::string, GpuTexture> m_textureCache;
+    std::unordered_set<std::string> m_missingTextures;
 
     void CreateSurface(void* nativeHandle);
     void CreateSwapchain(int width, int height);
@@ -157,16 +188,21 @@ private:
     void CreateRenderPass();
     void CreateDescriptorSetLayout();
     void CreateMeshBuffers();
+    void CreateLineBuffers();
     void CreateDepthResources();
     void CreateUniformBuffers();
     void CreateDescriptorPoolAndSets();
+    void CreateTextureDescriptorPool();
+    void CreateTextureResources();
     void CreatePipeline();
     void CreateFramebuffers();
 
     void CreateCommandPoolAndBuffers();
     void RecordCommandBuffer(uint32_t imageIndex, const std::vector<DrawInstance>& instances);
     void UpdateUniformBuffer(uint32_t frameIndex);
+    void UpdateSelectionBuffer(const std::vector<DrawInstance>& instances, Core::EntityId selectedId);
     void DestroyMeshCache();
+    void DestroyTextureCache();
 
 #ifdef __APPLE__
     void UpdateMetalLayerSize(int width, int height);
@@ -176,6 +212,11 @@ private:
     [[nodiscard]] std::vector<DrawInstance> InstancesFromView(const RenderView& view, float timeSeconds) const;
 
     [[nodiscard]] const GpuMesh* ResolveMesh(const std::string& assetId);
+    [[nodiscard]] const GpuTexture* ResolveTexture(const std::string& assetId);
+    GpuTexture CreateTextureFromPixels(const unsigned char* pixels, uint32_t width, uint32_t height);
+    void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+    void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
     [[nodiscard]] std::string ShaderPath(const char* filename) const;
     [[nodiscard]] std::vector<char> ReadFileBinary(const std::string& path) const;

@@ -63,6 +63,7 @@ private:
     QDoubleSpinBox* m_colorB = nullptr;
     QDoubleSpinBox* m_meshRotationSpeed = nullptr;
     QComboBox* m_meshAsset = nullptr;
+    QComboBox* m_meshTexture = nullptr;
 
     bool m_buildingUi = false;
 };

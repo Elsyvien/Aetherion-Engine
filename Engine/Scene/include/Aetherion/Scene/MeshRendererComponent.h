@@ -28,10 +28,14 @@ public:
     [[nodiscard]] const std::string& GetMeshAssetId() const noexcept { return m_meshAssetId; }
     void SetMeshAssetId(std::string assetId) { m_meshAssetId = std::move(assetId); }
 
+    [[nodiscard]] const std::string& GetAlbedoTextureId() const noexcept { return m_albedoTextureId; }
+    void SetAlbedoTextureId(std::string assetId) { m_albedoTextureId = std::move(assetId); }
+
 private:
     bool m_visible{true};
     std::array<float, 3> m_color{1.0f, 1.0f, 1.0f};
     float m_rotationSpeedDegPerSec{0.0f};
     std::string m_meshAssetId;
+    std::string m_albedoTextureId;
 };
 } // namespace Aetherion::Scene

@@ -28,6 +28,8 @@ public:
     [[nodiscard]] float getCameraZoom() const noexcept { return m_cameraZoom; }
 
     void resetCamera();
+    void SetCameraTarget(float x, float y, float z);
+    void SetCameraZoom(float zoom);
 
 signals:
     // WId ist unter Windows i.d.R. ein HWND (kann in Rendering/Win32 zu HWND gecastet werden)
@@ -53,7 +55,7 @@ private:
     // Camera state
     float m_cameraX = 0.0f;
     float m_cameraY = 0.0f;
-    float m_cameraZ = 5.0f;
+    float m_cameraZ = 0.0f;
     float m_cameraRotationY = 0.0f; // Yaw in degrees
     float m_cameraRotationX = 0.0f; // Pitch in degrees
     float m_cameraZoom = 1.0f;

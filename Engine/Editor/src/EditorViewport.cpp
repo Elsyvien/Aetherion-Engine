@@ -72,10 +72,24 @@ void EditorViewport::resetCamera()
 {
     m_cameraX = 0.0f;
     m_cameraY = 0.0f;
-    m_cameraZ = 5.0f;
+    m_cameraZ = 0.0f;
     m_cameraRotationY = 30.0f;  // Slight yaw for 3D view
     m_cameraRotationX = 25.0f;  // Slight pitch for 3D view
     m_cameraZoom = 1.0f;
+    emit cameraChanged();
+}
+
+void EditorViewport::SetCameraTarget(float x, float y, float z)
+{
+    m_cameraX = x;
+    m_cameraY = y;
+    m_cameraZ = z;
+    emit cameraChanged();
+}
+
+void EditorViewport::SetCameraZoom(float zoom)
+{
+    m_cameraZoom = zoom;
     emit cameraChanged();
 }
 

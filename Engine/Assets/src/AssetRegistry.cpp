@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <regex>
 #include <sstream>
 
@@ -74,6 +76,107 @@ void TransformPosition(const cgltf_float* matrix, const float in[3], float out[3
     out[2] = static_cast<float>(matrix[2] * in[0] + matrix[6] * in[1] + matrix[10] * in[2] + matrix[14]);
 }
 
+void ComputeMeshBounds(AssetRegistry::MeshData& mesh)
+{
+    if (mesh.positions.empty())
+    {
+        mesh.boundsMin = {0.0f, 0.0f, 0.0f};
+        mesh.boundsMax = {0.0f, 0.0f, 0.0f};
+        mesh.boundsCenter = {0.0f, 0.0f, 0.0f};
+        mesh.boundsRadius = 0.0f;
+        return;
+    }
+
+    std::array<float, 3> minV = mesh.positions.front();
+    std::array<float, 3> maxV = mesh.positions.front();
+    for (const auto& pos : mesh.positions)
+    {
+        minV[0] = std::min(minV[0], pos[0]);
+        minV[1] = std::min(minV[1], pos[1]);
+        minV[2] = std::min(minV[2], pos[2]);
+        maxV[0] = std::max(maxV[0], pos[0]);
+        maxV[1] = std::max(maxV[1], pos[1]);
+        maxV[2] = std::max(maxV[2], pos[2]);
+    }
+
+    mesh.boundsMin = minV;
+    mesh.boundsMax = maxV;
+    mesh.boundsCenter = {(minV[0] + maxV[0]) * 0.5f, (minV[1] + maxV[1]) * 0.5f, (minV[2] + maxV[2]) * 0.5f};
+
+    float radiusSq = 0.0f;
+    for (const auto& pos : mesh.positions)
+    {
+        const float dx = pos[0] - mesh.boundsCenter[0];
+        const float dy = pos[1] - mesh.boundsCenter[1];
+        const float dz = pos[2] - mesh.boundsCenter[2];
+        radiusSq = std::max(radiusSq, dx * dx + dy * dy + dz * dz);
+    }
+    mesh.boundsRadius = std::sqrt(radiusSq);
+}
+
+void ComputeMeshNormals(AssetRegistry::MeshData& mesh)
+{
+    if (mesh.positions.empty() || mesh.indices.size() < 3)
+    {
+        mesh.normals.assign(mesh.positions.size(), {0.0f, 0.0f, 1.0f});
+        return;
+    }
+
+    mesh.normals.assign(mesh.positions.size(), {0.0f, 0.0f, 0.0f});
+    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
+    {
+        const auto i0 = mesh.indices[i];
+        const auto i1 = mesh.indices[i + 1];
+        const auto i2 = mesh.indices[i + 2];
+        if (i0 >= mesh.positions.size() || i1 >= mesh.positions.size() || i2 >= mesh.positions.size())
+        {
+            continue;
+        }
+
+        const auto& p0 = mesh.positions[i0];
+        const auto& p1 = mesh.positions[i1];
+        const auto& p2 = mesh.positions[i2];
+
+        const float ux = p1[0] - p0[0];
+        const float uy = p1[1] - p0[1];
+        const float uz = p1[2] - p0[2];
+
+        const float vx = p2[0] - p0[0];
+        const float vy = p2[1] - p0[1];
+        const float vz = p2[2] - p0[2];
+
+        const float nx = uy * vz - uz * vy;
+        const float ny = uz * vx - ux * vz;
+        const float nz = ux * vy - uy * vx;
+
+        mesh.normals[i0][0] += nx;
+        mesh.normals[i0][1] += ny;
+        mesh.normals[i0][2] += nz;
+        mesh.normals[i1][0] += nx;
+        mesh.normals[i1][1] += ny;
+        mesh.normals[i1][2] += nz;
+        mesh.normals[i2][0] += nx;
+        mesh.normals[i2][1] += ny;
+        mesh.normals[i2][2] += nz;
+    }
+
+    for (auto& n : mesh.normals)
+    {
+        const float lenSq = n[0] * n[0] + n[1] * n[1] + n[2] * n[2];
+        if (lenSq > 0.0f)
+        {
+            const float invLen = 1.0f / std::sqrt(lenSq);
+            n[0] *= invLen;
+            n[1] *= invLen;
+            n[2] *= invLen;
+        }
+        else
+        {
+            n = {0.0f, 0.0f, 1.0f};
+        }
+    }
+}
+
 bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshData& mesh)
 {
     std::ifstream input(sourcePath);
@@ -84,6 +187,8 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
 
     std::vector<std::array<float, 3>> positions;
     std::vector<std::array<float, 4>> colors;
+    std::vector<std::array<float, 2>> uvs;
+    std::vector<std::array<float, 2>> texcoords;
     std::vector<std::uint32_t> indices;
 
     std::string line;
@@ -122,6 +227,16 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
                 colors.push_back({1.0f, 1.0f, 1.0f, 1.0f});
             }
             positions.push_back({x, y, z});
+            uvs.push_back({0.0f, 0.0f});
+        }
+        else if (keyword == "vt")
+        {
+            float u = 0.0f;
+            float v = 0.0f;
+            if (stream >> u >> v)
+            {
+                texcoords.push_back({u, v});
+            }
         }
         else if (keyword == "f")
         {
@@ -134,19 +249,53 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
                     continue;
                 }
 
+                int indexValue = 0;
+                int texValue = 0;
                 const size_t slash = token.find('/');
-                const std::string indexStr = (slash == std::string::npos) ? token : token.substr(0, slash);
-                if (indexStr.empty())
+                if (slash == std::string::npos)
                 {
-                    continue;
+                    try
+                    {
+                        indexValue = std::stoi(token);
+                    }
+                    catch (const std::exception&)
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    const std::string indexStr = token.substr(0, slash);
+                    if (!indexStr.empty())
+                    {
+                        try
+                        {
+                            indexValue = std::stoi(indexStr);
+                        }
+                        catch (const std::exception&)
+                        {
+                            indexValue = 0;
+                        }
+                    }
+
+                    const size_t slash2 = token.find('/', slash + 1);
+                    const std::string texStr =
+                        (slash2 == std::string::npos) ? token.substr(slash + 1)
+                                                      : token.substr(slash + 1, slash2 - slash - 1);
+                    if (!texStr.empty())
+                    {
+                        try
+                        {
+                            texValue = std::stoi(texStr);
+                        }
+                        catch (const std::exception&)
+                        {
+                            texValue = 0;
+                        }
+                    }
                 }
 
-                int indexValue = 0;
-                try
-                {
-                    indexValue = std::stoi(indexStr);
-                }
-                catch (const std::exception&)
+                if (indexValue == 0)
                 {
                     continue;
                 }
@@ -161,7 +310,21 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
                     continue;
                 }
 
-                face.push_back(static_cast<std::uint32_t>(indexValue - 1));
+                if (texValue != 0 && !texcoords.empty())
+                {
+                    if (texValue < 0)
+                    {
+                        texValue = static_cast<int>(texcoords.size()) + texValue + 1;
+                    }
+                    if (texValue > 0 && texValue <= static_cast<int>(texcoords.size()))
+                    {
+                        uvs[static_cast<size_t>(indexValue - 1)] =
+                            texcoords[static_cast<size_t>(texValue - 1)];
+                    }
+                }
+
+                const int adjustedIndex = indexValue - 1;
+                face.push_back(static_cast<std::uint32_t>(adjustedIndex));
             }
 
             if (face.size() >= 3)
@@ -181,14 +344,20 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
         return false;
     }
 
-    if (colors.size() < positions.size())
-    {
-        colors.resize(positions.size(), {1.0f, 1.0f, 1.0f, 1.0f});
-    }
-
     mesh.positions = std::move(positions);
     mesh.colors = std::move(colors);
+    mesh.uvs = std::move(uvs);
     mesh.indices = std::move(indices);
+    if (mesh.colors.size() < mesh.positions.size())
+    {
+        mesh.colors.resize(mesh.positions.size(), {1.0f, 1.0f, 1.0f, 1.0f});
+    }
+    if (mesh.uvs.size() < mesh.positions.size())
+    {
+        mesh.uvs.resize(mesh.positions.size(), {0.0f, 0.0f});
+    }
+    ComputeMeshNormals(mesh);
+    ComputeMeshBounds(mesh);
     return true;
 }
 
@@ -421,6 +590,8 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
     }
 
     MeshData mesh{};
+    bool loadedNormals = false;
+    bool loadedUvs = false;
 
     auto appendPrimitive = [&](const cgltf_primitive& primitive, const cgltf_float* matrix) {
         if (primitive.type != cgltf_primitive_type_triangles)
@@ -430,6 +601,8 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
 
         const cgltf_accessor* positionAccessor = nullptr;
         const cgltf_accessor* colorAccessor = nullptr;
+        const cgltf_accessor* normalAccessor = nullptr;
+        const cgltf_accessor* uvAccessor = nullptr;
         for (cgltf_size attrIndex = 0; attrIndex < primitive.attributes_count; ++attrIndex)
         {
             const cgltf_attribute& attr = primitive.attributes[attrIndex];
@@ -441,6 +614,14 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
             {
                 colorAccessor = attr.data;
             }
+            else if (attr.type == cgltf_attribute_type_normal)
+            {
+                normalAccessor = attr.data;
+            }
+            else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0)
+            {
+                uvAccessor = attr.data;
+            }
         }
 
         if (!positionAccessor || positionAccessor->count == 0)
@@ -451,6 +632,8 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
         const size_t baseVertex = mesh.positions.size();
         mesh.positions.reserve(baseVertex + positionAccessor->count);
         mesh.colors.reserve(baseVertex + positionAccessor->count);
+        mesh.normals.reserve(baseVertex + positionAccessor->count);
+        mesh.uvs.reserve(baseVertex + positionAccessor->count);
 
         for (cgltf_size i = 0; i < positionAccessor->count; ++i)
         {
@@ -478,6 +661,22 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
             {
                 mesh.colors.push_back({1.0f, 1.0f, 1.0f, 1.0f});
             }
+
+            float normal[3] = {0.0f, 0.0f, 1.0f};
+            if (normalAccessor && i < normalAccessor->count)
+            {
+                cgltf_accessor_read_float(normalAccessor, i, normal, 3);
+                loadedNormals = true;
+            }
+            mesh.normals.push_back({normal[0], normal[1], normal[2]});
+
+            float uv[2] = {0.0f, 0.0f};
+            if (uvAccessor && i < uvAccessor->count)
+            {
+                cgltf_accessor_read_float(uvAccessor, i, uv, 2);
+                loadedUvs = true;
+            }
+            mesh.uvs.push_back({uv[0], uv[1]});
         }
 
         if (primitive.indices)
@@ -558,6 +757,20 @@ const AssetRegistry::MeshData* AssetRegistry::LoadMeshData(const std::string& as
     {
         return nullptr;
     }
+
+    if (!loadedNormals)
+    {
+        ComputeMeshNormals(mesh);
+    }
+    if (mesh.normals.size() < mesh.positions.size())
+    {
+        mesh.normals.resize(mesh.positions.size(), {0.0f, 0.0f, 1.0f});
+    }
+    if (mesh.uvs.size() < mesh.positions.size())
+    {
+        mesh.uvs.resize(mesh.positions.size(), {0.0f, 0.0f});
+    }
+    ComputeMeshBounds(mesh);
 
     auto& stored = m_meshData[assetId];
     stored = std::move(mesh);
