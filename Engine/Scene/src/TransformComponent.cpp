@@ -11,21 +11,25 @@ std::string TransformComponent::GetDisplayName() const
     return "Transform";
 }
 
-void TransformComponent::SetPosition(float x, float y) noexcept
+void TransformComponent::SetPosition(float x, float y, float z) noexcept
 {
     m_position[0] = x;
     m_position[1] = y;
+    m_position[2] = z;
 }
 
-void TransformComponent::SetRotationZDegrees(float degrees) noexcept
+void TransformComponent::SetRotationDegrees(float xDegrees, float yDegrees, float zDegrees) noexcept
 {
-    m_rotationZDegrees = degrees;
+    m_rotationDegrees[0] = xDegrees;
+    m_rotationDegrees[1] = yDegrees;
+    m_rotationDegrees[2] = zDegrees;
 }
 
-void TransformComponent::SetScale(float x, float y) noexcept
+void TransformComponent::SetScale(float x, float y, float z) noexcept
 {
     m_scale[0] = x;
     m_scale[1] = y;
+    m_scale[2] = z;
 }
 
 void TransformComponent::SetParent(Core::EntityId parentId) noexcept

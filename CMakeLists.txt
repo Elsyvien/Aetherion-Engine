@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(Aetherion
     VERSION 0.0.1
-    DESCRIPTION "Aetherion 2D engine scaffolding (architecture only)"
+    DESCRIPTION "Aetherion 3D engine scaffolding (architecture only)"
     LANGUAGES CXX
 )
 

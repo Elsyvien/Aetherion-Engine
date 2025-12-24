@@ -38,7 +38,16 @@ public:
     void SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry);
 
 signals:
-    void transformChanged(Aetherion::Core::EntityId entityId, float posX, float posY, float rotDegZ, float scaleX, float scaleY);
+    void transformChanged(Aetherion::Core::EntityId entityId,
+                          float posX,
+                          float posY,
+                          float posZ,
+                          float rotDegX,
+                          float rotDegY,
+                          float rotDegZ,
+                          float scaleX,
+                          float scaleY,
+                          float scaleZ);
     void sceneModified();
 
 private:
@@ -55,9 +64,13 @@ private:
 
     QDoubleSpinBox* m_posX = nullptr;
     QDoubleSpinBox* m_posY = nullptr;
+    QDoubleSpinBox* m_posZ = nullptr;
+    QDoubleSpinBox* m_rotX = nullptr;
+    QDoubleSpinBox* m_rotY = nullptr;
     QDoubleSpinBox* m_rotZ = nullptr;
     QDoubleSpinBox* m_scaleX = nullptr;
     QDoubleSpinBox* m_scaleY = nullptr;
+    QDoubleSpinBox* m_scaleZ = nullptr;
     QDoubleSpinBox* m_colorR = nullptr;
     QDoubleSpinBox* m_colorG = nullptr;
     QDoubleSpinBox* m_colorB = nullptr;

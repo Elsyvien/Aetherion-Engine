@@ -157,7 +157,7 @@ private:
     void TogglePauseSession();
     void StepSimulationOnce();
     void ActivateModeTab(int index);
-    void ApplyTranslationDelta(float dx, float dy);
+    void ApplyTranslationDelta(float dx, float dy, float dz);
     void ApplyRotationDelta(float deltaDeg);
     void ApplyScaleDelta(float deltaUniform);
     void FocusCameraOnSelection();

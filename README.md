@@ -4,7 +4,7 @@
 
 # Aetherion Engine (Scaffolding)
 
-Aetherion is a modular, editor-driven 2D engine scaffold built with modern C++ and Qt 6. This repository only contains architecture and UI shells—no rendering, physics, audio, ECS logic, or asset pipelines are implemented.
+Aetherion is a modular, editor-driven 3D engine scaffold built with modern C++ and Qt 6. This repository only contains architecture and UI shells—no rendering, physics, audio, ECS logic, or asset pipelines are implemented.
 
 ## Layout
 
@@ -73,7 +73,7 @@ The build produces:
 - CMake 3.21+ and a C++20 compiler
 - Qt 6 (Widgets module) development packages
 - **Future rendering work**: Vulkan SDK (headers, loader, validation layers, shader tools like `glslc`/`glslangValidator`; on macOS also MoltenVK)
-- Optional future modules: Box2D/Chipmunk2D (physics), OpenAL Soft/SDL_mixer/FMOD/Wwise (audio), Lua/Python (scripting)
+- Optional future modules: Jolt/PhysX/Bullet (physics), OpenAL Soft/SDL_mixer/FMOD/Wwise (audio), Lua/Python (scripting)
 
 ## Notes
 
