@@ -1,11 +1,14 @@
 #include "Aetherion/Editor/EditorViewport.h"
 
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QKeyEvent>
+#include <QToolButton>
+#include <QLabel>
 #include <QTimer>
 #include <QWindow>
 #include <cmath>
@@ -42,6 +45,40 @@ EditorViewport::EditorViewport(QWidget* parent)
     layout->addWidget(m_surface, 1);
 
     setLayout(layout);
+
+    m_overlayWidget = new QWidget(this);
+    m_overlayWidget->setObjectName("viewportOverlay");
+    m_overlayWidget->setAttribute(Qt::WA_TranslucentBackground, true);
+    m_overlayWidget->setFocusPolicy(Qt::NoFocus);
+    m_overlayWidget->setStyleSheet(
+        "QWidget#viewportOverlay { background-color: rgba(20, 20, 20, 160); "
+        "border: 1px solid rgba(255, 255, 255, 40); border-radius: 6px; }"
+        "QToolButton { color: #f2f2f2; background: transparent; padding: 2px 6px; }"
+        "QLabel#focusHint { color: #e0e0e0; background-color: rgba(255, 255, 255, 30); "
+        "padding: 1px 4px; border-radius: 3px; }");
+
+    auto* overlayLayout = new QHBoxLayout(m_overlayWidget);
+    overlayLayout->setContentsMargins(6, 4, 6, 4);
+    overlayLayout->setSpacing(6);
+
+    m_focusButton = new QToolButton(m_overlayWidget);
+    m_focusButton->setText(tr("Focus"));
+    m_focusButton->setToolTip(tr("Focus on selection (F)"));
+    m_focusButton->setFocusPolicy(Qt::NoFocus);
+
+    m_focusHint = new QLabel(tr("F"), m_overlayWidget);
+    m_focusHint->setObjectName("focusHint");
+    m_focusHint->setFocusPolicy(Qt::NoFocus);
+
+    overlayLayout->addWidget(m_focusButton);
+    overlayLayout->addWidget(m_focusHint);
+
+    m_overlayWidget->raise();
+    UpdateOverlayGeometry();
+
+    connect(m_focusButton, &QToolButton::clicked, this, [this] {
+        emit focusRequested();
+    });
 
     // Debounce timer: emit resize only after user stops resizing for 50ms.
     m_resizeDebounceTimer = new QTimer(this);
@@ -93,6 +130,17 @@ void EditorViewport::SetCameraZoom(float zoom)
     emit cameraChanged();
 }
 
+void EditorViewport::UpdateOverlayGeometry()
+{
+    if (!m_overlayWidget)
+    {
+        return;
+    }
+
+    m_overlayWidget->adjustSize();
+    m_overlayWidget->move(8, 8);
+}
+
 void EditorViewport::showEvent(QShowEvent* e)
 {
     QWidget::showEvent(e);
@@ -117,6 +165,7 @@ void EditorViewport::showEvent(QShowEvent* e)
             });
         }
     }
+    UpdateOverlayGeometry();
 }
 
 void EditorViewport::resizeEvent(QResizeEvent* e)
@@ -128,12 +177,13 @@ void EditorViewport::resizeEvent(QResizeEvent* e)
     {
         m_resizeDebounceTimer->start();
     }
+    UpdateOverlayGeometry();
 }
 
 void EditorViewport::mousePressEvent(QMouseEvent* e)
 {
     m_lastMousePos = e->pos();
-    
+
     if (e->button() == Qt::MiddleButton)
     {
         // Middle button: pan
@@ -230,7 +280,19 @@ void EditorViewport::wheelEvent(QWheelEvent* e)
 
 void EditorViewport::keyPressEvent(QKeyEvent* e)
 {
-    const float moveSpeed = 0.1f * m_cameraZoom;
+    float moveSpeed = 0.1f * m_cameraZoom;
+    // QoL: speed modifiers
+    // Shift  -> faster
+    // Ctrl   -> slower
+    const auto mods = e->modifiers();
+    if (mods & Qt::ShiftModifier)
+    {
+        moveSpeed *= 3.0f;
+    }
+    if (mods & Qt::ControlModifier)
+    {
+        moveSpeed *= 0.25f;
+    }
     const float yawRad = m_cameraRotationY * 3.14159265f / 180.0f;
     bool handled = true;
 

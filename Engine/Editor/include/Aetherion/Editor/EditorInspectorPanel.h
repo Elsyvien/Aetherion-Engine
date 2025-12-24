@@ -22,6 +22,7 @@ class QVBoxLayout;
 class QDoubleSpinBox;
 class QWidget;
 class QComboBox;
+class QCheckBox;
 
 namespace Aetherion::Editor
 {
@@ -77,6 +78,14 @@ private:
     QDoubleSpinBox* m_meshRotationSpeed = nullptr;
     QComboBox* m_meshAsset = nullptr;
     QComboBox* m_meshTexture = nullptr;
+    QCheckBox* m_lightEnabled = nullptr;
+    QDoubleSpinBox* m_lightColorR = nullptr;
+    QDoubleSpinBox* m_lightColorG = nullptr;
+    QDoubleSpinBox* m_lightColorB = nullptr;
+    QDoubleSpinBox* m_lightIntensity = nullptr;
+    QDoubleSpinBox* m_lightAmbientR = nullptr;
+    QDoubleSpinBox* m_lightAmbientG = nullptr;
+    QDoubleSpinBox* m_lightAmbientB = nullptr;
 
     bool m_buildingUi = false;
 };

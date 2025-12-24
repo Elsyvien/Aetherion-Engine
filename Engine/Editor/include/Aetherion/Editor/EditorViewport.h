@@ -6,6 +6,8 @@
 class QTimer;
 class QMouseEvent;
 class QWheelEvent;
+class QToolButton;
+class QLabel;
 
 namespace Aetherion::Editor
 {
@@ -26,7 +28,6 @@ public:
     [[nodiscard]] float getCameraRotationY() const noexcept { return m_cameraRotationY; }
     [[nodiscard]] float getCameraRotationX() const noexcept { return m_cameraRotationX; }
     [[nodiscard]] float getCameraZoom() const noexcept { return m_cameraZoom; }
-
     void resetCamera();
     void SetCameraTarget(float x, float y, float z);
     void SetCameraZoom(float zoom);
@@ -36,6 +37,7 @@ signals:
     void surfaceReady(WId nativeHandle, int width, int height);
     void surfaceResized(int width, int height);
     void cameraChanged();
+    void focusRequested();
 
 protected:
     void showEvent(QShowEvent* e) override;
@@ -48,9 +50,13 @@ protected:
     void keyReleaseEvent(QKeyEvent* e) override;
 
 private:
+    void UpdateOverlayGeometry();
     QWidget* m_surface = nullptr;
     bool m_emittedReady = false;
     QTimer* m_resizeDebounceTimer = nullptr;
+    QWidget* m_overlayWidget = nullptr;
+    QToolButton* m_focusButton = nullptr;
+    QLabel* m_focusHint = nullptr;
 
     // Camera state
     float m_cameraX = 0.0f;

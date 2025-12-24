@@ -159,6 +159,9 @@ private:
     VkBuffer m_selectionVertexBuffer{VK_NULL_HANDLE};
     VkDeviceMemory m_selectionVertexMemory{VK_NULL_HANDLE};
     uint32_t m_selectionVertexCount{0};
+    VkBuffer m_lightGizmoVertexBuffer{VK_NULL_HANDLE};
+    VkDeviceMemory m_lightGizmoVertexMemory{VK_NULL_HANDLE};
+    uint32_t m_lightGizmoVertexCount{0};
     VkSampler m_textureSampler{VK_NULL_HANDLE};
     GpuTexture m_defaultTexture{};
     std::array<VkBuffer, kMaxFramesInFlight> m_uniformBuffers{};
@@ -199,8 +202,9 @@ private:
 
     void CreateCommandPoolAndBuffers();
     void RecordCommandBuffer(uint32_t imageIndex, const std::vector<DrawInstance>& instances);
-    void UpdateUniformBuffer(uint32_t frameIndex);
+    void UpdateUniformBuffer(uint32_t frameIndex, const RenderView& view);
     void UpdateSelectionBuffer(const std::vector<DrawInstance>& instances, Core::EntityId selectedId);
+    void UpdateLightGizmoBuffer(const RenderView& view);
     void DestroyMeshCache();
     void DestroyTextureCache();
 

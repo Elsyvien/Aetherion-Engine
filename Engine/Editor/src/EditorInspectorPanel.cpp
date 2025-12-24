@@ -2,6 +2,7 @@
 
 #include <QLabel>
 #include <algorithm>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -13,6 +14,7 @@
 
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/TransformComponent.h"
 
@@ -136,6 +138,14 @@ void EditorInspectorPanel::RebuildUi()
     m_meshRotationSpeed = nullptr;
     m_meshAsset = nullptr;
     m_meshTexture = nullptr;
+    m_lightEnabled = nullptr;
+    m_lightColorR = nullptr;
+    m_lightColorG = nullptr;
+    m_lightColorB = nullptr;
+    m_lightIntensity = nullptr;
+    m_lightAmbientR = nullptr;
+    m_lightAmbientG = nullptr;
+    m_lightAmbientB = nullptr;
 
     if (!m_entity)
     {
@@ -259,8 +269,9 @@ void EditorInspectorPanel::RebuildUi()
 
     auto transform = m_entity->GetComponent<Scene::TransformComponent>();
     auto mesh = m_entity->GetComponent<Scene::MeshRendererComponent>();
+    auto light = m_entity->GetComponent<Scene::LightComponent>();
 
-    if (!transform && !mesh)
+    if (!transform && !mesh && !light)
     {
         auto* noEditable = new QLabel(tr("No editable components on selected entity."), m_content);
         noEditable->setAlignment(Qt::AlignTop | Qt::AlignLeft);
@@ -481,6 +492,85 @@ void EditorInspectorPanel::RebuildUi()
         {
             connect(m_meshTexture, &QComboBox::currentTextChanged, this, [updateMesh](const QString&) { updateMesh(); });
         }
+
+        formHost->setLayout(form);
+        m_contentLayout->addWidget(formHost);
+    }
+
+    if (light)
+    {
+        auto* lightLabel = new QLabel(tr("Light"), m_content);
+        lightLabel->setStyleSheet("font-weight: bold;");
+        m_contentLayout->addWidget(lightLabel);
+
+        auto* hintLabel = new QLabel(tr("Direction uses Transform rotation (X=Pitch, Y=Yaw)."), m_content);
+        hintLabel->setStyleSheet("color: #8a8a8a;");
+        m_contentLayout->addWidget(hintLabel);
+
+        auto* formHost = new QWidget(m_content);
+        auto* form = new QFormLayout(formHost);
+        form->setLabelAlignment(Qt::AlignLeft);
+
+        m_lightEnabled = new QCheckBox(m_content);
+        m_lightEnabled->setChecked(light->IsEnabled());
+        m_lightColorR = makeSpin(0.0, 1.0, 0.01);
+        m_lightColorG = makeSpin(0.0, 1.0, 0.01);
+        m_lightColorB = makeSpin(0.0, 1.0, 0.01);
+        m_lightIntensity = makeSpin(0.0, 10.0, 0.1);
+        m_lightAmbientR = makeSpin(0.0, 1.0, 0.01);
+        m_lightAmbientG = makeSpin(0.0, 1.0, 0.01);
+        m_lightAmbientB = makeSpin(0.0, 1.0, 0.01);
+
+        const auto color = light->GetColor();
+        const auto ambient = light->GetAmbientColor();
+        m_lightColorR->setValue(color[0]);
+        m_lightColorG->setValue(color[1]);
+        m_lightColorB->setValue(color[2]);
+        m_lightIntensity->setValue(light->GetIntensity());
+        m_lightAmbientR->setValue(ambient[0]);
+        m_lightAmbientG->setValue(ambient[1]);
+        m_lightAmbientB->setValue(ambient[2]);
+
+        form->addRow(tr("Enabled"), m_lightEnabled);
+        form->addRow(tr("Color R"), m_lightColorR);
+        form->addRow(tr("Color G"), m_lightColorG);
+        form->addRow(tr("Color B"), m_lightColorB);
+        form->addRow(tr("Intensity"), m_lightIntensity);
+        form->addRow(tr("Ambient R"), m_lightAmbientR);
+        form->addRow(tr("Ambient G"), m_lightAmbientG);
+        form->addRow(tr("Ambient B"), m_lightAmbientB);
+
+        auto updateLight = [this, light]() {
+            if (m_buildingUi || !m_entity)
+            {
+                return;
+            }
+
+            if (m_lightEnabled)
+            {
+                light->SetEnabled(m_lightEnabled->isChecked());
+            }
+            light->SetColor(static_cast<float>(m_lightColorR->value()),
+                            static_cast<float>(m_lightColorG->value()),
+                            static_cast<float>(m_lightColorB->value()));
+            light->SetIntensity(static_cast<float>(m_lightIntensity->value()));
+            light->SetAmbientColor(static_cast<float>(m_lightAmbientR->value()),
+                                   static_cast<float>(m_lightAmbientG->value()),
+                                   static_cast<float>(m_lightAmbientB->value()));
+            emit sceneModified();
+        };
+
+        if (m_lightEnabled)
+        {
+            connect(m_lightEnabled, &QCheckBox::toggled, this, [updateLight](bool) { updateLight(); });
+        }
+        connect(m_lightColorR, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        connect(m_lightColorG, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        connect(m_lightColorB, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        connect(m_lightIntensity, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        connect(m_lightAmbientR, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        connect(m_lightAmbientG, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        connect(m_lightAmbientB, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
 
         formHost->setLayout(form);
         m_contentLayout->addWidget(formHost);

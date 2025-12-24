@@ -6,11 +6,14 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
+#include <QStyle>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
 #include "Aetherion/Editor/EditorSelection.h"
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/LightComponent.h"
+#include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
 
@@ -164,6 +167,19 @@ void EditorHierarchyPanel::BindScene(std::shared_ptr<Scene::Scene> scene)
         const QString name = QString::fromStdString(entity->GetName().empty() ? std::string("Entity") : entity->GetName());
         auto* item = new QTreeWidgetItem(QStringList{name});
         item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(static_cast<qulonglong>(entity->GetId())));
+
+        // Set icon based on component type
+        if (entity->GetComponent<Scene::LightComponent>())
+        {
+            // Sun/light icon - using a yellow circle Unicode character
+            item->setText(0, QString::fromUtf8("☀ ") + name);
+        }
+        else if (entity->GetComponent<Scene::MeshRendererComponent>())
+        {
+            // Mesh/cube icon
+            item->setText(0, QString::fromUtf8("⬢ ") + name);
+        }
+
         m_itemLookup.insert(static_cast<qulonglong>(entity->GetId()), item);
     }
 
@@ -318,7 +334,13 @@ void EditorHierarchyPanel::setupContextMenu()
             emit createEmptyEntityAtRootRequested();
         }
     });
-    
+
+    auto* createLightAction = m_contextMenu->addAction(tr("Create Directional Light"));
+    connect(createLightAction, &QAction::triggered, this, [this]() {
+        Core::EntityId id = GetSelectedEntityId();
+        emit createLightEntityRequested(id);
+    });
+
     m_contextMenu->addSeparator();
     
     auto* duplicateAction = m_contextMenu->addAction(tr("Duplicate"));
@@ -373,7 +395,7 @@ void EditorHierarchyPanel::showContextMenu(const QPoint& pos)
     for (QAction* action : m_contextMenu->actions())
     {
         const QString text = action->text();
-        if (text == tr("Create Empty"))
+        if (text == tr("Create Empty") || text == tr("Create Directional Light"))
         {
             action->setEnabled(true);
         }

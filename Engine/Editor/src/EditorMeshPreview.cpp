@@ -257,8 +257,12 @@ void EditorMeshPreview::onRenderFrame()
     instance.model[0] = 1.0f; instance.model[5] = 1.0f; 
     instance.model[10] = 1.0f; instance.model[15] = 1.0f;
     instance.hasModel = true;
-    
+
     view.instances.push_back(instance);
+    view.directionalLight.enabled = true;
+    view.directionalLight.direction[0] = -0.4f;
+    view.directionalLight.direction[1] = -1.0f;
+    view.directionalLight.direction[2] = -0.6f;
 
     static QElapsedTimer timer;
     static bool timerStarted = false;

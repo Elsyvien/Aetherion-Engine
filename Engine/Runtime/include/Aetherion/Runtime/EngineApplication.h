@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <string>
 #include <memory>
 #include <vector>
 
@@ -51,6 +52,7 @@ private:
     bool m_initialized{false};
     bool m_sceneSystemsConfigured{false};
 
+    void DebugPrint(const std::string& message, bool isError = false) const;
     void RegisterPlaceholderSystems();
     void UpdateRuntimeSystems(float deltaTime);
     void UpdateSceneSystems(float deltaTime);

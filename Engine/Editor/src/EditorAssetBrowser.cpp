@@ -111,6 +111,17 @@ void EditorAssetBrowser::onFilterTextChanged(const QString& text)
     updateVisibleItems();
 }
 
+void EditorAssetBrowser::FocusFilter()
+{
+    if (!m_filterEdit)
+    {
+        return;
+    }
+
+    m_filterEdit->setFocus(Qt::ShortcutFocusReason);
+    m_filterEdit->selectAll();
+}
+
 void EditorAssetBrowser::updateVisibleItems()
 {
     if (!m_list)

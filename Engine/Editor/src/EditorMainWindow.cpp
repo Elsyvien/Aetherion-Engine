@@ -47,6 +47,7 @@
 #include "Aetherion/Runtime/EngineApplication.h"
 
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/SceneSerializer.h"
@@ -477,6 +478,11 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         }
     });
 
+    connect(m_viewport, &EditorViewport::focusRequested, this, [this]() {
+        FocusCameraOnSelection();
+    });
+
+
     auto* secondaryPlaceholder = new QWidget(centerSplit);
     secondaryPlaceholder->setMinimumWidth(220);
     auto* secondaryLayout = new QVBoxLayout(secondaryPlaceholder);
@@ -598,6 +604,9 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         connect(m_hierarchyPanel, &EditorHierarchyPanel::createEmptyEntityAtRootRequested, this, [this]() {
             CreateEmptyEntity(0);
         });
+        connect(m_hierarchyPanel, &EditorHierarchyPanel::createLightEntityRequested, this, [this](Aetherion::Core::EntityId parentId) {
+            CreateLightEntity(parentId);
+        });
     }
 
     if (m_inspectorPanel)
@@ -692,6 +701,22 @@ void EditorMainWindow::CreateMenuBarContent()
     connect(rescanAssets, &QAction::triggered, this, &EditorMainWindow::RescanAssets);
     fileMenu->addSeparator();
     fileMenu->addAction(tr("Exit"), this, &QWidget::close);
+
+    // QoL shortcuts that don't warrant extra UI.
+    auto* focusAssetFilter = new QAction(tr("Focus Asset Filter"), this);
+    focusAssetFilter->setShortcut(QKeySequence::Find);
+    addAction(focusAssetFilter);
+    connect(focusAssetFilter, &QAction::triggered, this, [this] {
+        if (m_assetBrowserDock)
+        {
+            m_assetBrowserDock->setVisible(true);
+            m_assetBrowserDock->raise();
+        }
+        if (m_assetBrowser)
+        {
+            m_assetBrowser->FocusFilter();
+        }
+    });
 
     auto* editMenu = menuBar()->addMenu(tr("&Edit"));
     auto* preferences = editMenu->addAction(tr("Preferences"));
@@ -798,6 +823,22 @@ void EditorMainWindow::CreateMenuBarContent()
         restoreState(m_defaultLayoutState);
         m_defaultLayoutState = saveState();
         SaveLayout();
+    });
+
+    auto* fullscreenAction = viewMenu->addAction(tr("Toggle Fullscreen"));
+    fullscreenAction->setCheckable(true);
+    fullscreenAction->setShortcut(QKeySequence(Qt::Key_F11));
+    fullscreenAction->setChecked(isFullScreen());
+    connect(fullscreenAction, &QAction::triggered, this, [this, fullscreenAction](bool checked) {
+        if (checked)
+        {
+            showFullScreen();
+        }
+        else
+        {
+            showNormal();
+        }
+        fullscreenAction->setChecked(isFullScreen());
     });
 
     auto* resetCameraAction = viewMenu->addAction(tr("Reset Camera"));
@@ -1507,6 +1548,19 @@ void EditorMainWindow::DuplicateEntity(Aetherion::Core::EntityId id)
         newEntity->AddComponent(meshRenderer);
     }
 
+    auto sourceLight = sourceEntity->GetComponent<Scene::LightComponent>();
+    if (sourceLight)
+    {
+        auto light = std::make_shared<Scene::LightComponent>();
+        light->SetEnabled(sourceLight->IsEnabled());
+        const auto lightColor = sourceLight->GetColor();
+        light->SetColor(lightColor[0], lightColor[1], lightColor[2]);
+        light->SetIntensity(sourceLight->GetIntensity());
+        const auto ambient = sourceLight->GetAmbientColor();
+        light->SetAmbientColor(ambient[0], ambient[1], ambient[2]);
+        newEntity->AddComponent(light);
+    }
+
     m_scene->AddEntity(newEntity);
     SetSceneDirty(true);
 
@@ -1614,6 +1668,56 @@ void EditorMainWindow::CreateEmptyEntity(Aetherion::Core::EntityId parentId)
 
     AppendConsole(m_console, tr("Created new entity"), ConsoleSeverity::Info);
     statusBar()->showMessage(tr("Entity created"), 3000);
+}
+
+void EditorMainWindow::CreateLightEntity(Aetherion::Core::EntityId parentId)
+{
+    if (!m_scene)
+    {
+        statusBar()->showMessage(tr("No active scene"), 2000);
+        return;
+    }
+
+    Core::EntityId newId = 1;
+    for (const auto& entity : m_scene->GetEntities())
+    {
+        if (entity && entity->GetId() >= newId)
+        {
+            newId = entity->GetId() + 1;
+        }
+    }
+
+    auto newEntity = std::make_shared<Scene::Entity>(newId, "Directional Light");
+
+    auto transform = std::make_shared<Scene::TransformComponent>();
+    transform->SetPosition(0.0f, 0.0f, 0.0f);
+    transform->SetScale(1.0f, 1.0f, 1.0f);
+    transform->SetRotationDegrees(-55.0f, 215.0f, 0.0f);
+    if (parentId != 0)
+    {
+        transform->SetParent(parentId);
+    }
+
+    auto light = std::make_shared<Scene::LightComponent>();
+    newEntity->AddComponent(transform);
+    newEntity->AddComponent(light);
+
+    m_scene->AddEntity(newEntity);
+    SetSceneDirty(true);
+
+    if (m_hierarchyPanel)
+    {
+        m_hierarchyPanel->BindScene(m_scene);
+        m_hierarchyPanel->SetSelectedEntity(newId);
+    }
+
+    if (m_selection)
+    {
+        m_selection->SelectEntity(newEntity);
+    }
+
+    AppendConsole(m_console, tr("Created directional light"), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Directional light created"), 3000);
 }
 
 void EditorMainWindow::SaveScene()
@@ -1901,16 +2005,32 @@ void EditorMainWindow::DetachVulkanLogSink()
 void EditorMainWindow::LoadLayout()
 {
     QSettings settings("Aetherion", "Editor");
+
+    // Capture the default/factory layout before applying any saved state.
+    // Used by the "Reset Layout" action.
+    if (m_defaultLayoutState.isEmpty())
+    {
+        m_defaultLayoutState = saveState();
+    }
+
+    const QByteArray geometry = settings.value("layout/mainWindowGeometry").toByteArray();
+    if (!geometry.isEmpty())
+    {
+        restoreGeometry(geometry);
+    }
+    else
+    {
+        settings.setValue("layout/mainWindowGeometry", saveGeometry());
+    }
+
     const QByteArray saved = settings.value("layout/mainWindow").toByteArray();
     if (!saved.isEmpty())
     {
         restoreState(saved);
-        m_defaultLayoutState = saved;
     }
     else
     {
-        m_defaultLayoutState = saveState();
-        settings.setValue("layout/mainWindow", m_defaultLayoutState);
+        settings.setValue("layout/mainWindow", saveState());
     }
 }
 
@@ -1918,6 +2038,7 @@ void EditorMainWindow::SaveLayout() const
 {
     QSettings settings("Aetherion", "Editor");
     settings.setValue("layout/mainWindow", saveState());
+    settings.setValue("layout/mainWindowGeometry", saveGeometry());
 }
 
 void EditorMainWindow::closeEvent(QCloseEvent* event)
@@ -2210,6 +2331,17 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
 
         switch (keyEvent->key())
         {
+        case Qt::Key_Escape:
+            if (m_selection)
+            {
+                m_selection->Clear();
+            }
+            if (m_assetBrowser)
+            {
+                m_assetBrowser->ClearSelection();
+            }
+            statusBar()->showMessage(tr("Selection cleared"), 1200);
+            return true;
         case Qt::Key_W:
             if (m_gizmoTranslateAction)
             {

@@ -1,8 +1,10 @@
 #include "Aetherion/Runtime/EngineApplication.h"
 
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
@@ -28,6 +30,7 @@
 #include "Aetherion/Rendering/RenderView.h"
 #include "Aetherion/Rendering/VulkanContext.h"
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/SceneSerializer.h"
@@ -131,6 +134,11 @@ std::filesystem::path ResolveAssetsRoot()
     }
 
     return std::filesystem::path("assets");
+}
+
+std::string BoolToOnOff(bool value)
+{
+    return value ? "on" : "off";
 }
 
 class SceneSystemDispatcher final : public IRuntimeSystem
@@ -261,6 +269,7 @@ private:
         view->batches.clear();
         view->transforms.clear();
         view->meshes.clear();
+        view->directionalLight = Rendering::RenderDirectionalLight{};
 
         auto scene = m_scene.lock();
         if (!scene)
@@ -272,6 +281,7 @@ private:
         const auto& entities = scene->GetEntities();
         view->instances.reserve(entities.size());
 
+        bool foundLight = false;
         for (const auto& entity : entities)
         {
             if (!entity)
@@ -289,6 +299,60 @@ private:
             if (mesh)
             {
                 view->meshes.emplace(entity->GetId(), mesh.get());
+            }
+
+            auto light = entity->GetComponent<Scene::LightComponent>();
+            if (light && !foundLight && light->IsEnabled())
+            {
+                float yawDeg = 0.0f;
+                float pitchDeg = -45.0f;
+                float posX = 0.0f;
+                float posY = 3.0f;
+                float posZ = 0.0f;
+                if (transform)
+                {
+                    yawDeg = transform->GetRotationYDegrees();
+                    pitchDeg = transform->GetRotationXDegrees();
+                    posX = transform->GetPositionX();
+                    posY = transform->GetPositionY();
+                    posZ = transform->GetPositionZ();
+                }
+
+                const float yawRad = yawDeg * (3.14159265358979323846f / 180.0f);
+                const float pitchRad = pitchDeg * (3.14159265358979323846f / 180.0f);
+                float dir[3] = {std::cos(pitchRad) * std::sin(yawRad),
+                                std::sin(pitchRad),
+                                std::cos(pitchRad) * std::cos(yawRad)};
+                const float len = std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+                if (len > 0.0001f)
+                {
+                    dir[0] /= len;
+                    dir[1] /= len;
+                    dir[2] /= len;
+                }
+
+                view->directionalLight.enabled = true;
+                view->directionalLight.direction[0] = dir[0];
+                view->directionalLight.direction[1] = dir[1];
+                view->directionalLight.direction[2] = dir[2];
+
+                // Store position and entity ID for gizmo rendering
+                view->directionalLight.position[0] = posX;
+                view->directionalLight.position[1] = posY;
+                view->directionalLight.position[2] = posZ;
+                view->directionalLight.entityId = entity->GetId();
+
+                const auto lightColor = light->GetColor();
+                view->directionalLight.color[0] = lightColor[0];
+                view->directionalLight.color[1] = lightColor[1];
+                view->directionalLight.color[2] = lightColor[2];
+                view->directionalLight.intensity = light->GetIntensity();
+
+                const auto ambient = light->GetAmbientColor();
+                view->directionalLight.ambientColor[0] = ambient[0];
+                view->directionalLight.ambientColor[1] = ambient[1];
+                view->directionalLight.ambientColor[2] = ambient[2];
+                foundLight = true;
             }
 
             if (!transform || !mesh || !mesh->IsVisible())
@@ -339,6 +403,7 @@ void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerbo
 {
     if (m_initialized)
     {
+        DebugPrint("Engine already initialized. Restarting...");
         Shutdown();
     }
 
@@ -349,6 +414,8 @@ void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerbo
 
     m_enableValidationLayers = enableValidationLayers;
     m_enableVerboseLogging = enableVerboseLogging;
+    DebugPrint("Initializing engine (validation=" + BoolToOnOff(m_enableValidationLayers) +
+                   ", verbose logging=" + BoolToOnOff(m_enableVerboseLogging) + ")");
 
     auto vulkanContext = std::make_shared<Rendering::VulkanContext>();
     try
@@ -357,8 +424,10 @@ void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerbo
     }
     catch (const std::exception& ex)
     {
+        DebugPrint(std::string("Vulkan initialization failed: ") + ex.what(), true);
         throw std::runtime_error(std::string("Failed to initialize Vulkan: ") + ex.what());
     }
+    DebugPrint("Vulkan context initialized.");
 
     m_context->SetVulkanContext(vulkanContext);
     m_context->SetRenderView(std::make_shared<Rendering::RenderView>());
@@ -369,30 +438,43 @@ void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerbo
     m_context->SetProjectName("Aetherion");
 
     const std::filesystem::path assetsRoot = ResolveAssetsRoot();
+    DebugPrint("Resolved assets root: " + assetsRoot.string());
     if (const auto assets = m_context->GetAssetRegistry())
     {
         assets->Scan(assetsRoot.string());
+        DebugPrint("Asset scan complete: " + assets->GetRootPath().string() + " (" +
+                       std::to_string(assets->GetEntries().size()) + " assets)");
     }
     if (const auto physics = m_context->GetPhysicsSystem())
     {
         physics->Initialize();
+        DebugPrint("Physics placeholder initialized.");
     }
     if (const auto audio = m_context->GetAudioSystem())
     {
         audio->Initialize();
+        DebugPrint("Audio placeholder initialized.");
     }
     if (const auto scripting = m_context->GetScriptingRuntime())
     {
         scripting->Initialize();
+        DebugPrint("Scripting placeholder initialized.");
     }
 
     Scene::SceneSerializer serializer(*m_context);
     const auto scenePath = assetsRoot / "scenes" / "bootstrap_scene.json";
+    DebugPrint("Loading bootstrap scene: " + scenePath.string());
     m_activeScene = serializer.Load(scenePath);
     if (!m_activeScene)
     {
+        DebugPrint("Bootstrap scene missing. Creating default scene...");
         m_activeScene = serializer.CreateDefaultScene();
         serializer.Save(*m_activeScene, scenePath);
+        DebugPrint("Default scene saved to: " + scenePath.string());
+    }
+    else
+    {
+        DebugPrint("Bootstrap scene loaded successfully.");
     }
 
     m_sceneSystemsConfigured = false;
@@ -401,16 +483,19 @@ void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerbo
     m_running = true;
     m_lastFrameTime = std::chrono::steady_clock::now();
     m_initialized = true;
+    DebugPrint("Engine initialized. Entering main loop.");
 }
 
 void EngineApplication::Shutdown()
 {
+    DebugPrint("Shutting down engine...");
     m_running = false;
 
     if (auto ctx = m_context ? m_context->GetVulkanContext() : nullptr)
     {
         ctx->Shutdown();
         m_context->SetVulkanContext(nullptr);
+        DebugPrint("Vulkan context shut down.");
     }
 
     for (const auto& system : m_runtimeSystems)
@@ -421,20 +506,24 @@ void EngineApplication::Shutdown()
         }
     }
     m_runtimeSystems.clear();
+    DebugPrint("Runtime systems cleared.");
 
     if (m_context)
     {
         if (const auto scripting = m_context->GetScriptingRuntime())
         {
             scripting->Shutdown();
+            DebugPrint("Scripting placeholder shut down.");
         }
         if (const auto audio = m_context->GetAudioSystem())
         {
             audio->Shutdown();
+            DebugPrint("Audio placeholder shut down.");
         }
         if (const auto physics = m_context->GetPhysicsSystem())
         {
             physics->Shutdown();
+            DebugPrint("Physics placeholder shut down.");
         }
         m_context->SetAssetRegistry(nullptr);
         m_context->SetPhysicsSystem(nullptr);
@@ -466,6 +555,15 @@ void EngineApplication::Tick()
         return;
     }
 
+    static bool s_loggedFirstTick = false;
+    if (!s_loggedFirstTick)
+    {
+        const size_t systemsCount = m_runtimeSystems.size();
+        DebugPrint("Main loop started. Registered runtime systems: " + std::to_string(systemsCount) +
+                       (m_activeScene ? " (scene bound)" : " (no active scene)"));
+        s_loggedFirstTick = true;
+    }
+
     const auto now = std::chrono::steady_clock::now();
     const float deltaTime = std::chrono::duration<float>(now - m_lastFrameTime).count();
     m_lastFrameTime = now;
@@ -480,7 +578,7 @@ void EngineApplication::Tick()
     }
 }
 
-void EngineApplication::RegisterSystem(std::shared_ptr<IRuntimeSystem> system)
+void EngineApplication::RegisterSystem(std::shared_ptr<IRuntimeSystem> system)  
 {
     if (!system)
     {
@@ -488,9 +586,12 @@ void EngineApplication::RegisterSystem(std::shared_ptr<IRuntimeSystem> system)
     }
 
     m_runtimeSystems.push_back(std::move(system));
+    const std::string name = m_runtimeSystems.back() ? m_runtimeSystems.back()->GetName() : "UnknownSystem";
+    DebugPrint("Registering runtime system: " + name);
     if (m_context)
     {
         m_runtimeSystems.back()->Initialize(*m_context);
+        DebugPrint("Runtime system initialized: " + name);
     }
 }
 
@@ -532,8 +633,9 @@ void EngineApplication::SetActiveScene(std::shared_ptr<Scene::Scene> scene)
 
 void EngineApplication::RegisterPlaceholderSystems()
 {
-    RegisterSystem(std::make_shared<SceneSystemDispatcher>(m_activeScene));
+    RegisterSystem(std::make_shared<SceneSystemDispatcher>(m_activeScene));     
     RegisterSystem(std::make_shared<RenderViewSystem>(m_activeScene));
+    DebugPrint("Placeholder systems registered.");
     // TODO: Register systems with the engine once rendering/physics/audio exist.
 }
 
@@ -584,5 +686,11 @@ void EngineApplication::ProcessInput()
 void EngineApplication::PumpEvents()
 {
     // TODO: Connect to platform message pump for windowing/input.
+}
+
+void EngineApplication::DebugPrint(const std::string& message, bool isError) const
+{
+    auto& stream = isError ? std::cerr : std::cout;
+    stream << "[Engine] " << message << std::endl;
 }
 } // namespace Aetherion::Runtime

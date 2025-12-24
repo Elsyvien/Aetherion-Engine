@@ -29,6 +29,7 @@ public:
     void SetItems(const std::vector<Item>& items);
     void ClearSelection();
     QString GetSelectedAssetId() const;
+    void FocusFilter();
 
 signals:
     void AssetSelected(const QString& assetId);

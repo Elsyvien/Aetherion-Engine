@@ -12,6 +12,7 @@
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Runtime/EngineContext.h"
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
@@ -177,6 +178,7 @@ bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path
         out << "      \"name\": \"" << entity->GetName() << "\",\n";
         out << "      \"components\": {\n";
 
+        bool wroteComponent = false;
         if (auto transform = entity->GetComponent<TransformComponent>())
         {
             out << "        \"Transform\": {\n";
@@ -188,11 +190,12 @@ bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path
                 << transform->GetScaleZ() << "],\n";
             out << "          \"parent\": " << transform->GetParentId() << "\n";
             out << "        }";
+            wroteComponent = true;
         }
 
         if (auto mesh = entity->GetComponent<MeshRendererComponent>())
         {
-            if (entity->GetComponent<TransformComponent>())
+            if (wroteComponent)
             {
                 out << ",\n";
             }
@@ -204,6 +207,24 @@ bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path
             out << "          \"albedoTexture\": \"" << mesh->GetAlbedoTextureId() << "\",\n";
             out << "          \"meshId\": \"" << mesh->GetMeshAssetId() << "\"\n";
             out << "        }";
+            wroteComponent = true;
+        }
+
+        if (auto light = entity->GetComponent<LightComponent>())
+        {
+            if (wroteComponent)
+            {
+                out << ",\n";
+            }
+            out << "        \"Light\": {\n";
+            const auto color = light->GetColor();
+            const auto ambient = light->GetAmbientColor();
+            out << "          \"lightEnabled\": " << (light->IsEnabled() ? "true" : "false") << ",\n";
+            out << "          \"lightColor\": [" << color[0] << ", " << color[1] << ", " << color[2] << "],\n";
+            out << "          \"lightIntensity\": " << light->GetIntensity() << ",\n";
+            out << "          \"ambientColor\": [" << ambient[0] << ", " << ambient[1] << ", " << ambient[2] << "]\n";
+            out << "        }";
+            wroteComponent = true;
         }
 
         out << "\n";
@@ -305,6 +326,30 @@ std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) 
             entity->AddComponent(mesh);
         }
 
+        const auto lightEnabled = ExtractBool(block, "lightEnabled", true);
+        const auto lightColor = ExtractFloatArray(block, "lightColor");
+        const auto lightIntensity = ExtractFloat(block, "lightIntensity");
+        const auto ambientColor = ExtractFloatArray(block, "ambientColor");
+        if (!lightColor.empty() || lightIntensity.has_value() || !ambientColor.empty() ||
+            block.find("\"Light\"") != std::string::npos)
+        {
+            auto light = std::make_shared<LightComponent>();
+            light->SetEnabled(lightEnabled);
+            if (lightColor.size() >= 3)
+            {
+                light->SetColor(lightColor[0], lightColor[1], lightColor[2]);
+            }
+            if (lightIntensity.has_value())
+            {
+                light->SetIntensity(*lightIntensity);
+            }
+            if (ambientColor.size() >= 3)
+            {
+                light->SetAmbientColor(ambientColor[0], ambientColor[1], ambientColor[2]);
+            }
+            entity->AddComponent(light);
+        }
+
         scene->AddEntity(entity);
     }
 
@@ -354,6 +399,14 @@ std::shared_ptr<Scene> SceneSerializer::CreateDefaultScene() const
     viewportEntity->AddComponent(transform);
     viewportEntity->AddComponent(mesh);
     scene->AddEntity(viewportEntity);
+
+    auto lightEntity = std::make_shared<Entity>(2, "Directional Light");
+    auto lightTransform = std::make_shared<TransformComponent>();
+    lightTransform->SetRotationDegrees(-55.0f, 215.0f, 0.0f);
+    auto light = std::make_shared<LightComponent>();
+    lightEntity->AddComponent(lightTransform);
+    lightEntity->AddComponent(light);
+    scene->AddEntity(lightEntity);
 
     if (auto assets = m_context.GetAssetRegistry())
     {

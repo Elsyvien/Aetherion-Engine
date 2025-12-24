@@ -562,6 +562,7 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     m_timeSeconds += deltaTimeSeconds;
     const auto instances = InstancesFromView(view, m_timeSeconds);
     UpdateSelectionBuffer(instances, view.selectedEntityId);
+    UpdateLightGizmoBuffer(view);
 
     VkDevice device = m_context->GetDevice();
     VkQueue graphicsQueue = m_context->GetGraphicsQueue();
@@ -627,7 +628,7 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
         return;
     }
 
-    UpdateUniformBuffer(m_frameIndex);
+    UpdateUniformBuffer(m_frameIndex, view);
 
     vkResetCommandBuffer(m_commandBuffers[m_frameIndex], 0);
     RecordCommandBuffer(imageIndex, instances);
@@ -854,6 +855,18 @@ void VulkanViewport::DestroyDeviceResources()
     }
     m_selectionVertexMemory = VK_NULL_HANDLE;
     m_selectionVertexCount = 0;
+
+    if (device != VK_NULL_HANDLE && m_lightGizmoVertexBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, m_lightGizmoVertexBuffer, nullptr);
+    }
+    m_lightGizmoVertexBuffer = VK_NULL_HANDLE;
+    if (device != VK_NULL_HANDLE && m_lightGizmoVertexMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, m_lightGizmoVertexMemory, nullptr);
+    }
+    m_lightGizmoVertexMemory = VK_NULL_HANDLE;
+    m_lightGizmoVertexCount = 0;
 
     if (device != VK_NULL_HANDLE && m_descriptorPool != VK_NULL_HANDLE)
     {
@@ -1609,6 +1622,17 @@ void VulkanViewport::CreateLineBuffers()
                  m_selectionVertexBuffer,
                  m_selectionVertexMemory);
     m_selectionVertexCount = 0;
+
+    // Light gizmo buffer: arrow with direction lines (64 vertices max)
+    const size_t maxLightGizmoVerts = 64;
+    CreateBuffer(gpu,
+                 device,
+                 sizeof(Vertex) * maxLightGizmoVerts,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 m_lightGizmoVertexBuffer,
+                 m_lightGizmoVertexMemory);
+    m_lightGizmoVertexCount = 0;
 }
 
 void VulkanViewport::CreateDepthResources()
@@ -2068,6 +2092,21 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, const std::vector<
         boundTextureSet = m_defaultTexture.descriptorSet;
     }
 
+    // Some of our shaders (including line/grid) statically use push constants.
+    // Ensure they are set at least once before the first draw call.
+    InstancePushConstants baseConstants{};
+    Mat4Identity(baseConstants.model);
+    baseConstants.color[0] = 1.0f;
+    baseConstants.color[1] = 1.0f;
+    baseConstants.color[2] = 1.0f;
+    baseConstants.color[3] = 1.0f;
+    vkCmdPushConstants(cb,
+                       m_pipelineLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0,
+                       sizeof(InstancePushConstants),
+                       &baseConstants);
+
     if (m_linePipeline != VK_NULL_HANDLE && m_lineVertexBuffer != VK_NULL_HANDLE && m_lineVertexCount > 0)
     {
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_linePipeline);
@@ -2195,6 +2234,15 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, const std::vector<
         vkCmdDraw(cb, m_selectionVertexCount, 1, 0, 0);
     }
 
+    // Draw light gizmo (uses line pipeline like grid)
+    if (m_linePipeline != VK_NULL_HANDLE && m_lightGizmoVertexBuffer != VK_NULL_HANDLE &&
+        m_lightGizmoVertexCount > 0)
+    {
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_linePipeline);
+        vkCmdBindVertexBuffers(cb, 0, 1, &m_lightGizmoVertexBuffer, offsets);
+        vkCmdDraw(cb, m_lightGizmoVertexCount, 1, 0, 0);
+    }
+
     vkCmdEndRenderPass(cb);
 
     if (vkEndCommandBuffer(cb) != VK_SUCCESS)
@@ -2203,7 +2251,7 @@ void VulkanViewport::RecordCommandBuffer(uint32_t imageIndex, const std::vector<
     }
 }
 
-void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex)
+void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex, const RenderView& view)
 {
     if (frameIndex >= kMaxFramesInFlight)
     {
@@ -2227,33 +2275,44 @@ void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex)
     const float eyeY = m_cameraY + distance * std::sin(pitchRad);
     const float eyeZ = m_cameraZ + distance * std::cos(pitchRad) * std::cos(yawRad);
 
-    float view[16];
+    float viewMat[16];
     const float eye[3] = {eyeX, eyeY, eyeZ};
     const float center[3] = {m_cameraX, m_cameraY, m_cameraZ};
     const float up[3] = {0.0f, 1.0f, 0.0f};
-    Mat4LookAt(view, eye, center, up);
+    Mat4LookAt(viewMat, eye, center, up);
 
     float viewProj[16];
-    Mat4Mul(viewProj, proj, view);
+    Mat4Mul(viewProj, proj, viewMat);
 
     FrameUniformObject ubo{};
     std::memcpy(ubo.viewProj, viewProj, sizeof(viewProj));
 
-    float lightDir[3] = {-0.4f, -1.0f, -0.6f};
-    Vec3Normalize(lightDir);
+    const RenderDirectionalLight& light = view.directionalLight;
+    float lightDir[3] = {light.direction[0], light.direction[1], light.direction[2]};
+    if (light.enabled)
+    {
+        Vec3Normalize(lightDir);
+    }
+    else
+    {
+        lightDir[0] = 0.0f;
+        lightDir[1] = -1.0f;
+        lightDir[2] = 0.0f;
+    }
     ubo.lightDir[0] = lightDir[0];
     ubo.lightDir[1] = lightDir[1];
     ubo.lightDir[2] = lightDir[2];
     ubo.lightDir[3] = IsSrgbFormat(m_swapchainFormat) ? 0.0f : 1.0f;
 
-    ubo.lightColor[0] = 1.0f;
-    ubo.lightColor[1] = 1.0f;
-    ubo.lightColor[2] = 1.0f;
+    const float intensity = light.enabled ? light.intensity : 0.0f;
+    ubo.lightColor[0] = light.color[0] * intensity;
+    ubo.lightColor[1] = light.color[1] * intensity;
+    ubo.lightColor[2] = light.color[2] * intensity;
     ubo.lightColor[3] = 0.0f;
 
-    ubo.ambientColor[0] = 0.18f;
-    ubo.ambientColor[1] = 0.18f;
-    ubo.ambientColor[2] = 0.20f;
+    ubo.ambientColor[0] = light.ambientColor[0];
+    ubo.ambientColor[1] = light.ambientColor[1];
+    ubo.ambientColor[2] = light.ambientColor[2];
     ubo.ambientColor[3] = 0.0f;
 
     std::memcpy(m_uniformMapped[frameIndex], &ubo, sizeof(ubo));
@@ -2330,6 +2389,168 @@ void VulkanViewport::UpdateSelectionBuffer(const std::vector<DrawInstance>& inst
     vkUnmapMemory(m_context->GetDevice(), m_selectionVertexMemory);
 
     m_selectionVertexCount = static_cast<uint32_t>(vertices.size());
+}
+
+void VulkanViewport::UpdateLightGizmoBuffer(const RenderView& view)
+{
+    m_lightGizmoVertexCount = 0;
+    if (!view.directionalLight.enabled || m_lightGizmoVertexMemory == VK_NULL_HANDLE)
+    {
+        return;
+    }
+
+    const float* pos = view.directionalLight.position;
+    const float* dir = view.directionalLight.direction;
+    const float* col = view.directionalLight.color;
+    
+    // Normalize direction
+    float dirNorm[3] = {dir[0], dir[1], dir[2]};
+    const float len = std::sqrt(dirNorm[0] * dirNorm[0] + dirNorm[1] * dirNorm[1] + dirNorm[2] * dirNorm[2]);
+    if (len > 0.0001f)
+    {
+        dirNorm[0] /= len;
+        dirNorm[1] /= len;
+        dirNorm[2] /= len;
+    }
+
+    // Light color for gizmo (slightly brighter for visibility)
+    const float gizmoColor[4] = {
+        std::min(1.0f, col[0] * 1.2f + 0.2f),
+        std::min(1.0f, col[1] * 1.2f + 0.2f),
+        std::min(1.0f, col[2] * 0.2f + 0.2f), // Less blue to look more like sun
+        1.0f
+    };
+    const float normal[3] = {0.0f, 1.0f, 0.0f};
+
+    std::vector<Vertex> vertices;
+    vertices.reserve(64);
+
+    // Main direction arrow (from light position pointing in direction)
+    const float arrowLen = 1.5f;
+    const float arrowEnd[3] = {
+        pos[0] + dirNorm[0] * arrowLen,
+        pos[1] + dirNorm[1] * arrowLen,
+        pos[2] + dirNorm[2] * arrowLen
+    };
+
+    // Arrow shaft
+    vertices.push_back(Vertex{{pos[0], pos[1], pos[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
+    vertices.push_back(Vertex{{arrowEnd[0], arrowEnd[1], arrowEnd[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
+
+    // Find perpendicular vectors for arrowhead
+    float up[3] = {0.0f, 1.0f, 0.0f};
+    if (std::abs(dirNorm[1]) > 0.99f)
+    {
+        up[0] = 1.0f;
+        up[1] = 0.0f;
+        up[2] = 0.0f;
+    }
+    
+    // Cross product: right = dir x up
+    float right[3] = {
+        dirNorm[1] * up[2] - dirNorm[2] * up[1],
+        dirNorm[2] * up[0] - dirNorm[0] * up[2],
+        dirNorm[0] * up[1] - dirNorm[1] * up[0]
+    };
+    float rightLen = std::sqrt(right[0] * right[0] + right[1] * right[1] + right[2] * right[2]);
+    if (rightLen > 0.0001f)
+    {
+        right[0] /= rightLen;
+        right[1] /= rightLen;
+        right[2] /= rightLen;
+    }
+    
+    // Cross product: actualUp = right x dir
+    float actualUp[3] = {
+        right[1] * dirNorm[2] - right[2] * dirNorm[1],
+        right[2] * dirNorm[0] - right[0] * dirNorm[2],
+        right[0] * dirNorm[1] - right[1] * dirNorm[0]
+    };
+
+    // Arrowhead lines
+    const float headSize = 0.25f;
+    const float headBack = 0.3f;
+    float headBase[3] = {
+        arrowEnd[0] - dirNorm[0] * headBack,
+        arrowEnd[1] - dirNorm[1] * headBack,
+        arrowEnd[2] - dirNorm[2] * headBack
+    };
+
+    // Four arrowhead lines
+    for (int i = 0; i < 4; ++i)
+    {
+        float angle = static_cast<float>(i) * 1.5708f; // 90 degrees
+        float offsetX = std::cos(angle) * right[0] + std::sin(angle) * actualUp[0];
+        float offsetY = std::cos(angle) * right[1] + std::sin(angle) * actualUp[1];
+        float offsetZ = std::cos(angle) * right[2] + std::sin(angle) * actualUp[2];
+        
+        float headPoint[3] = {
+            headBase[0] + offsetX * headSize,
+            headBase[1] + offsetY * headSize,
+            headBase[2] + offsetZ * headSize
+        };
+        
+        vertices.push_back(Vertex{{arrowEnd[0], arrowEnd[1], arrowEnd[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
+        vertices.push_back(Vertex{{headPoint[0], headPoint[1], headPoint[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
+    }
+
+    // Sun icon: circle around light position
+    const float sunRadius = 0.4f;
+    const int sunSegments = 12;
+    for (int i = 0; i < sunSegments; ++i)
+    {
+        float angle1 = static_cast<float>(i) * 6.28318f / static_cast<float>(sunSegments);
+        float angle2 = static_cast<float>(i + 1) * 6.28318f / static_cast<float>(sunSegments);
+        
+        float p1[3] = {
+            pos[0] + std::cos(angle1) * sunRadius * right[0] + std::sin(angle1) * sunRadius * actualUp[0],
+            pos[1] + std::cos(angle1) * sunRadius * right[1] + std::sin(angle1) * sunRadius * actualUp[1],
+            pos[2] + std::cos(angle1) * sunRadius * right[2] + std::sin(angle1) * sunRadius * actualUp[2]
+        };
+        float p2[3] = {
+            pos[0] + std::cos(angle2) * sunRadius * right[0] + std::sin(angle2) * sunRadius * actualUp[0],
+            pos[1] + std::cos(angle2) * sunRadius * right[1] + std::sin(angle2) * sunRadius * actualUp[1],
+            pos[2] + std::cos(angle2) * sunRadius * right[2] + std::sin(angle2) * sunRadius * actualUp[2]
+        };
+        
+        vertices.push_back(Vertex{{p1[0], p1[1], p1[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
+        vertices.push_back(Vertex{{p2[0], p2[1], p2[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
+    }
+
+    // Sun rays (8 rays emanating from circle)
+    const int rayCount = 8;
+    const float rayInner = sunRadius;
+    const float rayOuter = sunRadius + 0.25f;
+    for (int i = 0; i < rayCount; ++i)
+    {
+        float angle = static_cast<float>(i) * 6.28318f / static_cast<float>(rayCount);
+        
+        float innerP[3] = {
+            pos[0] + std::cos(angle) * rayInner * right[0] + std::sin(angle) * rayInner * actualUp[0],
+            pos[1] + std::cos(angle) * rayInner * right[1] + std::sin(angle) * rayInner * actualUp[1],
+            pos[2] + std::cos(angle) * rayInner * right[2] + std::sin(angle) * rayInner * actualUp[2]
+        };
+        float outerP[3] = {
+            pos[0] + std::cos(angle) * rayOuter * right[0] + std::sin(angle) * rayOuter * actualUp[0],
+            pos[1] + std::cos(angle) * rayOuter * right[1] + std::sin(angle) * rayOuter * actualUp[1],
+            pos[2] + std::cos(angle) * rayOuter * right[2] + std::sin(angle) * rayOuter * actualUp[2]
+        };
+        
+        vertices.push_back(Vertex{{innerP[0], innerP[1], innerP[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
+        vertices.push_back(Vertex{{outerP[0], outerP[1], outerP[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
+    }
+
+    if (vertices.empty())
+    {
+        return;
+    }
+
+    void* data = nullptr;
+    vkMapMemory(m_context->GetDevice(), m_lightGizmoVertexMemory, 0, sizeof(Vertex) * vertices.size(), 0, &data);
+    std::memcpy(data, vertices.data(), sizeof(Vertex) * vertices.size());
+    vkUnmapMemory(m_context->GetDevice(), m_lightGizmoVertexMemory);
+
+    m_lightGizmoVertexCount = static_cast<uint32_t>(vertices.size());
 }
 
 void VulkanViewport::SetCameraPosition(float x, float y, float z) noexcept
@@ -2636,7 +2857,7 @@ const VulkanViewport::GpuMesh* VulkanViewport::ResolveMesh(const std::string& as
     }
 
     const auto* meshData = m_assetRegistry->LoadMeshData(assetId);
-    if (!meshData || meshData->positions.empty() || meshData->indices.empty())
+    if (!meshData || meshData->positions.empty())
     {
         if (m_missingMeshes.emplace(assetId).second && m_context)
         {
@@ -2646,6 +2867,19 @@ const VulkanViewport::GpuMesh* VulkanViewport::ResolveMesh(const std::string& as
         return nullptr;
     }
     m_missingMeshes.erase(assetId);
+
+    // glTF indices are optional. If the mesh is non-indexed, generate sequential indices.
+    std::vector<uint32_t> generatedIndices;
+    const std::vector<uint32_t>* indexSource = &meshData->indices;
+    if (indexSource->empty())
+    {
+        generatedIndices.resize(meshData->positions.size());
+        for (size_t i = 0; i < generatedIndices.size(); ++i)
+        {
+            generatedIndices[i] = static_cast<uint32_t>(i);
+        }
+        indexSource = &generatedIndices;
+    }
 
     std::vector<Vertex> vertices;
     vertices.reserve(meshData->positions.size());
@@ -2694,7 +2928,7 @@ const VulkanViewport::GpuMesh* VulkanViewport::ResolveMesh(const std::string& as
     {
         const VkDeviceSize vertexSize = sizeof(Vertex) * vertices.size();
         const VkDeviceSize indexSize =
-            sizeof(std::uint32_t) * static_cast<VkDeviceSize>(meshData->indices.size());
+            sizeof(std::uint32_t) * static_cast<VkDeviceSize>(indexSource->size());
 
         CreateBuffer(gpu,
                      device,
@@ -2733,7 +2967,7 @@ const VulkanViewport::GpuMesh* VulkanViewport::ResolveMesh(const std::string& as
 
         void* iData = nullptr;
         vkMapMemory(device, stagingIndexMemory, 0, indexSize, 0, &iData);
-        std::memcpy(iData, meshData->indices.data(), static_cast<size_t>(indexSize));
+        std::memcpy(iData, indexSource->data(), static_cast<size_t>(indexSize));
         vkUnmapMemory(device, stagingIndexMemory);
 
         CreateBuffer(gpu,
@@ -2750,7 +2984,7 @@ const VulkanViewport::GpuMesh* VulkanViewport::ResolveMesh(const std::string& as
         stagingIndexBuffer = VK_NULL_HANDLE;
         stagingIndexMemory = VK_NULL_HANDLE;
 
-        mesh.indexCount = static_cast<uint32_t>(meshData->indices.size());      
+        mesh.indexCount = static_cast<uint32_t>(indexSource->size());      
     }
     catch (const std::exception& ex)
     {
