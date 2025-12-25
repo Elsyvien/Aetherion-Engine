@@ -1,9 +1,11 @@
 #include "Aetherion/Editor/EditorApplication.h"
 
 #include <QApplication>
+#include <QFile>
 #include <QIcon>
 #include <QPixmap>
 #include <QMessageBox>
+#include <QTextStream>
 #include <cstdlib>
 #include <string>
 #include <string_view>

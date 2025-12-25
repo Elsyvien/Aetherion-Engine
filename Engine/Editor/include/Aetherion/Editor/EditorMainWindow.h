@@ -42,6 +42,7 @@ class EditorViewport;
 class EditorHierarchyPanel;
 class EditorInspectorPanel;
 class EditorAssetBrowser;
+class EditorCameraPreview;
 class EditorConsole;
 class EditorSelection;
 class EditorAuxPanel;
@@ -86,6 +87,7 @@ private:
     GizmoAxis m_activeGizmoAxis{GizmoAxis::None};
     int m_dragStartMouseX{0};
     int m_dragStartMouseY{0};
+    bool m_requestPickOnRelease{false};
 
     QActionGroup* m_gizmoActionGroup = nullptr;
     QAction* m_gizmoTranslateAction = nullptr;
@@ -120,6 +122,7 @@ private:
     QAction* m_showAssetBrowserAction = nullptr;
     QAction* m_showConsoleAction = nullptr;
     QAction* m_showMeshPreviewAction = nullptr;
+    QAction* m_showCameraPreviewAction = nullptr;
     QAction* m_playAction = nullptr;
     QAction* m_pauseAction = nullptr;
     QAction* m_stepAction = nullptr;
@@ -128,11 +131,13 @@ private:
     EditorHierarchyPanel* m_hierarchyPanel = nullptr;
     EditorInspectorPanel* m_inspectorPanel = nullptr;
     class EditorMeshPreview* m_meshPreview = nullptr;
+    EditorCameraPreview* m_cameraPreview = nullptr;
     QDockWidget* m_hierarchyDock = nullptr;
     QDockWidget* m_inspectorDock = nullptr;
     QDockWidget* m_assetBrowserDock = nullptr;
     QDockWidget* m_consoleDock = nullptr;
     QDockWidget* m_meshPreviewDock = nullptr;
+    QDockWidget* m_cameraPreviewDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorConsole* m_console = nullptr;
     QByteArray m_defaultLayoutState;

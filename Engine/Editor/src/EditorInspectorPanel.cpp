@@ -603,32 +603,85 @@ void EditorInspectorPanel::RebuildUi()
 
         m_lightEnabled = new QCheckBox(m_content);
         m_lightEnabled->setChecked(light->IsEnabled());
+        m_lightType = new QComboBox(m_content);
+        m_lightType->addItem(tr("Directional"), static_cast<int>(Scene::LightComponent::LightType::Directional));
+        m_lightType->addItem(tr("Point"), static_cast<int>(Scene::LightComponent::LightType::Point));
+        m_lightType->addItem(tr("Spot"), static_cast<int>(Scene::LightComponent::LightType::Spot));
         m_lightColorR = makeSpin(0.0, 1.0, 0.01);
         m_lightColorG = makeSpin(0.0, 1.0, 0.01);
         m_lightColorB = makeSpin(0.0, 1.0, 0.01);
         m_lightIntensity = makeSpin(0.0, 10.0, 0.1);
+        m_lightRange = makeSpin(0.01, 10000.0, 0.1);
+        m_lightInnerAngle = makeSpin(0.0, 179.0, 1.0);
+        m_lightOuterAngle = makeSpin(0.0, 179.0, 1.0);
         m_lightAmbientR = makeSpin(0.0, 1.0, 0.01);
         m_lightAmbientG = makeSpin(0.0, 1.0, 0.01);
         m_lightAmbientB = makeSpin(0.0, 1.0, 0.01);
+        m_lightPrimary = new QCheckBox(m_content);
 
         const auto color = light->GetColor();
         const auto ambient = light->GetAmbientColor();
+        if (m_lightType)
+        {
+            m_lightType->setCurrentIndex(static_cast<int>(light->GetType()));
+        }
         m_lightColorR->setValue(color[0]);
         m_lightColorG->setValue(color[1]);
         m_lightColorB->setValue(color[2]);
         m_lightIntensity->setValue(light->GetIntensity());
+        if (m_lightRange)
+        {
+            m_lightRange->setValue(light->GetRange());
+        }
+        if (m_lightInnerAngle)
+        {
+            m_lightInnerAngle->setValue(light->GetInnerConeAngle());
+        }
+        if (m_lightOuterAngle)
+        {
+            m_lightOuterAngle->setValue(light->GetOuterConeAngle());
+        }
         m_lightAmbientR->setValue(ambient[0]);
         m_lightAmbientG->setValue(ambient[1]);
         m_lightAmbientB->setValue(ambient[2]);
+        if (m_lightPrimary)
+        {
+            m_lightPrimary->setChecked(light->IsPrimary());
+        }
 
         form->addRow(tr("Enabled"), m_lightEnabled);
+        form->addRow(tr("Type"), m_lightType);
         form->addRow(tr("Color R"), m_lightColorR);
         form->addRow(tr("Color G"), m_lightColorG);
         form->addRow(tr("Color B"), m_lightColorB);
         form->addRow(tr("Intensity"), m_lightIntensity);
+        form->addRow(tr("Range"), m_lightRange);
+        form->addRow(tr("Inner Angle"), m_lightInnerAngle);
+        form->addRow(tr("Outer Angle"), m_lightOuterAngle);
+        form->addRow(tr("Primary"), m_lightPrimary);
         form->addRow(tr("Ambient R"), m_lightAmbientR);
         form->addRow(tr("Ambient G"), m_lightAmbientG);
         form->addRow(tr("Ambient B"), m_lightAmbientB);
+
+        auto updateLightVisibility = [this]() {
+            if (!m_lightType)
+            {
+                return;
+            }
+            const auto type =
+                static_cast<Scene::LightComponent::LightType>(m_lightType->currentData().toInt());
+            const bool isDirectional = type == Scene::LightComponent::LightType::Directional;
+            const bool isSpot = type == Scene::LightComponent::LightType::Spot;
+
+            if (m_lightRange) m_lightRange->setEnabled(!isDirectional);
+            if (m_lightInnerAngle) m_lightInnerAngle->setEnabled(isSpot);
+            if (m_lightOuterAngle) m_lightOuterAngle->setEnabled(isSpot);
+            if (m_lightAmbientR) m_lightAmbientR->setEnabled(isDirectional);
+            if (m_lightAmbientG) m_lightAmbientG->setEnabled(isDirectional);
+            if (m_lightAmbientB) m_lightAmbientB->setEnabled(isDirectional);
+            if (m_lightPrimary) m_lightPrimary->setEnabled(isDirectional);
+        };
+        updateLightVisibility();
 
         auto updateLight = [this, light]() {
             if (m_buildingUi || !m_entity)
@@ -640,27 +693,68 @@ void EditorInspectorPanel::RebuildUi()
             {
                 light->SetEnabled(m_lightEnabled->isChecked());
             }
+            if (m_lightType)
+            {
+                light->SetType(static_cast<Scene::LightComponent::LightType>(m_lightType->currentData().toInt()));
+            }
             light->SetColor(static_cast<float>(m_lightColorR->value()),
                             static_cast<float>(m_lightColorG->value()),
                             static_cast<float>(m_lightColorB->value()));
             light->SetIntensity(static_cast<float>(m_lightIntensity->value()));
+            if (m_lightRange)
+            {
+                light->SetRange(static_cast<float>(m_lightRange->value()));
+            }
+            if (m_lightInnerAngle)
+            {
+                light->SetInnerConeAngle(static_cast<float>(m_lightInnerAngle->value()));
+            }
+            if (m_lightOuterAngle)
+            {
+                light->SetOuterConeAngle(static_cast<float>(m_lightOuterAngle->value()));
+            }
             light->SetAmbientColor(static_cast<float>(m_lightAmbientR->value()),
                                    static_cast<float>(m_lightAmbientG->value()),
                                    static_cast<float>(m_lightAmbientB->value()));
+            if (m_lightPrimary)
+            {
+                light->SetPrimary(m_lightPrimary->isChecked());
+            }
             emit sceneModified();
+            updateLightVisibility();
         };
 
         if (m_lightEnabled)
         {
             connect(m_lightEnabled, &QCheckBox::toggled, this, [updateLight](bool) { updateLight(); });
         }
+        if (m_lightType)
+        {
+            connect(m_lightType, qOverload<int>(&QComboBox::currentIndexChanged), this, [updateLight](int) { updateLight(); });
+        }
         connect(m_lightColorR, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
         connect(m_lightColorG, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
         connect(m_lightColorB, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
         connect(m_lightIntensity, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        if (m_lightRange)
+        {
+            connect(m_lightRange, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        }
+        if (m_lightInnerAngle)
+        {
+            connect(m_lightInnerAngle, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        }
+        if (m_lightOuterAngle)
+        {
+            connect(m_lightOuterAngle, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        }
         connect(m_lightAmbientR, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
         connect(m_lightAmbientG, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
         connect(m_lightAmbientB, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [updateLight](double) { updateLight(); });
+        if (m_lightPrimary)
+        {
+            connect(m_lightPrimary, &QCheckBox::toggled, this, [updateLight](bool) { updateLight(); });
+        }
 
         formHost->setLayout(form);
         m_contentLayout->addWidget(makeComponentHeader(tr("Light"), light, formHost));

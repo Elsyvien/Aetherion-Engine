@@ -20,3 +20,6 @@ Makefile
 /build-mingw
 /.cache
 compile_commands.json
+
+# Agent documentation
+agent.md

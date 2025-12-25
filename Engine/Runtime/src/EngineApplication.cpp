@@ -418,7 +418,9 @@ private:
         view->transforms.clear();
         view->meshes.clear();
         view->directionalLight = Rendering::RenderDirectionalLight{};
+        view->lights.clear();
         view->camera = Rendering::RenderCamera{};
+        view->cameras.clear();
 
         auto scene = m_scene.lock();
         if (!scene)
@@ -430,7 +432,8 @@ private:
         const auto& entities = scene->GetEntities();
         view->instances.reserve(entities.size());
 
-        bool foundLight = false;
+        bool foundDirectional = false;
+        bool foundPrimaryDirectional = false;
         bool foundCamera = false;
         bool foundPrimaryCamera = false;
         for (const auto& entity : entities)
@@ -456,39 +459,84 @@ private:
             std::array<float, 16> world{};
 
             auto light = entity->GetComponent<Scene::LightComponent>();
-            if (light && !foundLight && light->IsEnabled() && transform)
+            if (light && transform)
             {
-                world = GetWorldMatrix(*scene, entity->GetId());
-                hasWorld = true;
+                if (!hasWorld)
+                {
+                    world = GetWorldMatrix(*scene, entity->GetId());
+                    hasWorld = true;
+                }
+
+                Rendering::RenderLight renderLight{};
+                renderLight.entityId = entity->GetId();
+                renderLight.enabled = light->IsEnabled();
+                const auto lightColor = light->GetColor();
+                renderLight.color[0] = lightColor[0];
+                renderLight.color[1] = lightColor[1];
+                renderLight.color[2] = lightColor[2];
+                renderLight.intensity = light->GetIntensity();
+                renderLight.range = light->GetRange();
+                renderLight.innerConeAngle = light->GetInnerConeAngle();
+                renderLight.outerConeAngle = light->GetOuterConeAngle();
+                renderLight.isPrimary = light->IsPrimary();
+                renderLight.position[0] = world[12];
+                renderLight.position[1] = world[13];
+                renderLight.position[2] = world[14];
 
                 float dir[3] = {-world[8], -world[9], -world[10]};
                 Vec3Normalize(dir);
+                renderLight.direction[0] = dir[0];
+                renderLight.direction[1] = dir[1];
+                renderLight.direction[2] = dir[2];
 
-                view->directionalLight.enabled = true;
-                view->directionalLight.direction[0] = dir[0];
-                view->directionalLight.direction[1] = dir[1];
-                view->directionalLight.direction[2] = dir[2];
+                switch (light->GetType())
+                {
+                case Scene::LightComponent::LightType::Point:
+                    renderLight.type = Rendering::RenderLightType::Point;
+                    break;
+                case Scene::LightComponent::LightType::Spot:
+                    renderLight.type = Rendering::RenderLightType::Spot;
+                    break;
+                default:
+                    renderLight.type = Rendering::RenderLightType::Directional;
+                    break;
+                }
 
-                // Store position and entity ID for gizmo rendering
-                view->directionalLight.position[0] = world[12];
-                view->directionalLight.position[1] = world[13];
-                view->directionalLight.position[2] = world[14];
-                view->directionalLight.entityId = entity->GetId();
+                view->lights.push_back(renderLight);
 
-                const auto lightColor = light->GetColor();
-                view->directionalLight.color[0] = lightColor[0];
-                view->directionalLight.color[1] = lightColor[1];
-                view->directionalLight.color[2] = lightColor[2];
-                view->directionalLight.intensity = light->GetIntensity();
+                if (renderLight.type == Rendering::RenderLightType::Directional && renderLight.enabled)
+                {
+                    const bool choose =
+                        !foundDirectional || (renderLight.isPrimary && !foundPrimaryDirectional);
+                    if (choose)
+                    {
+                        view->directionalLight.enabled = true;
+                        view->directionalLight.direction[0] = renderLight.direction[0];
+                        view->directionalLight.direction[1] = renderLight.direction[1];
+                        view->directionalLight.direction[2] = renderLight.direction[2];
+                        view->directionalLight.position[0] = renderLight.position[0];
+                        view->directionalLight.position[1] = renderLight.position[1];
+                        view->directionalLight.position[2] = renderLight.position[2];
+                        view->directionalLight.entityId = renderLight.entityId;
+                        view->directionalLight.color[0] = renderLight.color[0];
+                        view->directionalLight.color[1] = renderLight.color[1];
+                        view->directionalLight.color[2] = renderLight.color[2];
+                        view->directionalLight.intensity = renderLight.intensity;
 
-                const auto ambient = light->GetAmbientColor();
-                view->directionalLight.ambientColor[0] = ambient[0];
-                view->directionalLight.ambientColor[1] = ambient[1];
-                view->directionalLight.ambientColor[2] = ambient[2];
-                foundLight = true;
+                        const auto ambient = light->GetAmbientColor();
+                        view->directionalLight.ambientColor[0] = ambient[0];
+                        view->directionalLight.ambientColor[1] = ambient[1];
+                        view->directionalLight.ambientColor[2] = ambient[2];
+                        foundDirectional = true;
+                        if (renderLight.isPrimary)
+                        {
+                            foundPrimaryDirectional = true;
+                        }
+                    }
+                }
             }
 
-            auto camera = entity->GetComponent<Scene::CameraComponent>();
+            auto camera = entity->GetComponent<Scene::CameraComponent>();       
             if (camera && transform)
             {
                 if (!hasWorld)
@@ -523,6 +571,7 @@ private:
                 candidate.orthographicSize = std::max(0.01f, camera->GetOrthographicSize());
                 candidate.projectionType = static_cast<uint32_t>(camera->GetProjectionType());
                 candidate.entityId = entity->GetId();
+                view->cameras.push_back(candidate);
 
                 const bool isPrimary = camera->IsPrimary();
                 if (!foundCamera || (isPrimary && !foundPrimaryCamera))

@@ -15,6 +15,13 @@ class MeshRendererComponent;
 
 namespace Aetherion::Rendering
 {
+enum class RenderLightType : uint32_t
+{
+    Directional = 0,
+    Point = 1,
+    Spot = 2
+};
+
 struct RenderInstance
 {
     Core::EntityId entityId{0};
@@ -43,6 +50,21 @@ struct RenderDirectionalLight
     Core::EntityId entityId{0};
 };
 
+struct RenderLight
+{
+    RenderLightType type{RenderLightType::Directional};
+    bool enabled{true};
+    float position[3]{0.0f, 0.0f, 0.0f};
+    float direction[3]{0.0f, -1.0f, 0.0f};
+    float color[3]{1.0f, 1.0f, 1.0f};
+    float intensity{1.0f};
+    float range{10.0f};
+    float innerConeAngle{15.0f};
+    float outerConeAngle{30.0f};
+    bool isPrimary{false};
+    Core::EntityId entityId{0};
+};
+
 struct RenderCamera
 {
     bool enabled{false};
@@ -65,6 +87,9 @@ struct RenderView
     std::unordered_map<Core::EntityId, const Scene::MeshRendererComponent*> meshes;
     Core::EntityId selectedEntityId{0};
     RenderDirectionalLight directionalLight{};
+    std::vector<RenderLight> lights;
     RenderCamera camera{};
+    std::vector<RenderCamera> cameras;
+    bool showEditorIcons{false};
 };
 } // namespace Aetherion::Rendering

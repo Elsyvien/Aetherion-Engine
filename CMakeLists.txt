@@ -165,6 +165,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorSelection.cpp
     Engine/Editor/src/EditorAssetBrowser.cpp
     Engine/Editor/src/EditorConsole.cpp
+    Engine/Editor/src/EditorCameraPreview.cpp
     Engine/Editor/src/EditorMeshPreview.cpp
     Engine/Editor/src/EditorSettings.cpp
     Engine/Editor/src/EditorSettingsDialog.cpp
@@ -182,6 +183,7 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/EditorSelection.h
         Engine/Editor/include/Aetherion/Editor/EditorAssetBrowser.h
         Engine/Editor/include/Aetherion/Editor/EditorConsole.h
+        Engine/Editor/include/Aetherion/Editor/EditorCameraPreview.h
         Engine/Editor/include/Aetherion/Editor/EditorMeshPreview.h
         Engine/Editor/include/Aetherion/Editor/EditorSettings.h
         Engine/Editor/include/Aetherion/Editor/EditorSettingsDialog.h

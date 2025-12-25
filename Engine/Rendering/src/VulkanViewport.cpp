@@ -55,7 +55,17 @@ struct Vertex
     float uv[2];
 };
 
-struct FrameUniformObject
+constexpr uint32_t kMaxLights = VulkanViewport::kMaxLights;
+
+struct alignas(16) LightUniform
+{
+    float position[4];
+    float direction[4];
+    float color[4];
+    float spot[4];
+};
+
+struct alignas(16) FrameUniformObject
 {
     // Column-major view-projection matrix for GLSL.
     float viewProj[16];
@@ -65,15 +75,18 @@ struct FrameUniformObject
     float cameraPos[4];
     float frameParams[4];
     float materialParams[4];
+    float lightCounts[4];
+    LightUniform lights[kMaxLights];
 };
 
 constexpr uint32_t kInstanceFlagUnlit = 1u;
-constexpr std::array<const char*, VulkanViewport::kPassCount> kPassNames = {
+constexpr std::array<const char*, VulkanViewport::kPassCount> kPassNames = {    
     "Opaque",
     "Picking",
     "PostProcess",
     "Overlay",
 };
+constexpr const char* kIconMeshId = "__editor_icon_quad";
 
 uint32_t DecodeEntityIdFromRgba(const uint8_t* rgba)
 {
@@ -167,11 +180,12 @@ void Mat4Ortho(float out[16], float left, float right, float bottom, float top, 
 {
     Mat4Identity(out);
     out[0] = 2.0f / (right - left);
-    out[5] = 2.0f / (top - bottom);
-    out[10] = -2.0f / (zFar - zNear);
+    // Vulkan clip space uses 0..1 depth and a flipped Y compared to OpenGL.
+    out[5] = -2.0f / (top - bottom);
+    out[10] = 1.0f / (zNear - zFar);
     out[12] = -(right + left) / (right - left);
-    out[13] = -(top + bottom) / (top - bottom);
-    out[14] = -(zFar + zNear) / (zFar - zNear);
+    out[13] = (top + bottom) / (top - bottom);
+    out[14] = zNear / (zNear - zFar);
 }
 
 void Vec3Normalize(float v[3])
@@ -314,12 +328,16 @@ struct PickingFormatInfo
 
 PickingFormatInfo FindPickingFormat(VkPhysicalDevice gpu)
 {
-    const VkFormatFeatureFlags needed = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
-    if (FormatSupports(gpu, VK_FORMAT_R32_UINT, needed))
+    const VkFormatFeatureFlags baseNeeded =
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+    if (FormatSupports(gpu, VK_FORMAT_R32_UINT, baseNeeded))
     {
         return {VK_FORMAT_R32_UINT, true};
     }
-    if (FormatSupports(gpu, VK_FORMAT_R8G8B8A8_UNORM, needed))
+    const VkFormatFeatureFlags rgbaNeeded =
+        baseNeeded | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+    if (FormatSupports(gpu, VK_FORMAT_R8G8B8A8_UNORM, rgbaNeeded))
     {
         return {VK_FORMAT_R8G8B8A8_UNORM, false};
     }
@@ -741,32 +759,32 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
     {
         throw std::runtime_error("vkAcquireNextImageKHR failed");
     }
-
-    // Now that we know a frame will be submitted, reset the fence for this frame.
-    vkResetFences(device, 1, &inFlight);
-
-    // If this swapchain image is already being used by a previous frame, wait for it.
-    if (imageIndex < m_imagesInFlight.size() && m_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
+    if (acquire == VK_SUBOPTIMAL_KHR)
     {
-        VkResult imgWait = vkWaitForFences(device, 1, &m_imagesInFlight[imageIndex], VK_TRUE, 1'000'000ULL); // 1ms
-        if (imgWait == VK_TIMEOUT)
-        {
-            // Image still in use, skip frame to keep UI responsive.
-            // Note: fence is already reset, so we need to submit something or we'll deadlock.
-            // For now, just continue - worst case we get a validation warning.
-        }
-    }
-    if (imageIndex < m_imagesInFlight.size())
-    {
-        m_imagesInFlight[imageIndex] = inFlight;
+        // Continue rendering this frame, but recreate the swapchain next frame.
+        m_needsSwapchainRecreate = true;
     }
 
-    if (imageIndex >= m_renderFinishedPerImage.size())
+    if (imageIndex >= m_imagesInFlight.size() || imageIndex >= m_renderFinishedPerImage.size())
     {
         m_context->Log(LogSeverity::Error,
                        "VulkanViewport: acquired image index out of range for sync objects");
         return;
     }
+
+    // Ensure the acquired swapchain image is no longer in use by a previous frame.
+    if (m_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
+    {
+        const VkResult imgWait = vkWaitForFences(device, 1, &m_imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+        if (imgWait != VK_SUCCESS)
+        {
+            throw std::runtime_error("vkWaitForFences failed for swapchain image");
+        }
+    }
+
+    // Now that we know a frame will be submitted, reset the fence for this frame.
+    vkResetFences(device, 1, &inFlight);
+    m_imagesInFlight[imageIndex] = inFlight;
 
     UpdateUniformBuffer(m_frameIndex, view);
 
@@ -993,6 +1011,24 @@ void VulkanViewport::DestroyDeviceResources()
         vkFreeMemory(device, m_vertexMemory, nullptr);
     }
     m_vertexMemory = VK_NULL_HANDLE;
+
+    if (device != VK_NULL_HANDLE && m_iconMesh.vertexBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, m_iconMesh.vertexBuffer, nullptr);
+    }
+    if (device != VK_NULL_HANDLE && m_iconMesh.vertexMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, m_iconMesh.vertexMemory, nullptr);
+    }
+    if (device != VK_NULL_HANDLE && m_iconMesh.indexBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, m_iconMesh.indexBuffer, nullptr);
+    }
+    if (device != VK_NULL_HANDLE && m_iconMesh.indexMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, m_iconMesh.indexMemory, nullptr);
+    }
+    m_iconMesh = {};
 
     if (device != VK_NULL_HANDLE && m_lineVertexBuffer != VK_NULL_HANDLE)
     {
@@ -2184,6 +2220,107 @@ void VulkanViewport::CreateMeshBuffers()
         throw;
     }
     m_defaultIndexCount = static_cast<uint32_t>(indices.size());
+
+    m_iconMesh = {};
+    const std::array<Vertex, 4> iconVertices = {
+        Vertex{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+        Vertex{{ 0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+        Vertex{{ 0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+        Vertex{{-0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+    };
+    const std::array<uint32_t, 6> iconIndices = {0, 1, 2, 2, 3, 0};
+
+    VkBuffer iconStagingVertex = VK_NULL_HANDLE;
+    VkDeviceMemory iconStagingVertexMemory = VK_NULL_HANDLE;
+    VkBuffer iconStagingIndex = VK_NULL_HANDLE;
+    VkDeviceMemory iconStagingIndexMemory = VK_NULL_HANDLE;
+    try
+    {
+        const VkDeviceSize iconVertexSize = sizeof(iconVertices);
+        const VkDeviceSize iconIndexSize = sizeof(iconIndices);
+
+        CreateBuffer(gpu,
+                     device,
+                     iconVertexSize,
+                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     iconStagingVertex,
+                     iconStagingVertexMemory);
+
+        void* vIconData = nullptr;
+        vkMapMemory(device, iconStagingVertexMemory, 0, iconVertexSize, 0, &vIconData);
+        std::memcpy(vIconData, iconVertices.data(), static_cast<size_t>(iconVertexSize));
+        vkUnmapMemory(device, iconStagingVertexMemory);
+
+        CreateBuffer(gpu,
+                     device,
+                     iconVertexSize,
+                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     m_iconMesh.vertexBuffer,
+                     m_iconMesh.vertexMemory);
+        CopyBuffer(iconStagingVertex, m_iconMesh.vertexBuffer, iconVertexSize);
+
+        CreateBuffer(gpu,
+                     device,
+                     iconIndexSize,
+                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     iconStagingIndex,
+                     iconStagingIndexMemory);
+
+        void* iIconData = nullptr;
+        vkMapMemory(device, iconStagingIndexMemory, 0, iconIndexSize, 0, &iIconData);
+        std::memcpy(iIconData, iconIndices.data(), static_cast<size_t>(iconIndexSize));
+        vkUnmapMemory(device, iconStagingIndexMemory);
+
+        CreateBuffer(gpu,
+                     device,
+                     iconIndexSize,
+                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     m_iconMesh.indexBuffer,
+                     m_iconMesh.indexMemory);
+        CopyBuffer(iconStagingIndex, m_iconMesh.indexBuffer, iconIndexSize);
+        m_iconMesh.indexCount = static_cast<uint32_t>(iconIndices.size());
+    }
+    catch (...)
+    {
+        if (iconStagingVertex != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(device, iconStagingVertex, nullptr);
+        }
+        if (iconStagingVertexMemory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device, iconStagingVertexMemory, nullptr);
+        }
+        if (iconStagingIndex != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(device, iconStagingIndex, nullptr);
+        }
+        if (iconStagingIndexMemory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device, iconStagingIndexMemory, nullptr);
+        }
+        throw;
+    }
+
+    if (iconStagingVertex != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, iconStagingVertex, nullptr);
+    }
+    if (iconStagingVertexMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, iconStagingVertexMemory, nullptr);
+    }
+    if (iconStagingIndex != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, iconStagingIndex, nullptr);
+    }
+    if (iconStagingIndexMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, iconStagingIndexMemory, nullptr);
+    }
 }
 
 void VulkanViewport::CreateLineBuffers()
@@ -2242,8 +2379,8 @@ void VulkanViewport::CreateLineBuffers()
                  m_selectionVertexMemory);
     m_selectionVertexCount = 0;
 
-    // Light gizmo buffer: arrow with direction lines (64 vertices max)
-    const size_t maxLightGizmoVerts = 64;
+    // Light gizmo buffer: support multiple lights with line gizmos.
+    const size_t maxLightGizmoVerts = kMaxLights * 96;
     CreateBuffer(gpu,
                  device,
                  sizeof(Vertex) * maxLightGizmoVerts,
@@ -3644,9 +3781,34 @@ void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex, const RenderView& 
     FrameUniformObject ubo{};
     std::memcpy(ubo.viewProj, viewProj, sizeof(viewProj));
 
-    const RenderDirectionalLight& light = view.directionalLight;
-    float lightDir[3] = {light.direction[0], light.direction[1], light.direction[2]};
-    if (light.enabled)
+    RenderDirectionalLight primaryDirectional = view.directionalLight;
+    if (!primaryDirectional.enabled)
+    {
+        for (const auto& candidate : view.lights)
+        {
+            if (candidate.type == RenderLightType::Directional && candidate.enabled && candidate.intensity > 0.0f)
+            {
+                primaryDirectional.enabled = true;
+                primaryDirectional.direction[0] = candidate.direction[0];
+                primaryDirectional.direction[1] = candidate.direction[1];
+                primaryDirectional.direction[2] = candidate.direction[2];
+                primaryDirectional.position[0] = candidate.position[0];
+                primaryDirectional.position[1] = candidate.position[1];
+                primaryDirectional.position[2] = candidate.position[2];
+                primaryDirectional.color[0] = candidate.color[0];
+                primaryDirectional.color[1] = candidate.color[1];
+                primaryDirectional.color[2] = candidate.color[2];
+                primaryDirectional.intensity = candidate.intensity;
+                primaryDirectional.entityId = candidate.entityId;
+                break;
+            }
+        }
+    }
+
+    float lightDir[3] = {primaryDirectional.direction[0],
+                         primaryDirectional.direction[1],
+                         primaryDirectional.direction[2]};
+    if (primaryDirectional.enabled)
     {
         Vec3Normalize(lightDir);
     }
@@ -3661,16 +3823,120 @@ void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex, const RenderView& 
     ubo.lightDir[2] = lightDir[2];
     ubo.lightDir[3] = 0.0f;
 
-    const float intensity = light.enabled ? light.intensity : 0.0f;
-    ubo.lightColor[0] = light.color[0] * intensity;
-    ubo.lightColor[1] = light.color[1] * intensity;
-    ubo.lightColor[2] = light.color[2] * intensity;
+    const float intensity = primaryDirectional.enabled ? primaryDirectional.intensity : 0.0f;
+    ubo.lightColor[0] = primaryDirectional.color[0] * intensity;
+    ubo.lightColor[1] = primaryDirectional.color[1] * intensity;
+    ubo.lightColor[2] = primaryDirectional.color[2] * intensity;
     ubo.lightColor[3] = 0.0f;
 
-    ubo.ambientColor[0] = light.ambientColor[0];
-    ubo.ambientColor[1] = light.ambientColor[1];
-    ubo.ambientColor[2] = light.ambientColor[2];
+    ubo.ambientColor[0] = primaryDirectional.ambientColor[0];
+    ubo.ambientColor[1] = primaryDirectional.ambientColor[1];
+    ubo.ambientColor[2] = primaryDirectional.ambientColor[2];
     ubo.ambientColor[3] = 0.0f;
+
+    std::vector<RenderLight> lights = view.lights;
+    if (lights.empty() && primaryDirectional.enabled)
+    {
+        RenderLight fallback{};
+        fallback.type = RenderLightType::Directional;
+        fallback.enabled = true;
+        fallback.entityId = primaryDirectional.entityId;
+        fallback.position[0] = primaryDirectional.position[0];
+        fallback.position[1] = primaryDirectional.position[1];
+        fallback.position[2] = primaryDirectional.position[2];
+        fallback.direction[0] = primaryDirectional.direction[0];
+        fallback.direction[1] = primaryDirectional.direction[1];
+        fallback.direction[2] = primaryDirectional.direction[2];
+        fallback.color[0] = primaryDirectional.color[0];
+        fallback.color[1] = primaryDirectional.color[1];
+        fallback.color[2] = primaryDirectional.color[2];
+        fallback.intensity = primaryDirectional.intensity;
+        lights.push_back(fallback);
+    }
+
+    size_t directionalCount = 0;
+    size_t pointCount = 0;
+    size_t spotCount = 0;
+    size_t totalCount = 0;
+
+    auto pushLight = [&](const RenderLight& light) {
+        if (totalCount >= kMaxLights)
+        {
+            return false;
+        }
+        if (!light.enabled || light.intensity <= 0.0f)
+        {
+            return false;
+        }
+
+        LightUniform& dst = ubo.lights[totalCount];
+        const float range = (light.type == RenderLightType::Directional)
+                                ? 0.0f
+                                : std::max(0.01f, light.range);
+        dst.position[0] = light.position[0];
+        dst.position[1] = light.position[1];
+        dst.position[2] = light.position[2];
+        dst.position[3] = range;
+
+        float dir[3] = {light.direction[0], light.direction[1], light.direction[2]};
+        Vec3Normalize(dir);
+        dst.direction[0] = dir[0];
+        dst.direction[1] = dir[1];
+        dst.direction[2] = dir[2];
+        dst.direction[3] = 0.0f;
+
+        const float scaledIntensity = light.intensity;
+        dst.color[0] = light.color[0] * scaledIntensity;
+        dst.color[1] = light.color[1] * scaledIntensity;
+        dst.color[2] = light.color[2] * scaledIntensity;
+        dst.color[3] = 0.0f;
+
+        if (light.type == RenderLightType::Spot)
+        {
+            const float degToRad = 3.14159265358979323846f / 180.0f;
+            const float innerRad = light.innerConeAngle * degToRad;
+            const float outerRad = light.outerConeAngle * degToRad;
+            dst.spot[0] = std::cos(innerRad);
+            dst.spot[1] = std::cos(outerRad);
+        }
+        else
+        {
+            dst.spot[0] = 1.0f;
+            dst.spot[1] = -1.0f;
+        }
+        dst.spot[2] = 0.0f;
+        dst.spot[3] = 0.0f;
+
+        ++totalCount;
+        return true;
+    };
+
+    auto pushLightsOfType = [&](RenderLightType type, size_t& counter) {
+        for (const auto& light : lights)
+        {
+            if (light.type != type)
+            {
+                continue;
+            }
+            if (pushLight(light))
+            {
+                ++counter;
+                if (totalCount >= kMaxLights)
+                {
+                    break;
+                }
+            }
+        }
+    };
+
+    pushLightsOfType(RenderLightType::Directional, directionalCount);
+    pushLightsOfType(RenderLightType::Point, pointCount);
+    pushLightsOfType(RenderLightType::Spot, spotCount);
+
+    ubo.lightCounts[0] = static_cast<float>(directionalCount);
+    ubo.lightCounts[1] = static_cast<float>(pointCount);
+    ubo.lightCounts[2] = static_cast<float>(spotCount);
+    ubo.lightCounts[3] = static_cast<float>(totalCount);
 
     ubo.cameraPos[0] = eyeX;
     ubo.cameraPos[1] = eyeY;
@@ -3940,150 +4206,194 @@ void VulkanViewport::UpdateSelectionBuffer(const std::vector<DrawInstance>& inst
 void VulkanViewport::UpdateLightGizmoBuffer(const RenderView& view)
 {
     m_lightGizmoVertexCount = 0;
-    if (!view.directionalLight.enabled || m_lightGizmoVertexMemory == VK_NULL_HANDLE)
+    if (!view.showEditorIcons || m_lightGizmoVertexMemory == VK_NULL_HANDLE)
     {
         return;
     }
 
-    const float* pos = view.directionalLight.position;
-    const float* dir = view.directionalLight.direction;
-    const float* col = view.directionalLight.color;
-    
-    // Normalize direction
-    float dirNorm[3] = {dir[0], dir[1], dir[2]};
-    const float len = std::sqrt(dirNorm[0] * dirNorm[0] + dirNorm[1] * dirNorm[1] + dirNorm[2] * dirNorm[2]);
-    if (len > 0.0001f)
+    std::vector<RenderLight> lights = view.lights;
+    if (lights.empty() && view.directionalLight.enabled)
     {
-        dirNorm[0] /= len;
-        dirNorm[1] /= len;
-        dirNorm[2] /= len;
+        RenderLight fallback{};
+        fallback.type = RenderLightType::Directional;
+        fallback.enabled = true;
+        fallback.entityId = view.directionalLight.entityId;
+        fallback.position[0] = view.directionalLight.position[0];
+        fallback.position[1] = view.directionalLight.position[1];
+        fallback.position[2] = view.directionalLight.position[2];
+        fallback.direction[0] = view.directionalLight.direction[0];
+        fallback.direction[1] = view.directionalLight.direction[1];
+        fallback.direction[2] = view.directionalLight.direction[2];
+        fallback.color[0] = view.directionalLight.color[0];
+        fallback.color[1] = view.directionalLight.color[1];
+        fallback.color[2] = view.directionalLight.color[2];
+        fallback.intensity = view.directionalLight.intensity;
+        lights.push_back(fallback);
     }
 
-    // Light color for gizmo (slightly brighter for visibility)
-    const float gizmoColor[4] = {
-        std::min(1.0f, col[0] * 1.2f + 0.2f),
-        std::min(1.0f, col[1] * 1.2f + 0.2f),
-        std::min(1.0f, col[2] * 0.2f + 0.2f), // Less blue to look more like sun
-        1.0f
-    };
-    const float normal[3] = {0.0f, 1.0f, 0.0f};
+    if (lights.empty())
+    {
+        return;
+    }
 
     std::vector<Vertex> vertices;
-    vertices.reserve(64);
+    vertices.reserve(std::min<size_t>(lights.size(), kMaxLights) * 96u);
 
-    // Main direction arrow (from light position pointing in direction)
-    const float arrowLen = 1.5f;
-    const float arrowEnd[3] = {
-        pos[0] + dirNorm[0] * arrowLen,
-        pos[1] + dirNorm[1] * arrowLen,
-        pos[2] + dirNorm[2] * arrowLen
+    const float normal[3] = {0.0f, 1.0f, 0.0f};
+    auto addLine = [&](const float a[3], const float b[3], const float color[4]) {
+        vertices.push_back(Vertex{{a[0], a[1], a[2]}, {normal[0], normal[1], normal[2]}, {color[0], color[1], color[2], color[3]}, {0.0f, 0.0f}});
+        vertices.push_back(Vertex{{b[0], b[1], b[2]}, {normal[0], normal[1], normal[2]}, {color[0], color[1], color[2], color[3]}, {0.0f, 0.0f}});
     };
 
-    // Arrow shaft
-    vertices.push_back(Vertex{{pos[0], pos[1], pos[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
-    vertices.push_back(Vertex{{arrowEnd[0], arrowEnd[1], arrowEnd[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
+    auto addArrow = [&](const float origin[3], const float dirIn[3], float length, float headLength, float headWidth, const float color[4]) {
+        float dir[3] = {dirIn[0], dirIn[1], dirIn[2]};
+        Vec3Normalize(dir);
+        float end[3] = {origin[0] + dir[0] * length, origin[1] + dir[1] * length, origin[2] + dir[2] * length};
+        addLine(origin, end, color);
 
-    // Find perpendicular vectors for arrowhead
-    float up[3] = {0.0f, 1.0f, 0.0f};
-    if (std::abs(dirNorm[1]) > 0.99f)
-    {
-        up[0] = 1.0f;
-        up[1] = 0.0f;
-        up[2] = 0.0f;
-    }
-    
-    // Cross product: right = dir x up
-    float right[3] = {
-        dirNorm[1] * up[2] - dirNorm[2] * up[1],
-        dirNorm[2] * up[0] - dirNorm[0] * up[2],
-        dirNorm[0] * up[1] - dirNorm[1] * up[0]
-    };
-    float rightLen = std::sqrt(right[0] * right[0] + right[1] * right[1] + right[2] * right[2]);
-    if (rightLen > 0.0001f)
-    {
-        right[0] /= rightLen;
-        right[1] /= rightLen;
-        right[2] /= rightLen;
-    }
-    
-    // Cross product: actualUp = right x dir
-    float actualUp[3] = {
-        right[1] * dirNorm[2] - right[2] * dirNorm[1],
-        right[2] * dirNorm[0] - right[0] * dirNorm[2],
-        right[0] * dirNorm[1] - right[1] * dirNorm[0]
-    };
+        float up[3] = {0.0f, 1.0f, 0.0f};
+        if (std::abs(dir[1]) > 0.99f)
+        {
+            up[0] = 1.0f;
+            up[1] = 0.0f;
+            up[2] = 0.0f;
+        }
 
-    // Arrowhead lines
-    const float headSize = 0.25f;
-    const float headBack = 0.3f;
-    float headBase[3] = {
-        arrowEnd[0] - dirNorm[0] * headBack,
-        arrowEnd[1] - dirNorm[1] * headBack,
-        arrowEnd[2] - dirNorm[2] * headBack
+        float right[3];
+        Vec3Cross(right, dir, up);
+        Vec3Normalize(right);
+        float orthoUp[3];
+        Vec3Cross(orthoUp, right, dir);
+        Vec3Normalize(orthoUp);
+
+        float base[3] = {end[0] - dir[0] * headLength, end[1] - dir[1] * headLength, end[2] - dir[2] * headLength};
+        for (int i = 0; i < 4; ++i)
+        {
+            float angle = static_cast<float>(i) * 1.5708f;
+            float c = std::cos(angle) * headWidth;
+            float s = std::sin(angle) * headWidth;
+            float p[3] = {
+                base[0] + right[0] * c + orthoUp[0] * s,
+                base[1] + right[1] * c + orthoUp[1] * s,
+                base[2] + right[2] * c + orthoUp[2] * s
+            };
+            addLine(end, p, color);
+        }
     };
 
-    // Four arrowhead lines
-    for (int i = 0; i < 4; ++i)
-    {
-        float angle = static_cast<float>(i) * 1.5708f; // 90 degrees
-        float offsetX = std::cos(angle) * right[0] + std::sin(angle) * actualUp[0];
-        float offsetY = std::cos(angle) * right[1] + std::sin(angle) * actualUp[1];
-        float offsetZ = std::cos(angle) * right[2] + std::sin(angle) * actualUp[2];
-        
-        float headPoint[3] = {
-            headBase[0] + offsetX * headSize,
-            headBase[1] + offsetY * headSize,
-            headBase[2] + offsetZ * headSize
-        };
-        
-        vertices.push_back(Vertex{{arrowEnd[0], arrowEnd[1], arrowEnd[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
-        vertices.push_back(Vertex{{headPoint[0], headPoint[1], headPoint[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
-    }
+    auto addCircle = [&](const float origin[3], const float right[3], const float up[3], float radius, const float color[4]) {
+        const int segments = 12;
+        for (int i = 0; i < segments; ++i)
+        {
+            float a0 = static_cast<float>(i) * 6.28318f / static_cast<float>(segments);
+            float a1 = static_cast<float>(i + 1) * 6.28318f / static_cast<float>(segments);
+            float p0[3] = {
+                origin[0] + std::cos(a0) * radius * right[0] + std::sin(a0) * radius * up[0],
+                origin[1] + std::cos(a0) * radius * right[1] + std::sin(a0) * radius * up[1],
+                origin[2] + std::cos(a0) * radius * right[2] + std::sin(a0) * radius * up[2]
+            };
+            float p1[3] = {
+                origin[0] + std::cos(a1) * radius * right[0] + std::sin(a1) * radius * up[0],
+                origin[1] + std::cos(a1) * radius * right[1] + std::sin(a1) * radius * up[1],
+                origin[2] + std::cos(a1) * radius * right[2] + std::sin(a1) * radius * up[2]
+            };
+            addLine(p0, p1, color);
+        }
+    };
 
-    // Sun icon: circle around light position
-    const float sunRadius = 0.4f;
-    const int sunSegments = 12;
-    for (int i = 0; i < sunSegments; ++i)
+    size_t lightCount = 0;
+    for (const auto& light : lights)
     {
-        float angle1 = static_cast<float>(i) * 6.28318f / static_cast<float>(sunSegments);
-        float angle2 = static_cast<float>(i + 1) * 6.28318f / static_cast<float>(sunSegments);
-        
-        float p1[3] = {
-            pos[0] + std::cos(angle1) * sunRadius * right[0] + std::sin(angle1) * sunRadius * actualUp[0],
-            pos[1] + std::cos(angle1) * sunRadius * right[1] + std::sin(angle1) * sunRadius * actualUp[1],
-            pos[2] + std::cos(angle1) * sunRadius * right[2] + std::sin(angle1) * sunRadius * actualUp[2]
-        };
-        float p2[3] = {
-            pos[0] + std::cos(angle2) * sunRadius * right[0] + std::sin(angle2) * sunRadius * actualUp[0],
-            pos[1] + std::cos(angle2) * sunRadius * right[1] + std::sin(angle2) * sunRadius * actualUp[1],
-            pos[2] + std::cos(angle2) * sunRadius * right[2] + std::sin(angle2) * sunRadius * actualUp[2]
-        };
-        
-        vertices.push_back(Vertex{{p1[0], p1[1], p1[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
-        vertices.push_back(Vertex{{p2[0], p2[1], p2[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
-    }
+        if (lightCount >= kMaxLights)
+        {
+            break;
+        }
+        ++lightCount;
 
-    // Sun rays (8 rays emanating from circle)
-    const int rayCount = 8;
-    const float rayInner = sunRadius;
-    const float rayOuter = sunRadius + 0.25f;
-    for (int i = 0; i < rayCount; ++i)
-    {
-        float angle = static_cast<float>(i) * 6.28318f / static_cast<float>(rayCount);
-        
-        float innerP[3] = {
-            pos[0] + std::cos(angle) * rayInner * right[0] + std::sin(angle) * rayInner * actualUp[0],
-            pos[1] + std::cos(angle) * rayInner * right[1] + std::sin(angle) * rayInner * actualUp[1],
-            pos[2] + std::cos(angle) * rayInner * right[2] + std::sin(angle) * rayInner * actualUp[2]
+        float color[4] = {
+            std::min(1.0f, light.color[0] * 1.2f + 0.2f),
+            std::min(1.0f, light.color[1] * 1.2f + 0.2f),
+            std::min(1.0f, light.color[2] * 1.2f + 0.2f),
+            1.0f
         };
-        float outerP[3] = {
-            pos[0] + std::cos(angle) * rayOuter * right[0] + std::sin(angle) * rayOuter * actualUp[0],
-            pos[1] + std::cos(angle) * rayOuter * right[1] + std::sin(angle) * rayOuter * actualUp[1],
-            pos[2] + std::cos(angle) * rayOuter * right[2] + std::sin(angle) * rayOuter * actualUp[2]
-        };
-        
-        vertices.push_back(Vertex{{innerP[0], innerP[1], innerP[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
-        vertices.push_back(Vertex{{outerP[0], outerP[1], outerP[2]}, {normal[0], normal[1], normal[2]}, {gizmoColor[0], gizmoColor[1], gizmoColor[2], gizmoColor[3]}, {0.0f, 0.0f}});
+        if (!light.enabled)
+        {
+            color[0] *= 0.3f;
+            color[1] *= 0.3f;
+            color[2] *= 0.3f;
+        }
+
+        float pos[3] = {light.position[0], light.position[1], light.position[2]};
+        float dir[3] = {light.direction[0], light.direction[1], light.direction[2]};
+        Vec3Normalize(dir);
+
+        if (light.type == RenderLightType::Directional)
+        {
+            addArrow(pos, dir, 1.5f, 0.3f, 0.15f, color);
+
+            float up[3] = {0.0f, 1.0f, 0.0f};
+            if (std::abs(dir[1]) > 0.99f)
+            {
+                up[0] = 1.0f;
+                up[1] = 0.0f;
+                up[2] = 0.0f;
+            }
+            float right[3];
+            Vec3Cross(right, dir, up);
+            Vec3Normalize(right);
+            float orthoUp[3];
+            Vec3Cross(orthoUp, right, dir);
+            Vec3Normalize(orthoUp);
+
+            addCircle(pos, right, orthoUp, 0.35f, color);
+        }
+        else if (light.type == RenderLightType::Point)
+        {
+            const float size = 0.35f;
+            float a[3] = {pos[0] - size, pos[1], pos[2]};
+            float b[3] = {pos[0] + size, pos[1], pos[2]};
+            float c[3] = {pos[0], pos[1] - size, pos[2]};
+            float d[3] = {pos[0], pos[1] + size, pos[2]};
+            float e[3] = {pos[0], pos[1], pos[2] - size};
+            float f[3] = {pos[0], pos[1], pos[2] + size};
+            addLine(a, b, color);
+            addLine(c, d, color);
+            addLine(e, f, color);
+        }
+        else
+        {
+            const float range = std::max(0.1f, light.range);
+            addArrow(pos, dir, range * 0.6f, range * 0.12f, range * 0.08f, color);
+
+            float up[3] = {0.0f, 1.0f, 0.0f};
+            if (std::abs(dir[1]) > 0.99f)
+            {
+                up[0] = 1.0f;
+                up[1] = 0.0f;
+                up[2] = 0.0f;
+            }
+            float right[3];
+            Vec3Cross(right, dir, up);
+            Vec3Normalize(right);
+            float orthoUp[3];
+            Vec3Cross(orthoUp, right, dir);
+            Vec3Normalize(orthoUp);
+
+            const float outerRad = light.outerConeAngle * (3.14159265358979323846f / 180.0f);
+            const float coneRadius = std::tan(outerRad) * range;
+            float end[3] = {pos[0] + dir[0] * range, pos[1] + dir[1] * range, pos[2] + dir[2] * range};
+            for (int i = 0; i < 4; ++i)
+            {
+                float angle = static_cast<float>(i) * 1.5708f;
+                float offset[3] = {
+                    right[0] * std::cos(angle) * coneRadius + orthoUp[0] * std::sin(angle) * coneRadius,
+                    right[1] * std::cos(angle) * coneRadius + orthoUp[1] * std::sin(angle) * coneRadius,
+                    right[2] * std::cos(angle) * coneRadius + orthoUp[2] * std::sin(angle) * coneRadius
+                };
+                float rim[3] = {end[0] + offset[0], end[1] + offset[1], end[2] + offset[2]};
+                addLine(pos, rim, color);
+            }
+        }
     }
 
     if (vertices.empty())
@@ -4383,6 +4693,126 @@ std::vector<VulkanViewport::DrawInstance> VulkanViewport::InstancesFromView(cons
         appendInstances(view.instances);
     }
 
+    if (view.showEditorIcons)
+    {
+        float cameraPos[3] = {0.0f, 0.0f, 0.0f};
+        float cameraForward[3] = {0.0f, 0.0f, -1.0f};
+        float cameraUp[3] = {0.0f, 1.0f, 0.0f};
+        if (view.camera.enabled)
+        {
+            cameraPos[0] = view.camera.position[0];
+            cameraPos[1] = view.camera.position[1];
+            cameraPos[2] = view.camera.position[2];
+            cameraForward[0] = view.camera.forward[0];
+            cameraForward[1] = view.camera.forward[1];
+            cameraForward[2] = view.camera.forward[2];
+            Vec3Normalize(cameraForward);
+            cameraUp[0] = view.camera.up[0];
+            cameraUp[1] = view.camera.up[1];
+            cameraUp[2] = view.camera.up[2];
+            Vec3Normalize(cameraUp);
+        }
+        else
+        {
+            const float yawRad = m_cameraYawDeg * (3.14159265358979323846f / 180.0f);
+            const float pitchRad = m_cameraPitchDeg * (3.14159265358979323846f / 180.0f);
+            const float distance = std::max(0.01f, m_cameraDistance * m_cameraZoom);
+            const float eyeX = m_cameraX + distance * std::cos(pitchRad) * std::sin(yawRad);
+            const float eyeY = m_cameraY + distance * std::sin(pitchRad);
+            const float eyeZ = m_cameraZ + distance * std::cos(pitchRad) * std::cos(yawRad);
+            cameraPos[0] = eyeX;
+            cameraPos[1] = eyeY;
+            cameraPos[2] = eyeZ;
+            const float center[3] = {m_cameraX, m_cameraY, m_cameraZ};
+            cameraForward[0] = center[0] - eyeX;
+            cameraForward[1] = center[1] - eyeY;
+            cameraForward[2] = center[2] - eyeZ;
+            Vec3Normalize(cameraForward);
+        }
+
+        float cameraRight[3];
+        Vec3Cross(cameraRight, cameraForward, cameraUp);
+        Vec3Normalize(cameraRight);
+        Vec3Cross(cameraUp, cameraRight, cameraForward);
+        Vec3Normalize(cameraUp);
+
+        auto appendIcon = [&](Core::EntityId id,
+                              const float pos[3],
+                              const float color[4],
+                              float scaleFactor) {
+            float dx = pos[0] - cameraPos[0];
+            float dy = pos[1] - cameraPos[1];
+            float dz = pos[2] - cameraPos[2];
+            float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+            float scale = std::clamp(dist * scaleFactor, 0.15f, 1.5f);
+
+            float forward[3] = {-cameraForward[0], -cameraForward[1], -cameraForward[2]};
+            float model[16];
+            Mat4Identity(model);
+            model[0] = cameraRight[0] * scale;
+            model[1] = cameraRight[1] * scale;
+            model[2] = cameraRight[2] * scale;
+            model[4] = cameraUp[0] * scale;
+            model[5] = cameraUp[1] * scale;
+            model[6] = cameraUp[2] * scale;
+            model[8] = forward[0] * scale;
+            model[9] = forward[1] * scale;
+            model[10] = forward[2] * scale;
+            model[12] = pos[0];
+            model[13] = pos[1];
+            model[14] = pos[2];
+
+            DrawInstance draw{};
+            draw.entityId = id;
+            draw.constants.entityId = static_cast<uint32_t>(id);
+            draw.constants.flags = kInstanceFlagUnlit;
+            draw.constants.color[0] = color[0];
+            draw.constants.color[1] = color[1];
+            draw.constants.color[2] = color[2];
+            draw.constants.color[3] = color[3];
+            std::memcpy(draw.constants.model, model, sizeof(model));
+            draw.meshId = kIconMeshId;
+            instances.push_back(std::move(draw));
+        };
+
+        for (const auto& cam : view.cameras)
+        {
+            const float camColor[4] = {0.2f, 0.75f, 1.0f, 1.0f};
+            appendIcon(cam.entityId, cam.position, camColor, 0.03f);
+        }
+
+        for (const auto& light : view.lights)
+        {
+            float color[4] = {0.9f, 0.8f, 0.35f, 1.0f};
+            switch (light.type)
+            {
+            case RenderLightType::Point:
+                color[0] = 1.0f;
+                color[1] = 0.65f;
+                color[2] = 0.25f;
+                break;
+            case RenderLightType::Spot:
+                color[0] = 1.0f;
+                color[1] = 0.55f;
+                color[2] = 0.20f;
+                break;
+            default:
+                break;
+            }
+            color[0] = std::min(1.0f, color[0] * light.color[0] + 0.15f);
+            color[1] = std::min(1.0f, color[1] * light.color[1] + 0.15f);
+            color[2] = std::min(1.0f, color[2] * light.color[2] + 0.15f);
+            if (!light.enabled)
+            {
+                color[0] *= 0.35f;
+                color[1] *= 0.35f;
+                color[2] *= 0.35f;
+            }
+            float pos[3] = {light.position[0], light.position[1], light.position[2]};
+            appendIcon(light.entityId, pos, color, 0.028f);
+        }
+    }
+
     return instances;
 }
 
@@ -4391,6 +4821,10 @@ const VulkanViewport::GpuMesh* VulkanViewport::ResolveMesh(const std::string& as
     if (assetId.empty() || !m_context || !m_context->IsInitialized())
     {
         return nullptr;
+    }
+    if (assetId == kIconMeshId)
+    {
+        return (m_iconMesh.vertexBuffer != VK_NULL_HANDLE) ? &m_iconMesh : nullptr;
     }
 
     auto cached = m_meshCache.find(assetId);

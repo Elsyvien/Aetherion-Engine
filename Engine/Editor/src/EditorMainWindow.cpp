@@ -28,12 +28,14 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "Aetherion/Editor/EditorAssetBrowser.h"
+#include "Aetherion/Editor/EditorCameraPreview.h"
 #include "Aetherion/Editor/EditorConsole.h"
 #include "Aetherion/Editor/EditorHierarchyPanel.h"
 #include "Aetherion/Editor/EditorMeshPreview.h"
@@ -495,21 +497,21 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         const bool useSceneCamera = m_modePlaytestAction && m_modePlaytestAction->isChecked();
         auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
         auto renderView = ctx ? ctx->GetRenderView() : nullptr;
-        const Rendering::RenderView* activeView = renderView.get();
         Rendering::RenderView emptyView{};
-        if (!activeView)
-        {
-            activeView = &emptyView;
-        }
+        Rendering::RenderView viewCopy{};
+        const Rendering::RenderView* activeView = &emptyView;
         if (renderView)
         {
-            renderView->selectedEntityId =
+            viewCopy = *renderView;
+            viewCopy.selectedEntityId =
                 (m_selection && m_selection->GetSelectedEntity()) ? m_selection->GetSelectedEntity()->GetId()
                                                                   : 0;
+            viewCopy.showEditorIcons = !useSceneCamera;
             if (!useSceneCamera)
             {
-                renderView->camera.enabled = false;
+                viewCopy.camera.enabled = false;
             }
+            activeView = &viewCopy;
         }
         try
         {
@@ -522,6 +524,26 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
             m_renderTimer->stop();
             statusBar()->showMessage(tr("Renderer error: %1").arg(QString::fromStdString(ex.what())));
             return;
+        }
+
+        if (m_vulkanViewport)
+        {
+            const auto pick = m_vulkanViewport->GetLastPickResult();
+            if (pick.valid)
+            {
+                if (m_selection)
+                {
+                    if (pick.entityId != 0)
+                    {
+                        m_selection->SelectEntityById(pick.entityId);
+                    }
+                    else
+                    {
+                        m_selection->Clear();
+                    }
+                }
+                m_vulkanViewport->ClearPickResult();
+            }
         }
 
         if (m_fpsLabel)
@@ -602,6 +624,16 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
                 auto previewRegistry = previewCtx ? previewCtx->GetAssetRegistry() : nullptr;
                 m_meshPreview->SetVulkanContext(previewVk);
                 m_meshPreview->SetAssetRegistry(previewRegistry);
+            }
+            if (m_cameraPreview)
+            {
+                auto previewCtx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+                auto previewVk = previewCtx ? previewCtx->GetVulkanContext() : nullptr;
+                auto previewRegistry = previewCtx ? previewCtx->GetAssetRegistry() : nullptr;
+                m_cameraPreview->SetVulkanContext(previewVk);
+                m_cameraPreview->SetAssetRegistry(previewRegistry);
+                m_cameraPreview->SetRenderViewSource(previewCtx ? previewCtx->GetRenderView() : nullptr);
+                m_cameraPreview->SetScene(m_scene);
             }
         }
         else
@@ -813,6 +845,13 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
         m_inspectorPanel->SetAssetRegistry(ctx ? ctx->GetAssetRegistry() : nullptr);
     }
+    if (m_cameraPreview)
+    {
+        auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+        m_cameraPreview->SetScene(m_scene);
+        m_cameraPreview->SetAssetRegistry(ctx ? ctx->GetAssetRegistry() : nullptr);
+        m_cameraPreview->SetRenderViewSource(ctx ? ctx->GetRenderView() : nullptr);
+    }
 
     AttachVulkanLogSink();
     RefreshAssetBrowser();
@@ -855,6 +894,19 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
             }
             // Keep asset line as-is.
         }
+
+        if (m_cameraPreview)
+        {
+            auto entity = m_selection ? m_selection->GetSelectedEntity() : nullptr;
+            if (entity && entity->GetComponent<Scene::CameraComponent>())
+            {
+                m_cameraPreview->SetSelectedCameraId(entity->GetId());
+            }
+            else
+            {
+                m_cameraPreview->SetSelectedCameraId(0);
+            }
+        }
     });
     connect(m_selection, &EditorSelection::SelectionCleared, this, [this]() {
         AppendConsole(m_console, tr("Selection: entity cleared"), ConsoleSeverity::Info);
@@ -866,6 +918,11 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         if (m_auxPanel)
         {
             m_auxPanel->SetEntityText(tr("None"));
+        }
+
+        if (m_cameraPreview)
+        {
+            m_cameraPreview->SetSelectedCameraId(0);
         }
     });
 
@@ -1164,6 +1221,20 @@ void EditorMainWindow::CreateMenuBarContent()
             if (checked)
             {
                 m_meshPreviewDock->raise();
+            }
+        }
+    });
+
+    m_showCameraPreviewAction = viewMenu->addAction(tr("Show Camera Preview"));
+    m_showCameraPreviewAction->setCheckable(true);
+    m_showCameraPreviewAction->setChecked(true);
+    connect(m_showCameraPreviewAction, &QAction::triggered, this, [this](bool checked) {
+        if (m_cameraPreviewDock)
+        {
+            m_cameraPreviewDock->setVisible(checked);
+            if (checked)
+            {
+                m_cameraPreviewDock->raise();
             }
         }
     });
@@ -1674,11 +1745,23 @@ void EditorMainWindow::AddAssetToScene(const QString& assetId)
 
     // Generate a unique entity ID
     Core::EntityId newId = 1;
+    bool hasPrimaryDirectional = false;
     for (const auto& entity : m_scene->GetEntities())
     {
         if (entity && entity->GetId() >= newId)
         {
             newId = entity->GetId() + 1;
+        }
+        if (entity)
+        {
+            if (auto existingLight = entity->GetComponent<Scene::LightComponent>())
+            {
+                if (existingLight->GetType() == Scene::LightComponent::LightType::Directional &&
+                    existingLight->IsPrimary())
+                {
+                    hasPrimaryDirectional = true;
+                }
+            }
         }
     }
 
@@ -2146,6 +2229,8 @@ void EditorMainWindow::CreateLightEntity(Aetherion::Core::EntityId parentId)
     }
 
     auto light = std::make_shared<Scene::LightComponent>();
+    light->SetType(Scene::LightComponent::LightType::Directional);
+    light->SetPrimary(!hasPrimaryDirectional);
     newEntity->AddComponent(transform);
     newEntity->AddComponent(light);
 
@@ -2351,6 +2436,12 @@ bool EditorMainWindow::LoadSceneFromPath(const std::filesystem::path& path)
     {
         m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
     }
+    if (m_cameraPreview)
+    {
+        auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+        m_cameraPreview->SetScene(m_scene);
+        m_cameraPreview->SetRenderViewSource(ctx ? ctx->GetRenderView() : nullptr);
+    }
 
     if (m_commandHistory)
     {
@@ -2423,6 +2514,14 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
         m_inspectorPanel->SetSelectedEntity(m_selection ? m_selection->GetSelectedEntity() : nullptr);
         auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
         m_inspectorPanel->SetAssetRegistry(ctx ? ctx->GetAssetRegistry() : nullptr);
+    }
+    if (m_cameraPreview)
+    {
+        auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+        m_cameraPreview->SetScene(m_scene);
+        m_cameraPreview->SetAssetRegistry(ctx ? ctx->GetAssetRegistry() : nullptr);
+        m_cameraPreview->SetRenderViewSource(ctx ? ctx->GetRenderView() : nullptr);
+        m_cameraPreview->SetVulkanContext(ctx ? ctx->GetVulkanContext() : nullptr);
     }
 
     AttachVulkanLogSink();
@@ -2666,6 +2765,26 @@ void EditorMainWindow::CreateDockPanels()
         }
     });
 
+    // Camera Preview panel (right side, tabbed with mesh preview)
+    auto* cameraPreviewDock = new QDockWidget(tr("Camera Preview"), this);
+    cameraPreviewDock->setObjectName("CameraPreviewDock");
+    cameraPreviewDock->setAttribute(Qt::WA_NativeWindow, true);
+    m_cameraPreviewDock = cameraPreviewDock;
+    m_cameraPreview = new EditorCameraPreview(cameraPreviewDock);
+    cameraPreviewDock->setWidget(m_cameraPreview);
+    cameraPreviewDock->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea | Qt::BottomDockWidgetArea);
+    addDockWidget(Qt::RightDockWidgetArea, cameraPreviewDock);
+    tabifyDockWidget(meshPreviewDock, cameraPreviewDock);
+    meshPreviewDock->raise();
+    connect(cameraPreviewDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        if (m_showCameraPreviewAction)
+        {
+            m_showCameraPreviewAction->blockSignals(true);
+            m_showCameraPreviewAction->setChecked(visible);
+            m_showCameraPreviewAction->blockSignals(false);
+        }
+    });
+
     // TODO: Persist dock layout between sessions.
 }
 
@@ -2849,6 +2968,7 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
                 m_dragStartMouseX = me->x();
                 m_dragStartMouseY = me->y();
                 m_activeGizmoAxis = GizmoAxis::None;
+                m_requestPickOnRelease = false;
 
                 if (m_selection && m_selection->GetSelectedEntity() && m_gizmoMode == GizmoMode::Translate)
                 {
@@ -2898,12 +3018,34 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
                         }
                     }
                 }
+
+                if (m_activeGizmoAxis == GizmoAxis::None)
+                {
+                    m_requestPickOnRelease = true;
+                }
             }
         }
         else if (event->type() == QEvent::MouseButtonRelease)
         {
             if (static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton)
             {
+                if (m_requestPickOnRelease && m_vulkanViewport && m_vulkanViewport->IsReady())
+                {
+                    QMouseEvent* me = static_cast<QMouseEvent*>(event);
+                    const int dx = std::abs(me->x() - m_dragStartMouseX);
+                    const int dy = std::abs(me->y() - m_dragStartMouseY);
+                    if (dx <= 3 && dy <= 3)
+                    {
+                        QPoint pickPos = me->pos();
+                        if (m_viewport && m_viewport->surfaceWidget() && watched == m_viewport)
+                        {
+                            pickPos = m_viewport->surfaceWidget()->mapFrom(m_viewport, pickPos);
+                        }
+                        m_vulkanViewport->RequestPick(static_cast<uint32_t>(pickPos.x()),
+                                                      static_cast<uint32_t>(pickPos.y()));
+                    }
+                }
+                m_requestPickOnRelease = false;
                 m_activeGizmoAxis = GizmoAxis::None;
             }
         }
@@ -3169,6 +3311,18 @@ void EditorMainWindow::RefreshSelectedEntityUi()
         if (entity)
         {
             m_hierarchyPanel->SetSelectedEntity(entity->GetId());
+        }
+    }
+    if (m_cameraPreview)
+    {
+        auto entity = m_selection ? m_selection->GetSelectedEntity() : nullptr;
+        if (entity && entity->GetComponent<Scene::CameraComponent>())
+        {
+            m_cameraPreview->SetSelectedCameraId(entity->GetId());
+        }
+        else
+        {
+            m_cameraPreview->SetSelectedCameraId(0);
         }
     }
 }

@@ -84,13 +84,18 @@ private:
     QComboBox* m_meshAsset = nullptr;
     QComboBox* m_meshTexture = nullptr;
     QCheckBox* m_lightEnabled = nullptr;
+    QComboBox* m_lightType = nullptr;
     QDoubleSpinBox* m_lightColorR = nullptr;
     QDoubleSpinBox* m_lightColorG = nullptr;
     QDoubleSpinBox* m_lightColorB = nullptr;
     QDoubleSpinBox* m_lightIntensity = nullptr;
+    QDoubleSpinBox* m_lightRange = nullptr;
+    QDoubleSpinBox* m_lightInnerAngle = nullptr;
+    QDoubleSpinBox* m_lightOuterAngle = nullptr;
     QDoubleSpinBox* m_lightAmbientR = nullptr;
     QDoubleSpinBox* m_lightAmbientG = nullptr;
     QDoubleSpinBox* m_lightAmbientB = nullptr;
+    QCheckBox* m_lightPrimary = nullptr;
 
     bool m_buildingUi = false;
     CommandExecutor m_commandExecutor;

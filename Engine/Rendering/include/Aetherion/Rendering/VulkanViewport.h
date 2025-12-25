@@ -96,6 +96,7 @@ public:
 private:
     static constexpr uint32_t kMaxFramesInFlight = 2;
     static constexpr uint32_t kMaxTextureDescriptors = 128;
+    static constexpr uint32_t kMaxLights = 8;
     struct InstancePushConstants
     {
         float model[16]{};
@@ -254,6 +255,7 @@ private:
     VkBuffer m_indexBuffer{VK_NULL_HANDLE};
     VkDeviceMemory m_indexMemory{VK_NULL_HANDLE};
     uint32_t m_defaultIndexCount{0};
+    GpuMesh m_iconMesh{};
     VkBuffer m_lineVertexBuffer{VK_NULL_HANDLE};
     VkDeviceMemory m_lineVertexMemory{VK_NULL_HANDLE};
     uint32_t m_lineVertexCount{0};

@@ -6,6 +6,16 @@ layout(location = 2) in vec2 vUv;
 layout(location = 3) in vec3 vWorldPos;
 layout(location = 0) out vec4 outColor;
 
+const uint kMaxLights = 8u;
+
+struct LightUniform
+{
+    vec4 position;
+    vec4 direction;
+    vec4 color;
+    vec4 spot;
+};
+
 layout(set = 0, binding = 0) uniform FrameUBO
 {
     mat4 uViewProj;
@@ -15,6 +25,8 @@ layout(set = 0, binding = 0) uniform FrameUBO
     vec4 uCameraPos;
     vec4 uFrameParams;
     vec4 uMaterialParams;
+    vec4 uLightCounts;
+    LightUniform uLights[kMaxLights];
 } ubo;
 
 layout(set = 1, binding = 0) uniform sampler2D uAlbedo;
@@ -66,6 +78,53 @@ vec3 FresnelSchlick(float cosTheta, vec3 f0)
     return f0 + (1.0 - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+float DistanceAttenuation(float distance, float range)
+{
+    float invDist = 1.0 / max(distance * distance, 1.0);
+    if (range <= 0.0)
+    {
+        return invDist;
+    }
+    float ratio = distance / max(range, 0.001);
+    float falloff = clamp(1.0 - ratio, 0.0, 1.0);
+    return invDist * falloff * falloff;
+}
+
+vec3 ApplyLight(vec3 l,
+                vec3 radiance,
+                float attenuation,
+                vec3 n,
+                vec3 v,
+                vec3 albedo,
+                vec3 f0,
+                float metallic,
+                float roughness,
+                float nDotV)
+{
+    float nDotL = max(dot(n, l), 0.0);
+    if (nDotL <= 0.0)
+    {
+        return vec3(0.0);
+    }
+
+    vec3 h = normalize(v + l);
+    float hDotV = max(dot(h, v), 0.0);
+
+    vec3 f = FresnelSchlick(hDotV, f0);
+    float d = DistributionGGX(n, h, roughness);
+    float g = GeometrySmith(n, v, l, roughness);
+
+    vec3 numerator = d * g * f;
+    float denom = max(4.0 * nDotV * nDotL, 0.0001);
+    vec3 specular = numerator / denom;
+
+    vec3 kS = f;
+    vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
+    vec3 diffuse = kD * albedo / kPi;
+
+    return (diffuse + specular) * radiance * nDotL * attenuation;
+}
+
 void main()
 {
     vec3 albedo = texture(uAlbedo, vUv).rgb * vColor;
@@ -112,32 +171,98 @@ void main()
 
     vec3 n = normalize(vNormal);
     vec3 v = normalize(ubo.uCameraPos.xyz - vWorldPos);
-    vec3 l = normalize(-ubo.uLightDir.xyz);
-    vec3 h = normalize(v + l);
 
     float metallic = clamp(ubo.uMaterialParams.x, 0.0, 1.0);
     float roughness = clamp(ubo.uMaterialParams.y, 0.04, 1.0);
-
-    float nDotL = max(dot(n, l), 0.0);
     float nDotV = max(dot(n, v), 0.0);
-    float hDotV = max(dot(h, v), 0.0);
-
     vec3 f0 = mix(vec3(0.04), albedo, metallic);
-    vec3 f = FresnelSchlick(hDotV, f0);
-    float d = DistributionGGX(n, h, roughness);
-    float g = GeometrySmith(n, v, l, roughness);
 
-    vec3 numerator = d * g * f;
-    float denom = max(4.0 * nDotV * nDotL, 0.0001);
-    vec3 specular = numerator / denom;
+    vec3 lighting = vec3(0.0);
 
-    vec3 kS = f;
-    vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
-    vec3 diffuse = kD * albedo / kPi;
+    int dirCount = int(ubo.uLightCounts.x + 0.5);
+    int pointCount = int(ubo.uLightCounts.y + 0.5);
+    int spotCount = int(ubo.uLightCounts.z + 0.5);
+    int totalCount = int(ubo.uLightCounts.w + 0.5);
 
-    vec3 radiance = ubo.uLightColor.rgb;
-    vec3 color = (diffuse + specular) * radiance * nDotL;
+    if (totalCount <= 0)
+    {
+        vec3 l = normalize(-ubo.uLightDir.xyz);
+        lighting += ApplyLight(l,
+                               ubo.uLightColor.rgb,
+                               1.0,
+                               n,
+                               v,
+                               albedo,
+                               f0,
+                               metallic,
+                               roughness,
+                               nDotV);
+    }
+    else
+    {
+        int index = 0;
+        for (int i = 0; i < dirCount; ++i)
+        {
+            LightUniform light = ubo.uLights[index++];
+            vec3 l = normalize(-light.direction.xyz);
+            lighting += ApplyLight(l,
+                                   light.color.rgb,
+                                   1.0,
+                                   n,
+                                   v,
+                                   albedo,
+                                   f0,
+                                   metallic,
+                                   roughness,
+                                   nDotV);
+        }
+
+        for (int i = 0; i < pointCount; ++i)
+        {
+            LightUniform light = ubo.uLights[index++];
+            vec3 toLight = light.position.xyz - vWorldPos;
+            float dist = length(toLight);
+            vec3 l = (dist > 0.0001) ? (toLight / dist) : vec3(0.0, 1.0, 0.0);
+            float attenuation = DistanceAttenuation(dist, light.position.w);
+            lighting += ApplyLight(l,
+                                   light.color.rgb,
+                                   attenuation,
+                                   n,
+                                   v,
+                                   albedo,
+                                   f0,
+                                   metallic,
+                                   roughness,
+                                   nDotV);
+        }
+
+        for (int i = 0; i < spotCount; ++i)
+        {
+            LightUniform light = ubo.uLights[index++];
+            vec3 toLight = light.position.xyz - vWorldPos;
+            float dist = length(toLight);
+            vec3 l = (dist > 0.0001) ? (toLight / dist) : vec3(0.0, 1.0, 0.0);
+            float attenuation = DistanceAttenuation(dist, light.position.w);
+
+            float cosTheta = dot(normalize(-l), normalize(light.direction.xyz));
+            float innerCos = light.spot.x;
+            float outerCos = light.spot.y;
+            float denom = max(innerCos - outerCos, 0.0001);
+            float spotFactor = clamp((cosTheta - outerCos) / denom, 0.0, 1.0);
+
+            lighting += ApplyLight(l,
+                                   light.color.rgb,
+                                   attenuation * spotFactor,
+                                   n,
+                                   v,
+                                   albedo,
+                                   f0,
+                                   metallic,
+                                   roughness,
+                                   nDotV);
+        }
+    }
+
     vec3 ambient = ubo.uAmbientColor.rgb * albedo;
-
-    outColor = vec4(ambient + color, 1.0);
+    outColor = vec4(ambient + lighting, 1.0);
 }

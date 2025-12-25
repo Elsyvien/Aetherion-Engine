@@ -240,8 +240,13 @@ bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path
             const auto color = light->GetColor();
             const auto ambient = light->GetAmbientColor();
             out << "          \"lightEnabled\": " << (light->IsEnabled() ? "true" : "false") << ",\n";
+            out << "          \"lightType\": " << static_cast<int>(light->GetType()) << ",\n";
             out << "          \"lightColor\": [" << color[0] << ", " << color[1] << ", " << color[2] << "],\n";
             out << "          \"lightIntensity\": " << light->GetIntensity() << ",\n";
+            out << "          \"lightRange\": " << light->GetRange() << ",\n";
+            out << "          \"innerConeAngle\": " << light->GetInnerConeAngle() << ",\n";
+            out << "          \"outerConeAngle\": " << light->GetOuterConeAngle() << ",\n";
+            out << "          \"lightPrimary\": " << (light->IsPrimary() ? "true" : "false") << ",\n";
             out << "          \"ambientColor\": [" << ambient[0] << ", " << ambient[1] << ", " << ambient[2] << "]\n";
             out << "        }";
             wroteComponent = true;
@@ -363,14 +368,24 @@ std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) 
         }
 
         const auto lightEnabled = ExtractBool(block, "lightEnabled", true);
+        const auto lightType = ExtractUint64(block, "lightType");
         const auto lightColor = ExtractFloatArray(block, "lightColor");
         const auto lightIntensity = ExtractFloat(block, "lightIntensity");
+        const auto lightRange = ExtractFloat(block, "lightRange");
+        const auto lightInnerCone = ExtractFloat(block, "innerConeAngle");
+        const auto lightOuterCone = ExtractFloat(block, "outerConeAngle");
+        const auto lightPrimary = ExtractBool(block, "lightPrimary", false);
         const auto ambientColor = ExtractFloatArray(block, "ambientColor");
-        if (!lightColor.empty() || lightIntensity.has_value() || !ambientColor.empty() ||
-            block.find("\"Light\"") != std::string::npos)
+        if (lightType.has_value() || !lightColor.empty() || lightIntensity.has_value() ||
+            lightRange.has_value() || lightInnerCone.has_value() || lightOuterCone.has_value() ||
+            !ambientColor.empty() || block.find("\"Light\"") != std::string::npos)
         {
             auto light = std::make_shared<LightComponent>();
             light->SetEnabled(lightEnabled);
+            if (lightType.has_value())
+            {
+                light->SetType(static_cast<LightComponent::LightType>(*lightType));
+            }
             if (lightColor.size() >= 3)
             {
                 light->SetColor(lightColor[0], lightColor[1], lightColor[2]);
@@ -378,6 +393,22 @@ std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) 
             if (lightIntensity.has_value())
             {
                 light->SetIntensity(*lightIntensity);
+            }
+            if (lightRange.has_value())
+            {
+                light->SetRange(*lightRange);
+            }
+            if (lightInnerCone.has_value())
+            {
+                light->SetInnerConeAngle(*lightInnerCone);
+            }
+            if (lightOuterCone.has_value())
+            {
+                light->SetOuterConeAngle(*lightOuterCone);
+            }
+            if (lightPrimary)
+            {
+                light->SetPrimary(lightPrimary);
             }
             if (ambientColor.size() >= 3)
             {
@@ -458,10 +489,12 @@ std::shared_ptr<Scene> SceneSerializer::CreateDefaultScene() const
     viewportEntity->AddComponent(mesh);
     scene->AddEntity(viewportEntity);
 
-    auto lightEntity = std::make_shared<Entity>(2, "Directional Light");
+    auto lightEntity = std::make_shared<Entity>(2, "Directional Light");        
     auto lightTransform = std::make_shared<TransformComponent>();
     lightTransform->SetRotationDegrees(-55.0f, 215.0f, 0.0f);
     auto light = std::make_shared<LightComponent>();
+    light->SetType(LightComponent::LightType::Directional);
+    light->SetPrimary(true);
     lightEntity->AddComponent(lightTransform);
     lightEntity->AddComponent(light);
     scene->AddEntity(lightEntity);

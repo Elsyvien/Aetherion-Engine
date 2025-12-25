@@ -5,6 +5,16 @@ layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec4 aColor;
 layout(location = 3) in vec2 aUv;
 
+const uint kMaxLights = 8u;
+
+struct LightUniform
+{
+    vec4 position;
+    vec4 direction;
+    vec4 color;
+    vec4 spot;
+};
+
 layout(set = 0, binding = 0) uniform FrameUBO
 {
     mat4 uViewProj;
@@ -14,6 +24,8 @@ layout(set = 0, binding = 0) uniform FrameUBO
     vec4 uCameraPos;
     vec4 uFrameParams;
     vec4 uMaterialParams;
+    vec4 uLightCounts;
+    LightUniform uLights[kMaxLights];
 } ubo;
 
 layout(push_constant) uniform InstancePC

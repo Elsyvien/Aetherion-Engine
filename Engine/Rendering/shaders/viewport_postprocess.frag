@@ -3,6 +3,16 @@
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 outColor;
 
+const uint kMaxLights = 8u;
+
+struct LightUniform
+{
+    vec4 position;
+    vec4 direction;
+    vec4 color;
+    vec4 spot;
+};
+
 layout(set = 0, binding = 0) uniform FrameUBO
 {
     mat4 uViewProj;
@@ -12,6 +22,8 @@ layout(set = 0, binding = 0) uniform FrameUBO
     vec4 uCameraPos;
     vec4 uFrameParams;
     vec4 uMaterialParams;
+    vec4 uLightCounts;
+    LightUniform uLights[kMaxLights];
 } ubo;
 
 layout(set = 1, binding = 0) uniform sampler2D uScene;
