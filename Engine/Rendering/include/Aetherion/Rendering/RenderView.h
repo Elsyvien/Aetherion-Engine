@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -42,6 +43,20 @@ struct RenderDirectionalLight
     Core::EntityId entityId{0};
 };
 
+struct RenderCamera
+{
+    bool enabled{false};
+    float position[3]{0.0f, 0.0f, 0.0f};
+    float forward[3]{0.0f, 0.0f, -1.0f};
+    float up[3]{0.0f, 1.0f, 0.0f};
+    float verticalFov{60.0f};
+    float nearClip{0.1f};
+    float farClip{100.0f};
+    float orthographicSize{10.0f};
+    uint32_t projectionType{0};
+    Core::EntityId entityId{0};
+};
+
 struct RenderView
 {
     std::vector<RenderInstance> instances;
@@ -50,5 +65,6 @@ struct RenderView
     std::unordered_map<Core::EntityId, const Scene::MeshRendererComponent*> meshes;
     Core::EntityId selectedEntityId{0};
     RenderDirectionalLight directionalLight{};
+    RenderCamera camera{};
 };
 } // namespace Aetherion::Rendering

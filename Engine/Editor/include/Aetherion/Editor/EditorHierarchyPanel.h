@@ -41,6 +41,7 @@ signals:
     void createEmptyEntityRequested(Aetherion::Core::EntityId parentId);
     void createEmptyEntityAtRootRequested();
     void createLightEntityRequested(Aetherion::Core::EntityId parentId);
+    void createCameraEntityRequested(Aetherion::Core::EntityId parentId);
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;

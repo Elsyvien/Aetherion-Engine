@@ -48,6 +48,7 @@
 #include "Aetherion/Runtime/EngineApplication.h"
 
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
@@ -491,6 +492,7 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
             UpdateInteractiveTransform(dt);
         }
 
+        const bool useSceneCamera = m_modePlaytestAction && m_modePlaytestAction->isChecked();
         auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
         auto renderView = ctx ? ctx->GetRenderView() : nullptr;
         const Rendering::RenderView* activeView = renderView.get();
@@ -504,6 +506,10 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
             renderView->selectedEntityId =
                 (m_selection && m_selection->GetSelectedEntity()) ? m_selection->GetSelectedEntity()->GetId()
                                                                   : 0;
+            if (!useSceneCamera)
+            {
+                renderView->camera.enabled = false;
+            }
         }
         try
         {
@@ -673,6 +679,11 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
             if (transform)
             {
                 Vec3 origin = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
+                if (m_scene)
+                {
+                    const auto world = GetWorldMatrix(*m_scene, entity->GetId());
+                    origin = {world[12], world[13], world[14]};
+                }
 
                 QPoint globalPos = QCursor::pos();
                 QPoint localPos = m_viewport->surfaceWidget()->mapFromGlobal(globalPos);
@@ -920,6 +931,9 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         });
         connect(m_hierarchyPanel, &EditorHierarchyPanel::createLightEntityRequested, this, [this](Aetherion::Core::EntityId parentId) {
             CreateLightEntity(parentId);
+        });
+        connect(m_hierarchyPanel, &EditorHierarchyPanel::createCameraEntityRequested, this, [this](Aetherion::Core::EntityId parentId) {
+            CreateCameraEntity(parentId);
         });
     }
 
@@ -2103,7 +2117,7 @@ void EditorMainWindow::CreateEmptyEntity(Aetherion::Core::EntityId parentId)
     statusBar()->showMessage(tr("Entity created"), 3000);
 }
 
-void EditorMainWindow::CreateLightEntity(Aetherion::Core::EntityId parentId)
+void EditorMainWindow::CreateLightEntity(Aetherion::Core::EntityId parentId)    
 {
     if (!m_scene)
     {
@@ -2135,8 +2149,7 @@ void EditorMainWindow::CreateLightEntity(Aetherion::Core::EntityId parentId)
     newEntity->AddComponent(transform);
     newEntity->AddComponent(light);
 
-    m_scene->AddEntity(newEntity);
-    SetSceneDirty(true);
+    ExecuteCommand(std::make_unique<CreateEntityCommand>(m_scene, newEntity));
 
     if (m_hierarchyPanel)
     {
@@ -2151,6 +2164,68 @@ void EditorMainWindow::CreateLightEntity(Aetherion::Core::EntityId parentId)
 
     AppendConsole(m_console, tr("Created directional light"), ConsoleSeverity::Info);
     statusBar()->showMessage(tr("Directional light created"), 3000);
+}
+
+void EditorMainWindow::CreateCameraEntity(Aetherion::Core::EntityId parentId)
+{
+    if (!m_scene)
+    {
+        statusBar()->showMessage(tr("No active scene"), 2000);
+        return;
+    }
+
+    Core::EntityId newId = 1;
+    bool hasPrimaryCamera = false;
+    for (const auto& entity : m_scene->GetEntities())
+    {
+        if (!entity)
+        {
+            continue;
+        }
+        if (entity->GetId() >= newId)
+        {
+            newId = entity->GetId() + 1;
+        }
+        if (auto camera = entity->GetComponent<Scene::CameraComponent>())
+        {
+            if (camera->IsPrimary())
+            {
+                hasPrimaryCamera = true;
+            }
+        }
+    }
+
+    auto newEntity = std::make_shared<Scene::Entity>(newId, "Camera");
+    auto transform = std::make_shared<Scene::TransformComponent>();
+    transform->SetPosition(0.0f, 0.0f, 5.0f);
+    transform->SetRotationDegrees(0.0f, 0.0f, 0.0f);
+    transform->SetScale(1.0f, 1.0f, 1.0f);
+    if (parentId != 0)
+    {
+        transform->SetParent(parentId);
+    }
+
+    auto camera = std::make_shared<Scene::CameraComponent>();
+    camera->SetPrimary(!hasPrimaryCamera);
+
+    newEntity->AddComponent(transform);
+    newEntity->AddComponent(camera);
+
+    ExecuteCommand(std::make_unique<CreateEntityCommand>(m_scene, newEntity));
+
+    if (m_hierarchyPanel)
+    {
+        m_hierarchyPanel->BindScene(m_scene);
+        m_hierarchyPanel->SetSelectedEntity(newId);
+    }
+
+    if (m_selection)
+    {
+        m_selection->SelectEntity(newEntity);
+    }
+
+    AppendConsole(m_console, tr("Created camera"), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Camera created"), 3000);
 }
 
 void EditorMainWindow::SaveScene()
@@ -2782,6 +2857,11 @@ bool EditorMainWindow::eventFilter(QObject* watched, QEvent* event)
                     if (transform)
                     {
                         Vec3 origin = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
+                        if (m_scene)
+                        {
+                            const auto world = GetWorldMatrix(*m_scene, entity->GetId());
+                            origin = {world[12], world[13], world[14]};
+                        }
                         Vec3 rayOrigin = GetCameraEye(m_viewport);
                         Vec3 rayDir = GetCameraRayDir(m_viewport, me->x(), me->y(), m_viewport->width(), m_viewport->height());
 

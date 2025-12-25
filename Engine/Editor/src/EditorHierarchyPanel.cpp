@@ -349,6 +349,12 @@ void EditorHierarchyPanel::setupContextMenu()
         emit createLightEntityRequested(id);
     });
 
+    auto* createCameraAction = m_contextMenu->addAction(tr("Create Camera"));
+    connect(createCameraAction, &QAction::triggered, this, [this]() {
+        Core::EntityId id = GetSelectedEntityId();
+        emit createCameraEntityRequested(id);
+    });
+
     m_contextMenu->addSeparator();
     
     auto* duplicateAction = m_contextMenu->addAction(tr("Duplicate"));
@@ -403,7 +409,8 @@ void EditorHierarchyPanel::showContextMenu(const QPoint& pos)
     for (QAction* action : m_contextMenu->actions())
     {
         const QString text = action->text();
-        if (text == tr("Create Empty") || text == tr("Create Directional Light"))
+        if (text == tr("Create Empty") || text == tr("Create Directional Light") ||
+            text == tr("Create Camera"))
         {
             action->setEnabled(true);
         }

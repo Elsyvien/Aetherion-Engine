@@ -315,10 +315,10 @@ void VulkanContext::PickPhysicalDevice(VkSurfaceKHR surface)
                 m_graphicsQueueFamilyIndex = indices.graphicsFamily.value();
                 m_presentQueueFamilyIndex = indices.presentFamily.value();
 
-                VkPhysicalDeviceProperties props{};
-                vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
+                vkGetPhysicalDeviceProperties(m_physicalDevice, &m_physicalDeviceProperties);
+                vkGetPhysicalDeviceFeatures(m_physicalDevice, &m_physicalDeviceFeatures);
                 Log(LogSeverity::Info,
-                    "VulkanContext: selected GPU '" + std::string(props.deviceName) + "' (graphics queue " +
+                    "VulkanContext: selected GPU '" + std::string(m_physicalDeviceProperties.deviceName) + "' (graphics queue " +
                         std::to_string(m_graphicsQueueFamilyIndex) + ", present queue " +
                         std::to_string(m_presentQueueFamilyIndex) + ")");
                 return true;
@@ -437,6 +437,11 @@ void VulkanContext::CreateLogicalDevice()
     }
 
     VkPhysicalDeviceFeatures features{};
+    if (m_physicalDeviceFeatures.samplerAnisotropy)
+    {
+        features.samplerAnisotropy = VK_TRUE;
+    }
+    m_enabledFeatures = features;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

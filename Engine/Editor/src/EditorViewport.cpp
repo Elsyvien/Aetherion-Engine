@@ -5,6 +5,7 @@
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QMouseEvent>
+#include <QEvent>
 #include <QWheelEvent>
 #include <QKeyEvent>
 #include <QToolButton>
@@ -12,7 +13,6 @@
 #include <QTimer>
 #include <QWindow>
 #include <cmath>
-#include <QDebug>
 
 namespace Aetherion::Editor
 {
@@ -110,6 +110,28 @@ EditorViewport::EditorViewport(QWidget* parent)
 EditorViewport::~EditorViewport()
 {
     // m_surface is a child widget, automatically deleted.
+}
+
+bool EditorViewport::event(QEvent* e)
+{
+    if (e->type() == QEvent::ShortcutOverride)
+    {
+        auto* keyEvent = static_cast<QKeyEvent*>(e);
+        switch (keyEvent->key())
+        {
+        case Qt::Key_W:
+        case Qt::Key_A:
+        case Qt::Key_S:
+        case Qt::Key_D:
+        case Qt::Key_Q:
+        case Qt::Key_E:
+            e->accept();
+            return true;
+        default:
+            break;
+        }
+    }
+    return QWidget::event(e);
 }
 
 void EditorViewport::resetCamera()
@@ -364,7 +386,6 @@ void EditorViewport::updateCamera(float deltaTime)
     {
         float dx = moveAmount * std::sin(yawRad);
         float dz = moveAmount * std::cos(yawRad);
-        qDebug() << "Forward: " << m_keyForward << " Yaw: " << m_cameraRotationY << " Rad: " << yawRad << " Sin: " << std::sin(yawRad) << " Cos: " << std::cos(yawRad) << " dX: " << dx << " dZ: " << dz;
         m_cameraX -= dx;
         m_cameraZ -= dz;
         changed = true;
@@ -400,14 +421,12 @@ void EditorViewport::updateCamera(float deltaTime)
 
     if (changed)
     {
-        qDebug() << "Camera Updated: " << m_cameraX << m_cameraY << m_cameraZ;
         emit cameraChanged();
     }
 }
 
 void EditorViewport::keyPressEvent(QKeyEvent* e)
 {
-    qDebug() << "KeyPress: " << e->key();
     bool handled = true;
 
     switch (e->key())

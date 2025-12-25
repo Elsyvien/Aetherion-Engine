@@ -181,6 +181,7 @@ private:
     void RenameEntity(Aetherion::Core::EntityId id);
     void CreateEmptyEntity(Aetherion::Core::EntityId parentId);
     void CreateLightEntity(Aetherion::Core::EntityId parentId);
+    void CreateCameraEntity(Aetherion::Core::EntityId parentId);
     void SaveScene();
     void ReloadScene();
     bool ConfirmSaveIfDirty();

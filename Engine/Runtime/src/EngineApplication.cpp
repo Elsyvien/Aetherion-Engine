@@ -1,8 +1,10 @@
 #include "Aetherion/Runtime/EngineApplication.h"
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -30,6 +32,7 @@
 #include "Aetherion/Rendering/RenderView.h"
 #include "Aetherion/Rendering/VulkanContext.h"
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/Scene.h"
@@ -139,6 +142,149 @@ std::filesystem::path ResolveAssetsRoot()
 std::string BoolToOnOff(bool value)
 {
     return value ? "on" : "off";
+}
+
+void Mat4Identity(float out[16])
+{
+    std::memset(out, 0, sizeof(float) * 16);
+    out[0] = 1.0f;
+    out[5] = 1.0f;
+    out[10] = 1.0f;
+    out[15] = 1.0f;
+}
+
+void Mat4Mul(float out[16], const float a[16], const float b[16])
+{
+    float r[16];
+    for (int c = 0; c < 4; ++c)
+    {
+        for (int rIdx = 0; rIdx < 4; ++rIdx)
+        {
+            r[c * 4 + rIdx] = a[0 * 4 + rIdx] * b[c * 4 + 0] + a[1 * 4 + rIdx] *
+                              b[c * 4 + 1] + a[2 * 4 + rIdx] * b[c * 4 + 2] +
+                              a[3 * 4 + rIdx] * b[c * 4 + 3];
+        }
+    }
+    std::memcpy(out, r, sizeof(r));
+}
+
+void Mat4RotationX(float out[16], float radians)
+{
+    Mat4Identity(out);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out[5] = c;
+    out[9] = -s;
+    out[6] = s;
+    out[10] = c;
+}
+
+void Mat4RotationY(float out[16], float radians)
+{
+    Mat4Identity(out);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out[0] = c;
+    out[8] = s;
+    out[2] = -s;
+    out[10] = c;
+}
+
+void Mat4RotationZ(float out[16], float radians)
+{
+    Mat4Identity(out);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out[0] = c;
+    out[4] = -s;
+    out[1] = s;
+    out[5] = c;
+}
+
+void Mat4Translation(float out[16], float x, float y, float z)
+{
+    Mat4Identity(out);
+    out[12] = x;
+    out[13] = y;
+    out[14] = z;
+}
+
+void Mat4Scale(float out[16], float x, float y, float z)
+{
+    Mat4Identity(out);
+    out[0] = x;
+    out[5] = y;
+    out[10] = z;
+}
+
+std::array<float, 16> BuildLocalMatrix(const Scene::TransformComponent& transform)
+{
+    float t[16];
+    float rx[16];
+    float ry[16];
+    float rz[16];
+    float rzy[16];
+    float r[16];
+    float s[16];
+    float tr[16];
+    float local[16];
+    Mat4Translation(t, transform.GetPositionX(), transform.GetPositionY(), transform.GetPositionZ());
+    Mat4RotationX(rx, transform.GetRotationXDegrees() * (3.14159265358979323846f / 180.0f));
+    Mat4RotationY(ry, transform.GetRotationYDegrees() * (3.14159265358979323846f / 180.0f));
+    Mat4RotationZ(rz, transform.GetRotationZDegrees() * (3.14159265358979323846f / 180.0f));
+    Mat4Mul(rzy, rz, ry);
+    Mat4Mul(r, rzy, rx);
+    Mat4Scale(s, transform.GetScaleX(), transform.GetScaleY(), transform.GetScaleZ());
+    Mat4Mul(tr, t, r);
+    Mat4Mul(local, tr, s);
+    std::array<float, 16> out{};
+    std::memcpy(out.data(), local, sizeof(local));
+    return out;
+}
+
+std::array<float, 16> GetWorldMatrix(const Scene::Scene& scene, Core::EntityId id)
+{
+    auto entity = scene.FindEntityById(id);
+    if (!entity)
+    {
+        std::array<float, 16> identity{};
+        Mat4Identity(identity.data());
+        return identity;
+    }
+
+    auto transform = entity->GetComponent<Scene::TransformComponent>();
+    if (!transform)
+    {
+        std::array<float, 16> identity{};
+        Mat4Identity(identity.data());
+        return identity;
+    }
+
+    auto local = BuildLocalMatrix(*transform);
+    if (!transform->HasParent())
+    {
+        return local;
+    }
+
+    auto parent = GetWorldMatrix(scene, transform->GetParentId());
+    float world[16];
+    Mat4Mul(world, parent.data(), local.data());
+    std::array<float, 16> out{};
+    std::memcpy(out.data(), world, sizeof(world));
+    return out;
+}
+
+void Vec3Normalize(float v[3])
+{
+    const float lenSq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+    if (lenSq <= 0.0f)
+    {
+        return;
+    }
+    const float invLen = 1.0f / std::sqrt(lenSq);
+    v[0] *= invLen;
+    v[1] *= invLen;
+    v[2] *= invLen;
 }
 
 class SceneSystemDispatcher final : public IRuntimeSystem
@@ -272,6 +418,7 @@ private:
         view->transforms.clear();
         view->meshes.clear();
         view->directionalLight = Rendering::RenderDirectionalLight{};
+        view->camera = Rendering::RenderCamera{};
 
         auto scene = m_scene.lock();
         if (!scene)
@@ -284,6 +431,8 @@ private:
         view->instances.reserve(entities.size());
 
         bool foundLight = false;
+        bool foundCamera = false;
+        bool foundPrimaryCamera = false;
         for (const auto& entity : entities)
         {
             if (!entity)
@@ -303,35 +452,17 @@ private:
                 view->meshes.emplace(entity->GetId(), mesh.get());
             }
 
-            auto light = entity->GetComponent<Scene::LightComponent>();
-            if (light && !foundLight && light->IsEnabled())
-            {
-                float yawDeg = 0.0f;
-                float pitchDeg = -45.0f;
-                float posX = 0.0f;
-                float posY = 3.0f;
-                float posZ = 0.0f;
-                if (transform)
-                {
-                    yawDeg = transform->GetRotationYDegrees();
-                    pitchDeg = transform->GetRotationXDegrees();
-                    posX = transform->GetPositionX();
-                    posY = transform->GetPositionY();
-                    posZ = transform->GetPositionZ();
-                }
+            bool hasWorld = false;
+            std::array<float, 16> world{};
 
-                const float yawRad = yawDeg * (3.14159265358979323846f / 180.0f);
-                const float pitchRad = pitchDeg * (3.14159265358979323846f / 180.0f);
-                float dir[3] = {std::cos(pitchRad) * std::sin(yawRad),
-                                std::sin(pitchRad),
-                                std::cos(pitchRad) * std::cos(yawRad)};
-                const float len = std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
-                if (len > 0.0001f)
-                {
-                    dir[0] /= len;
-                    dir[1] /= len;
-                    dir[2] /= len;
-                }
+            auto light = entity->GetComponent<Scene::LightComponent>();
+            if (light && !foundLight && light->IsEnabled() && transform)
+            {
+                world = GetWorldMatrix(*scene, entity->GetId());
+                hasWorld = true;
+
+                float dir[3] = {-world[8], -world[9], -world[10]};
+                Vec3Normalize(dir);
 
                 view->directionalLight.enabled = true;
                 view->directionalLight.direction[0] = dir[0];
@@ -339,9 +470,9 @@ private:
                 view->directionalLight.direction[2] = dir[2];
 
                 // Store position and entity ID for gizmo rendering
-                view->directionalLight.position[0] = posX;
-                view->directionalLight.position[1] = posY;
-                view->directionalLight.position[2] = posZ;
+                view->directionalLight.position[0] = world[12];
+                view->directionalLight.position[1] = world[13];
+                view->directionalLight.position[2] = world[14];
                 view->directionalLight.entityId = entity->GetId();
 
                 const auto lightColor = light->GetColor();
@@ -355,6 +486,54 @@ private:
                 view->directionalLight.ambientColor[1] = ambient[1];
                 view->directionalLight.ambientColor[2] = ambient[2];
                 foundLight = true;
+            }
+
+            auto camera = entity->GetComponent<Scene::CameraComponent>();
+            if (camera && transform)
+            {
+                if (!hasWorld)
+                {
+                    world = GetWorldMatrix(*scene, entity->GetId());
+                    hasWorld = true;
+                }
+
+                Rendering::RenderCamera candidate{};
+                candidate.enabled = true;
+                candidate.position[0] = world[12];
+                candidate.position[1] = world[13];
+                candidate.position[2] = world[14];
+                candidate.forward[0] = -world[8];
+                candidate.forward[1] = -world[9];
+                candidate.forward[2] = -world[10];
+                Vec3Normalize(candidate.forward);
+                candidate.up[0] = world[4];
+                candidate.up[1] = world[5];
+                candidate.up[2] = world[6];
+                Vec3Normalize(candidate.up);
+
+                float fov = camera->GetVerticalFov();
+                if (fov < 1.0f) fov = 1.0f;
+                if (fov > 179.0f) fov = 179.0f;
+                candidate.verticalFov = fov;
+
+                float nearClip = std::max(0.001f, camera->GetNearClip());
+                float farClip = std::max(nearClip + 0.001f, camera->GetFarClip());
+                candidate.nearClip = nearClip;
+                candidate.farClip = farClip;
+                candidate.orthographicSize = std::max(0.01f, camera->GetOrthographicSize());
+                candidate.projectionType = static_cast<uint32_t>(camera->GetProjectionType());
+                candidate.entityId = entity->GetId();
+
+                const bool isPrimary = camera->IsPrimary();
+                if (!foundCamera || (isPrimary && !foundPrimaryCamera))
+                {
+                    view->camera = candidate;
+                    foundCamera = true;
+                    if (isPrimary)
+                    {
+                        foundPrimaryCamera = true;
+                    }
+                }
             }
 
             if (!transform || !mesh || !mesh->IsVisible())

@@ -43,6 +43,8 @@ public:
     [[nodiscard]] uint32_t GetGraphicsQueueFamilyIndex() const noexcept { return m_graphicsQueueFamilyIndex; }
     [[nodiscard]] VkQueue GetPresentQueue() const noexcept { return m_presentQueue; }
     [[nodiscard]] uint32_t GetPresentQueueFamilyIndex() const noexcept { return m_presentQueueFamilyIndex; }
+    [[nodiscard]] bool IsSamplerAnisotropyEnabled() const noexcept { return m_enabledFeatures.samplerAnisotropy == VK_TRUE; }
+    [[nodiscard]] float GetMaxSamplerAnisotropy() const noexcept { return m_physicalDeviceProperties.limits.maxSamplerAnisotropy; }
 
     struct QueueFamilyIndices
     {
@@ -81,6 +83,9 @@ private:
     uint32_t m_graphicsQueueFamilyIndex{0};
     uint32_t m_presentQueueFamilyIndex{0};
     QueueFamilyIndices m_queueFamilyIndices{};
+    VkPhysicalDeviceFeatures m_physicalDeviceFeatures{};
+    VkPhysicalDeviceProperties m_physicalDeviceProperties{};
+    VkPhysicalDeviceFeatures m_enabledFeatures{};
     VkDebugUtilsMessengerEXT m_debugMessenger{VK_NULL_HANDLE};
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(

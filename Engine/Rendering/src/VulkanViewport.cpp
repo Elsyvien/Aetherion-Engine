@@ -2552,6 +2552,14 @@ void VulkanViewport::CreateTextureResources()
     sampler.unnormalizedCoordinates = VK_FALSE;
     sampler.compareEnable = VK_FALSE;
     sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler.minLod = 0.0f;
+    sampler.maxLod = 0.0f;
+
+    if (m_context && m_context->IsSamplerAnisotropyEnabled())
+    {
+        sampler.anisotropyEnable = VK_TRUE;
+        sampler.maxAnisotropy = std::min(16.0f, m_context->GetMaxSamplerAnisotropy());
+    }
 
     if (vkCreateSampler(device, &sampler, nullptr, &m_textureSampler) != VK_SUCCESS)
     {
@@ -3575,23 +3583,60 @@ void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex, const RenderView& 
                              : 1.0f;
 
     float proj[16];
-    Mat4Perspective(proj, 60.0f * (3.14159265358979323846f / 180.0f), aspect, 0.1f, 100.0f);
-
-    // Calculate camera position based on orbit parameters
-    const float yawRad = m_cameraYawDeg * (3.14159265358979323846f / 180.0f);
-    const float pitchRad = m_cameraPitchDeg * (3.14159265358979323846f / 180.0f);
-    const float distance = std::max(0.01f, m_cameraDistance * m_cameraZoom);
-
-    // Spherical to Cartesian conversion for orbit camera
-    const float eyeX = m_cameraX + distance * std::cos(pitchRad) * std::sin(yawRad);
-    const float eyeY = m_cameraY + distance * std::sin(pitchRad);
-    const float eyeZ = m_cameraZ + distance * std::cos(pitchRad) * std::cos(yawRad);
-
     float viewMat[16];
-    const float eye[3] = {eyeX, eyeY, eyeZ};
-    const float center[3] = {m_cameraX, m_cameraY, m_cameraZ};
-    const float up[3] = {0.0f, 1.0f, 0.0f};
-    Mat4LookAt(viewMat, eye, center, up);
+    float eyeX = 0.0f;
+    float eyeY = 0.0f;
+    float eyeZ = 0.0f;
+    float nearPlane = 0.1f;
+    float farPlane = 100.0f;
+    const bool useSceneCamera = view.camera.enabled;
+    if (useSceneCamera)
+    {
+        nearPlane = view.camera.nearClip;
+        farPlane = view.camera.farClip;
+        if (view.camera.projectionType == 1)
+        {
+            const float halfHeight = std::max(0.01f, view.camera.orthographicSize) * 0.5f;
+            const float halfWidth = halfHeight * aspect;
+            Mat4Ortho(proj, -halfWidth, halfWidth, -halfHeight, halfHeight, nearPlane, farPlane);
+        }
+        else
+        {
+            const float fovRad = view.camera.verticalFov * (3.14159265358979323846f / 180.0f);
+            Mat4Perspective(proj, fovRad, aspect, nearPlane, farPlane);
+        }
+
+        eyeX = view.camera.position[0];
+        eyeY = view.camera.position[1];
+        eyeZ = view.camera.position[2];
+        const float center[3] = {
+            eyeX + view.camera.forward[0],
+            eyeY + view.camera.forward[1],
+            eyeZ + view.camera.forward[2]
+        };
+        const float up[3] = {view.camera.up[0], view.camera.up[1], view.camera.up[2]};
+        const float eye[3] = {eyeX, eyeY, eyeZ};
+        Mat4LookAt(viewMat, eye, center, up);
+    }
+    else
+    {
+        Mat4Perspective(proj, 60.0f * (3.14159265358979323846f / 180.0f), aspect, nearPlane, farPlane);
+
+        // Calculate camera position based on orbit parameters
+        const float yawRad = m_cameraYawDeg * (3.14159265358979323846f / 180.0f);
+        const float pitchRad = m_cameraPitchDeg * (3.14159265358979323846f / 180.0f);
+        const float distance = std::max(0.01f, m_cameraDistance * m_cameraZoom);
+
+        // Spherical to Cartesian conversion for orbit camera
+        eyeX = m_cameraX + distance * std::cos(pitchRad) * std::sin(yawRad);
+        eyeY = m_cameraY + distance * std::sin(pitchRad);
+        eyeZ = m_cameraZ + distance * std::cos(pitchRad) * std::cos(yawRad);
+
+        const float eye[3] = {eyeX, eyeY, eyeZ};
+        const float center[3] = {m_cameraX, m_cameraY, m_cameraZ};
+        const float up[3] = {0.0f, 1.0f, 0.0f};
+        Mat4LookAt(viewMat, eye, center, up);
+    }
 
     float viewProj[16];
     Mat4Mul(viewProj, proj, viewMat);
@@ -3632,8 +3677,6 @@ void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex, const RenderView& 
     ubo.cameraPos[2] = eyeZ;
     ubo.cameraPos[3] = 0.0f;
 
-    const float nearPlane = 0.1f;
-    const float farPlane = 100.0f;
     const float exposure = 1.0f;
     ubo.frameParams[0] = static_cast<float>(m_debugViewMode);
     ubo.frameParams[1] = exposure;

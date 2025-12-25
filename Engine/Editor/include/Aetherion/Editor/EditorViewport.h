@@ -8,6 +8,7 @@ class QMouseEvent;
 class QWheelEvent;
 class QToolButton;
 class QLabel;
+class QEvent;
 
 namespace Aetherion::Editor
 {
@@ -44,6 +45,7 @@ signals:
     void gizmoDragEnded();
 
 protected:
+    bool event(QEvent* e) override;
     void showEvent(QShowEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
     void mousePressEvent(QMouseEvent* e) override;
