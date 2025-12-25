@@ -629,7 +629,7 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds, const RenderView& view)
 
     m_timeSeconds += deltaTimeSeconds;
     const auto instances = InstancesFromView(view, m_timeSeconds);
-    UpdateSelectionBuffer(instances, view.selectedEntityId);
+    UpdateSelectionBuffer(instances, view);
     UpdateLightGizmoBuffer(view);
 
     VkDevice device = m_context->GetDevice();
@@ -3270,7 +3270,7 @@ void VulkanViewport::RecordOpaquePass(VkCommandBuffer cb, const std::vector<Draw
         vkCmdDraw(cb, m_selectionVertexCount, 1, 0, 0);
     }
 
-    if (m_linePipeline != VK_NULL_HANDLE && m_lightGizmoVertexBuffer != VK_NULL_HANDLE &&
+    if (m_overlayPipeline != VK_NULL_HANDLE && m_lightGizmoVertexBuffer != VK_NULL_HANDLE &&
         m_lightGizmoVertexCount > 0)
     {
         baseConstants.flags = kInstanceFlagUnlit;
@@ -3280,7 +3280,7 @@ void VulkanViewport::RecordOpaquePass(VkCommandBuffer cb, const std::vector<Draw
                            0,
                            sizeof(InstancePushConstants),
                            &baseConstants);
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_linePipeline);
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_overlayPipeline);
         vkCmdBindVertexBuffers(cb, 0, 1, &m_lightGizmoVertexBuffer, offsets);
         vkCmdDraw(cb, m_lightGizmoVertexCount, 1, 0, 0);
     }
@@ -3650,14 +3650,15 @@ void VulkanViewport::UpdateUniformBuffer(uint32_t frameIndex, const RenderView& 
     std::memcpy(m_uniformMapped[frameIndex], &ubo, sizeof(ubo));
 }
 
-void VulkanViewport::UpdateSelectionBuffer(const std::vector<DrawInstance>& instances, Core::EntityId selectedId)
+void VulkanViewport::UpdateSelectionBuffer(const std::vector<DrawInstance>& instances, const RenderView& view)
 {
     m_selectionVertexCount = 0;
-    if (selectedId == 0 || !m_assetRegistry || m_selectionVertexMemory == VK_NULL_HANDLE)
+    if (view.selectedEntityId == 0 || m_selectionVertexMemory == VK_NULL_HANDLE)
     {
         return;
     }
 
+    const Core::EntityId selectedId = view.selectedEntityId;
     const DrawInstance* selected = nullptr;
     for (const auto& instance : instances)
     {
@@ -3667,13 +3668,99 @@ void VulkanViewport::UpdateSelectionBuffer(const std::vector<DrawInstance>& inst
             break;
         }
     }
-    if (!selected || selected->meshId.empty())
+
+    std::array<float, 16> model{};
+    bool hasModel = false;
+    std::string meshId;
+    if (selected)
     {
-        return;
+        std::memcpy(model.data(), selected->constants.model, sizeof(selected->constants.model));
+        hasModel = true;
+        meshId = selected->meshId;
     }
 
-    const auto* meshData = m_assetRegistry->LoadMeshData(selected->meshId);
-    if (!meshData)
+    if (meshId.empty())
+    {
+        auto meshIt = view.meshes.find(selectedId);
+        if (meshIt != view.meshes.end() && meshIt->second)
+        {
+            meshId = meshIt->second->GetMeshAssetId();
+        }
+    }
+
+    if (!hasModel)
+    {
+        auto transformIt = view.transforms.find(selectedId);
+        if (transformIt == view.transforms.end() || transformIt->second == nullptr)
+        {
+            return;
+        }
+
+        std::unordered_map<Core::EntityId, std::array<float, 16>> worldCache;
+        auto modelFor = [&](auto&& self, Core::EntityId id) -> const std::array<float, 16>& {
+            auto cached = worldCache.find(id);
+            if (cached != worldCache.end())
+            {
+                return cached->second;
+            }
+
+            std::array<float, 16> identity{};
+            Mat4Identity(identity.data());
+            auto it = view.transforms.find(id);
+            if (it == view.transforms.end() || it->second == nullptr)
+            {
+                return worldCache.emplace(id, identity).first->second;
+            }
+
+            const auto* transform = it->second;
+            const float radiansX = transform->GetRotationXDegrees() * (3.14159265358979323846f / 180.0f);
+            const float radiansY = transform->GetRotationYDegrees() * (3.14159265358979323846f / 180.0f);
+            const float radiansZ = transform->GetRotationZDegrees() * (3.14159265358979323846f / 180.0f);
+
+            float t[16];
+            Mat4Translation(t, transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ());
+
+            float rx[16];
+            float ry[16];
+            float rz[16];
+            float rzy[16];
+            float r[16];
+            Mat4RotationX(rx, radiansX);
+            Mat4RotationY(ry, radiansY);
+            Mat4RotationZ(rz, radiansZ);
+            Mat4Mul(rzy, rz, ry);
+            Mat4Mul(r, rzy, rx);
+
+            float s[16];
+            Mat4Scale(s, transform->GetScaleX(), transform->GetScaleY(), transform->GetScaleZ());
+
+            float tr[16];
+            Mat4Mul(tr, t, r);
+
+            float localModel[16];
+            Mat4Mul(localModel, tr, s);
+
+            if (transform->HasParent())
+            {
+                const auto& parentModel = self(self, transform->GetParentId());
+                float world[16];
+                Mat4Mul(world, parentModel.data(), localModel);
+                std::array<float, 16> stored{};
+                std::memcpy(stored.data(), world, sizeof(world));
+                return worldCache.emplace(id, stored).first->second;
+            }
+
+            std::array<float, 16> stored{};
+            std::memcpy(stored.data(), localModel, sizeof(localModel));
+            return worldCache.emplace(id, stored).first->second;
+        };
+
+        const auto& world = modelFor(modelFor, selectedId);
+        std::memcpy(model.data(), world.data(), sizeof(world));
+        hasModel = true;
+    }
+
+    if (!hasModel)
     {
         return;
     }
@@ -3681,44 +3768,51 @@ void VulkanViewport::UpdateSelectionBuffer(const std::vector<DrawInstance>& inst
     std::vector<Vertex> vertices;
     vertices.reserve(128); // Reserved size in CreateLineBuffers
 
-    // 1. Bounding Box
-    const std::array<float, 3> minV = meshData->boundsMin;
-    const std::array<float, 3> maxV = meshData->boundsMax;
-    const std::array<std::array<float, 3>, 8> corners = {{
-        {minV[0], minV[1], minV[2]},
-        {maxV[0], minV[1], minV[2]},
-        {maxV[0], maxV[1], minV[2]},
-        {minV[0], maxV[1], minV[2]},
-        {minV[0], minV[1], maxV[2]},
-        {maxV[0], minV[1], maxV[2]},
-        {maxV[0], maxV[1], maxV[2]},
-        {minV[0], maxV[1], maxV[2]},
-    }};
-
-    std::array<std::array<float, 3>, 8> worldCorners{};
-    for (size_t i = 0; i < corners.size(); ++i)
+    if (!meshId.empty() && m_assetRegistry)
     {
-        worldCorners[i] = Mat4TransformPoint(selected->constants.model, corners[i]);
-    }
+        const auto* meshData = m_assetRegistry->LoadMeshData(meshId);
+        if (meshData)
+        {
+            // 1. Bounding Box
+            const std::array<float, 3> minV = meshData->boundsMin;
+            const std::array<float, 3> maxV = meshData->boundsMax;
+            const std::array<std::array<float, 3>, 8> corners = {{
+                {minV[0], minV[1], minV[2]},
+                {maxV[0], minV[1], minV[2]},
+                {maxV[0], maxV[1], minV[2]},
+                {minV[0], maxV[1], minV[2]},
+                {minV[0], minV[1], maxV[2]},
+                {maxV[0], minV[1], maxV[2]},
+                {maxV[0], maxV[1], maxV[2]},
+                {minV[0], maxV[1], maxV[2]},
+            }};
 
-    const std::array<std::pair<int, int>, 12> edges = {{
-        {0, 1}, {1, 2}, {2, 3}, {3, 0},
-        {4, 5}, {5, 6}, {6, 7}, {7, 4},
-        {0, 4}, {1, 5}, {2, 6}, {3, 7},
-    }};
+            std::array<std::array<float, 3>, 8> worldCorners{};
+            for (size_t i = 0; i < corners.size(); ++i)
+            {
+                worldCorners[i] = Mat4TransformPoint(model.data(), corners[i]);
+            }
 
-    const float normal[3] = {0.0f, 0.0f, 1.0f};
-    const float boxColor[4] = {1.0f, 0.85f, 0.15f, 1.0f};
-    for (const auto& edge : edges)
-    {
-        const auto& a = worldCorners[edge.first];
-        const auto& b = worldCorners[edge.second];
-        vertices.push_back(Vertex{{a[0], a[1], a[2]}, {normal[0], normal[1], normal[2]}, {boxColor[0], boxColor[1], boxColor[2], boxColor[3]}, {0.0f, 0.0f}});
-        vertices.push_back(Vertex{{b[0], b[1], b[2]}, {normal[0], normal[1], normal[2]}, {boxColor[0], boxColor[1], boxColor[2], boxColor[3]}, {0.0f, 0.0f}});
+            const std::array<std::pair<int, int>, 12> edges = {{
+                {0, 1}, {1, 2}, {2, 3}, {3, 0},
+                {4, 5}, {5, 6}, {6, 7}, {7, 4},
+                {0, 4}, {1, 5}, {2, 6}, {3, 7},
+            }};
+
+            const float normal[3] = {0.0f, 0.0f, 1.0f};
+            const float boxColor[4] = {1.0f, 0.85f, 0.15f, 1.0f};
+            for (const auto& edge : edges)
+            {
+                const auto& a = worldCorners[edge.first];
+                const auto& b = worldCorners[edge.second];
+                vertices.push_back(Vertex{{a[0], a[1], a[2]}, {normal[0], normal[1], normal[2]}, {boxColor[0], boxColor[1], boxColor[2], boxColor[3]}, {0.0f, 0.0f}});
+                vertices.push_back(Vertex{{b[0], b[1], b[2]}, {normal[0], normal[1], normal[2]}, {boxColor[0], boxColor[1], boxColor[2], boxColor[3]}, {0.0f, 0.0f}});
+            }
+        }
     }
 
     // 2. Translation Gizmo (Arrows)
-    const float origin[3] = {selected->constants.model[12], selected->constants.model[13], selected->constants.model[14]};
+    const float origin[3] = {model[12], model[13], model[14]};
     const float axisLen = 2.0f;
     const float headLen = 0.4f;
     const float headWidth = 0.1f;
@@ -3790,11 +3884,14 @@ void VulkanViewport::UpdateSelectionBuffer(const std::vector<DrawInstance>& inst
     addArrow(zDir, blue);
 
     void* data = nullptr;
-    vkMapMemory(m_context->GetDevice(), m_selectionVertexMemory, 0, sizeof(Vertex) * vertices.size(), 0, &data);
-    std::memcpy(data, vertices.data(), sizeof(Vertex) * vertices.size());
-    vkUnmapMemory(m_context->GetDevice(), m_selectionVertexMemory);
+    if (!vertices.empty())
+    {
+        vkMapMemory(m_context->GetDevice(), m_selectionVertexMemory, 0, sizeof(Vertex) * vertices.size(), 0, &data);
+        std::memcpy(data, vertices.data(), sizeof(Vertex) * vertices.size());
+        vkUnmapMemory(m_context->GetDevice(), m_selectionVertexMemory);
 
-    m_selectionVertexCount = static_cast<uint32_t>(vertices.size());
+        m_selectionVertexCount = static_cast<uint32_t>(vertices.size());
+    }
 }
 
 void VulkanViewport::UpdateLightGizmoBuffer(const RenderView& view)

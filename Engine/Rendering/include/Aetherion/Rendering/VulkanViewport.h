@@ -310,7 +310,7 @@ private:
     void RecordPostProcessPass(VkCommandBuffer cb, uint32_t imageIndex);
     void RecordOverlayPass(VkCommandBuffer cb);
     void UpdateUniformBuffer(uint32_t frameIndex, const RenderView& view);
-    void UpdateSelectionBuffer(const std::vector<DrawInstance>& instances, Core::EntityId selectedId);
+    void UpdateSelectionBuffer(const std::vector<DrawInstance>& instances, const RenderView& view);
     void UpdateLightGizmoBuffer(const RenderView& view);
     void DestroyMeshCache();
     void DestroyTextureCache();

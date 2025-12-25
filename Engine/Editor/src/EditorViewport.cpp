@@ -36,6 +36,7 @@ EditorViewport::EditorViewport(QWidget* parent)
     m_surface->setAttribute(Qt::WA_PaintOnScreen, true);
     m_surface->setAttribute(Qt::WA_OpaquePaintEvent, true);
     m_surface->setAttribute(Qt::WA_NoSystemBackground, true);
+    m_surface->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_surface->setAutoFillBackground(false);
     m_surface->setMouseTracking(true);
     

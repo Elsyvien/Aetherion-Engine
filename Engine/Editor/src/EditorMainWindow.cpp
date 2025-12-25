@@ -444,6 +444,10 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     m_viewport = new EditorViewport(centerSplit);
     m_viewport->setFocusPolicy(Qt::StrongFocus);
     m_viewport->installEventFilter(this);
+    if (m_viewport->surfaceWidget())
+    {
+        m_viewport->surfaceWidget()->installEventFilter(this);
+    }
     centerSplit->addWidget(m_viewport);
 
     m_renderTimer = new QTimer(this);
@@ -653,83 +657,52 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
 
     connect(m_viewport, &EditorViewport::gizmoDrag, this, [this](float dx, float dy) {
         if (!m_selection || !m_selection->GetSelectedEntity()) return;
-        
-        const float translateSpeed = 0.01f * (m_viewport ? m_viewport->getCameraZoom() : 1.0f);
+
         const float rotateSpeed = 0.5f;
         const float scaleSpeed = 0.01f;
-        
+
         if (m_gizmoMode == GizmoMode::Translate)
         {
-            if (m_activeGizmoAxis != GizmoAxis::None)
+            if (m_activeGizmoAxis == GizmoAxis::None)
             {
-                auto entity = m_selection->GetSelectedEntity();
-                auto transform = entity->GetComponent<Scene::TransformComponent>();
-                if (transform)
-                {
-                    Vec3 origin = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
-                    
-                    QPoint globalPos = QCursor::pos();
-                    QPoint localPos = m_viewport->surfaceWidget()->mapFromGlobal(globalPos);
-
-                    Vec3 rayOrigin = GetCameraEye(m_viewport);
-                    Vec3 rayDir = GetCameraRayDir(m_viewport, localPos.x(), localPos.y(), m_viewport->width(), m_viewport->height());
-
-                    Vec3 axisDir = {0,0,0};
-                    if (m_activeGizmoAxis == GizmoAxis::X) axisDir = {1,0,0};
-                    else if (m_activeGizmoAxis == GizmoAxis::Y) axisDir = {0,1,0};
-                    else if (m_activeGizmoAxis == GizmoAxis::Z) axisDir = {0,0,1};
-
-                    float tCurr = ClosestPointLineLine(origin, axisDir, rayOrigin, rayDir);
-                    
-                    Vec3 prevRayDir = GetCameraRayDir(m_viewport, localPos.x() - static_cast<int>(dx), localPos.y() - static_cast<int>(dy), m_viewport->width(), m_viewport->height());
-                    float tPrev = ClosestPointLineLine(origin, axisDir, rayOrigin, prevRayDir);
-
-                    float delta = tCurr - tPrev;
-                    
-                    if (m_interactiveTransformActive)
-                    {
-                        if (m_activeGizmoAxis == GizmoAxis::X) UpdateInteractiveTransformTarget(delta, 0, 0);
-                        else if (m_activeGizmoAxis == GizmoAxis::Y) UpdateInteractiveTransformTarget(0, delta, 0);
-                        else if (m_activeGizmoAxis == GizmoAxis::Z) UpdateInteractiveTransformTarget(0, 0, delta);
-                    }
-                    else
-                    {
-                        if (m_activeGizmoAxis == GizmoAxis::X) ApplyTranslationDelta(delta, 0, 0);
-                        else if (m_activeGizmoAxis == GizmoAxis::Y) ApplyTranslationDelta(0, delta, 0);
-                        else if (m_activeGizmoAxis == GizmoAxis::Z) ApplyTranslationDelta(0, 0, delta);
-                    }
-                }
+                return;
             }
-            else
+
+            auto entity = m_selection->GetSelectedEntity();
+            auto transform = entity->GetComponent<Scene::TransformComponent>();
+            if (transform)
             {
-                // Screen-space translation
-                const float yawRad = m_viewport ? m_viewport->getCameraRotationY() * (3.14159265f / 180.0f) : 0.0f;
-                const float pitchRad = m_viewport ? m_viewport->getCameraRotationX() * (3.14159265f / 180.0f) : 0.0f;
-                
-                const float sinY = std::sin(yawRad);
-                const float cosY = std::cos(yawRad);
-                const float sinP = std::sin(pitchRad);
-                const float cosP = std::cos(pitchRad);
+                Vec3 origin = {transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ()};
 
-                const float rightX = cosY;
-                const float rightY = 0.0f;
-                const float rightZ = -sinY;
+                QPoint globalPos = QCursor::pos();
+                QPoint localPos = m_viewport->surfaceWidget()->mapFromGlobal(globalPos);
 
-                const float upX = sinY * sinP;
-                const float upY = cosP;
-                const float upZ = cosY * sinP;
+                Vec3 rayOrigin = GetCameraEye(m_viewport);
+                Vec3 rayDir = GetCameraRayDir(m_viewport, localPos.x(), localPos.y(), m_viewport->width(), m_viewport->height());
 
-                const float tx = (rightX * dx - upX * dy) * translateSpeed;
-                const float ty = (rightY * dx - upY * dy) * translateSpeed;
-                const float tz = (rightZ * dx - upZ * dy) * translateSpeed;
+                Vec3 axisDir = {0,0,0};
+                if (m_activeGizmoAxis == GizmoAxis::X) axisDir = {1,0,0};
+                else if (m_activeGizmoAxis == GizmoAxis::Y) axisDir = {0,1,0};
+                else if (m_activeGizmoAxis == GizmoAxis::Z) axisDir = {0,0,1};
+
+                float tCurr = ClosestPointLineLine(origin, axisDir, rayOrigin, rayDir);
+
+                Vec3 prevRayDir = GetCameraRayDir(m_viewport, localPos.x() - static_cast<int>(dx), localPos.y() - static_cast<int>(dy), m_viewport->width(), m_viewport->height());
+                float tPrev = ClosestPointLineLine(origin, axisDir, rayOrigin, prevRayDir);
+
+                float delta = tCurr - tPrev;
 
                 if (m_interactiveTransformActive)
                 {
-                    UpdateInteractiveTransformTarget(tx, ty, tz);
+                    if (m_activeGizmoAxis == GizmoAxis::X) UpdateInteractiveTransformTarget(delta, 0, 0);
+                    else if (m_activeGizmoAxis == GizmoAxis::Y) UpdateInteractiveTransformTarget(0, delta, 0);
+                    else if (m_activeGizmoAxis == GizmoAxis::Z) UpdateInteractiveTransformTarget(0, 0, delta);
                 }
                 else
                 {
-                    ApplyTranslationDelta(tx, ty, tz);
+                    if (m_activeGizmoAxis == GizmoAxis::X) ApplyTranslationDelta(delta, 0, 0);
+                    else if (m_activeGizmoAxis == GizmoAxis::Y) ApplyTranslationDelta(0, delta, 0);
+                    else if (m_activeGizmoAxis == GizmoAxis::Z) ApplyTranslationDelta(0, 0, delta);
                 }
             }
         }
@@ -758,6 +731,10 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
     });
 
     connect(m_viewport, &EditorViewport::gizmoDragStarted, this, [this]() {
+        if (m_gizmoMode != GizmoMode::Translate || m_activeGizmoAxis == GizmoAxis::None)
+        {
+            return;
+        }
         BeginInteractiveTransform();
     });
 

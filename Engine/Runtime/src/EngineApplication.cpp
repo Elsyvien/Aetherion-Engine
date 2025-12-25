@@ -265,6 +265,8 @@ private:
             m_context->SetRenderView(view);
         }
 
+        auto registry = m_context ? m_context->GetAssetRegistry() : nullptr;
+
         view->instances.clear();
         view->batches.clear();
         view->transforms.clear();
@@ -365,7 +367,41 @@ private:
             instance.transform = transform.get();
             instance.mesh = mesh.get();
             instance.meshAssetId = mesh->GetMeshAssetId();
+            if (registry && !instance.meshAssetId.empty())
+            {
+                if (const auto* entry = registry->FindEntry(instance.meshAssetId))
+                {
+                    instance.meshAssetId = entry->id;
+                }
+            }
+
             instance.albedoTextureId = mesh->GetAlbedoTextureId();
+            if (registry && !instance.albedoTextureId.empty())
+            {
+                if (const auto* entry = registry->FindEntry(instance.albedoTextureId))
+                {
+                    instance.albedoTextureId = entry->id;
+                }
+            }
+            if (instance.albedoTextureId.empty() && registry && !instance.meshAssetId.empty())
+            {
+                if (const auto* cachedMesh = registry->GetMesh(instance.meshAssetId))
+                {
+                    for (const auto& materialId : cachedMesh->materialIds)
+                    {
+                        if (const auto* material = registry->GetMaterial(materialId);
+                            material && !material->albedoTextureId.empty())
+                        {
+                            instance.albedoTextureId = material->albedoTextureId;
+                            break;
+                        }
+                    }
+                    if (instance.albedoTextureId.empty() && !cachedMesh->textureIds.empty())
+                    {
+                        instance.albedoTextureId = cachedMesh->textureIds.front();
+                    }
+                }
+            }
             instance.hasModel = false;
             view->instances.push_back(instance);
 

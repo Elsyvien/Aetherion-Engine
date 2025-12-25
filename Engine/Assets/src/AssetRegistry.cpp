@@ -943,16 +943,39 @@ const std::filesystem::path& AssetRegistry::GetRootPath() const noexcept
 const AssetRegistry::AssetEntry* AssetRegistry::FindEntry(const std::string& assetId) const noexcept
 {
     auto it = m_entryLookup.find(assetId);
-    if (it == m_entryLookup.end())
+    if (it != m_entryLookup.end())
     {
-        return nullptr;
+        const size_t index = it->second;
+        if (index < m_entries.size())
+        {
+            return &m_entries[index];
+        }
     }
-    const size_t index = it->second;
-    if (index >= m_entries.size())
+
+    if (!assetId.empty() && !m_rootPath.empty())
     {
-        return nullptr;
+        std::filesystem::path assetPath(assetId);
+        if (!assetPath.is_absolute())
+        {
+            assetPath = m_rootPath / assetPath;
+        }
+        const std::string key = MakePathKey(assetPath, m_rootPath);
+        auto pathIt = m_pathToId.find(key);
+        if (pathIt != m_pathToId.end())
+        {
+            auto entryIt = m_entryLookup.find(pathIt->second);
+            if (entryIt != m_entryLookup.end())
+            {
+                const size_t index = entryIt->second;
+                if (index < m_entries.size())
+                {
+                    return &m_entries[index];
+                }
+            }
+        }
     }
-    return &m_entries[index];
+
+    return nullptr;
 }
 
 const AssetRegistry::MeshData* AssetRegistry::GetMeshData(const std::string& assetId) const noexcept
