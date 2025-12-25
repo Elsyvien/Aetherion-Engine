@@ -1,40 +1,1606 @@
 {
-  "name": "Main Scene",
+  "name": "Comprehensive Test Scene",
   "entities": [
     {
       "id": 1,
-      "name": "Viewport Quad",
+      "name": "Ground Plane",
       "components": {
-        "Transform": {
-          "position": [0, 0, 0],
-          "rotation": [0, 0, 0],
-          "scale": [1, 1, 1],
-          "parent": 0
-        },
         "MeshRenderer": {
           "visible": true,
-          "color": [1, 1, 1],
-          "rotationSpeed": 15,
+          "color": [0.55, 0.58, 0.65],
+          "rotationSpeed": 0.0,
           "albedoTexture": "",
-          "meshId": ""
+          "meshId": "meshes/plane.obj"
+        },
+        "Transform": {
+          "position": [0.0, 0.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [30.0, 1.0, 30.0],
+          "parent": 0
         }
       }
     },
     {
       "id": 2,
-      "name": "Directional Light",
+      "name": "Center Spinning Cube",
       "components": {
-        "Transform": {
-          "position": [0, 0, 0],
-          "rotation": [-55, 215, 0],
-          "scale": [1, 1, 1],
-          "parent": 0
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.9, 0.85, 1.0],
+          "rotationSpeed": 25.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
         },
+        "Transform": {
+          "position": [0.0, 1.5, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.5, 1.5, 1.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Floating Octahedron ",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.3, 0.8, 0.95],
+          "rotationSpeed": 40.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [0.0, 4.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.8, 0.8, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 4,
+      "name": "Red Pyramid",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.3, 0.25],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [4.0, 0.0, 0.0],
+          "rotation": [0.0, 45.0, 0.0],
+          "scale": [1.2, 1.5, 1.2],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 5,
+      "name": "Blue Cylinder",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.2, 0.4, 0.95],
+          "rotationSpeed": 15.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "Transform": {
+          "position": [-4.0, 0.5, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 6,
+      "name": "Green Cone",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.2, 0.9, 0.35],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [0.0, 0.5, 4.0],
+          "rotation": [0.0, 30.0, 0.0],
+          "scale": [1.0, 1.2, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 7,
+      "name": "Orange Wedge",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [1.0, 0.6, 0.2],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/wedge.obj"
+        },
+        "Transform": {
+          "position": [0.0, 0.0, -4.0],
+          "rotation": [0.0, -45.0, 0.0],
+          "scale": [1.3, 1.0, 1.3],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 8,
+      "name": "Purple Tri Prism",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.7, 0.3, 0.95],
+          "rotationSpeed": 20.0,
+          "albedoTexture": "",
+          "meshId": "meshes/tri_prism.obj"
+        },
+        "Transform": {
+          "position": [3.0, 0.5, 3.0],
+          "rotation": [0.0, 15.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 9,
+      "name": "Yellow Cube",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [1.0, 0.9, 0.2],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [-3.0, 0.5, 3.0],
+          "rotation": [0.0, 60.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 10,
+      "name": "Cyan Octahedron",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.1, 0.95, 0.9],
+          "rotationSpeed": 35.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [3.0, 0.6, -3.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.9, 0.9, 0.9],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 11,
+      "name": "Pink Pyramid",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [1.0, 0.4, 0.7],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [-3.0, 0.0, -3.0],
+          "rotation": [0.0, 75.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 12,
+      "name": "Tall White Pillar 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.95, 0.98],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [-8.0, 2.0, -8.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.5, 4.0, 0.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 13,
+      "name": "Tall White Pillar 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.95, 0.98],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [8.0, 2.0, -8.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.5, 4.0, 0.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 14,
+      "name": "Tall White Pillar 3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.95, 0.98],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [-8.0, 2.0, 8.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.5, 4.0, 0.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 15,
+      "name": "Tall White Pillar 4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.95, 0.98],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [8.0, 2.0, 8.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.5, 4.0, 0.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 16,
+      "name": "Spinning Ring Cube 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.8, 0.2, 0.2],
+          "rotationSpeed": 45.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.gltf"
+        },
+        "Transform": {
+          "position": [6.0, 1.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.7, 0.7, 0.7],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 17,
+      "name": "Spinning Ring Cube 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.2, 0.8, 0.2],
+          "rotationSpeed": 45.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.gltf"
+        },
+        "Transform": {
+          "position": [4.2, 1.0, 4.2],
+          "rotation": [0.0, 45.0, 0.0],
+          "scale": [0.7, 0.7, 0.7],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 18,
+      "name": "Spinning Ring Cube 3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.2, 0.2, 0.8],
+          "rotationSpeed": 45.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.gltf"
+        },
+        "Transform": {
+          "position": [0.0, 1.0, 6.0],
+          "rotation": [0.0, 90.0, 0.0],
+          "scale": [0.7, 0.7, 0.7],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 19,
+      "name": "Spinning Ring Cube 4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.8, 0.8, 0.2],
+          "rotationSpeed": 45.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.gltf"
+        },
+        "Transform": {
+          "position": [-4.2, 1.0, 4.2],
+          "rotation": [0.0, 135.0, 0.0],
+          "scale": [0.7, 0.7, 0.7],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 20,
+      "name": "Spinning Ring Cube 5",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.8, 0.2, 0.8],
+          "rotationSpeed": 45.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.gltf"
+        },
+        "Transform": {
+          "position": [-6.0, 1.0, 0.0],
+          "rotation": [0.0, 180.0, 0.0],
+          "scale": [0.7, 0.7, 0.7],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 21,
+      "name": "Spinning Ring Cube 6",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.2, 0.8, 0.8],
+          "rotationSpeed": 45.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.gltf"
+        },
+        "Transform": {
+          "position": [-4.2, 1.0, -4.2],
+          "rotation": [0.0, 225.0, 0.0],
+          "scale": [0.7, 0.7, 0.7],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 22,
+      "name": "Spinning Ring Cube 7",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [1.0, 0.5, 0.0],
+          "rotationSpeed": 45.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.gltf"
+        },
+        "Transform": {
+          "position": [0.0, 1.0, -6.0],
+          "rotation": [0.0, 270.0, 0.0],
+          "scale": [0.7, 0.7, 0.7],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 23,
+      "name": "Spinning Ring Cube 8",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.5, 1.0, 0.0],
+          "rotationSpeed": 45.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.gltf"
+        },
+        "Transform": {
+          "position": [4.2, 1.0, -4.2],
+          "rotation": [0.0, 315.0, 0.0],
+          "scale": [0.7, 0.7, 0.7],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 24,
+      "name": "Outer Cone Ring 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.5, 0.5],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [10.0, 0.5, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.8, 1.0, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 25,
+      "name": "Outer Cone Ring 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.5, 0.95, 0.5],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [7.07, 0.5, 7.07],
+          "rotation": [0.0, 45.0, 0.0],
+          "scale": [0.8, 1.0, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 26,
+      "name": "Outer Cone Ring 3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.5, 0.5, 0.95],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [0.0, 0.5, 10.0],
+          "rotation": [0.0, 90.0, 0.0],
+          "scale": [0.8, 1.0, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 27,
+      "name": "Outer Cone Ring 4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.95, 0.5],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [-7.07, 0.5, 7.07],
+          "rotation": [0.0, 135.0, 0.0],
+          "scale": [0.8, 1.0, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 28,
+      "name": "Outer Cone Ring 5",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.5, 0.95],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [-10.0, 0.5, 0.0],
+          "rotation": [0.0, 180.0, 0.0],
+          "scale": [0.8, 1.0, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 29,
+      "name": "Outer Cone Ring 6",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.5, 0.95, 0.95],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [-7.07, 0.5, -7.07],
+          "rotation": [0.0, 225.0, 0.0],
+          "scale": [0.8, 1.0, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 30,
+      "name": "Outer Cone Ring 7",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [1.0, 0.7, 0.4],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [0.0, 0.5, -10.0],
+          "rotation": [0.0, 270.0, 0.0],
+          "scale": [0.8, 1.0, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 31,
+      "name": "Outer Cone Ring 8",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.7, 1.0, 0.4],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [7.07, 0.5, -7.07],
+          "rotation": [0.0, 315.0, 0.0],
+          "scale": [0.8, 1.0, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 32,
+      "name": "Cylinder Platform 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.6, 0.6, 0.65],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "Transform": {
+          "position": [-12.0, 0.15, -12.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.5, 0.3, 1.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 33,
+      "name": "Cylinder Platform 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.6, 0.6, 0.65],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "Transform": {
+          "position": [12.0, 0.15, -12.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.5, 0.3, 1.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 34,
+      "name": "Cylinder Platform 3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.6, 0.6, 0.65],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "Transform": {
+          "position": [-12.0, 0.15, 12.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.5, 0.3, 1.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 35,
+      "name": "Cylinder Platform 4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.6, 0.6, 0.65],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "Transform": {
+          "position": [12.0, 0.15, 12.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.5, 0.3, 1.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 36,
+      "name": "Platform Spinning Octa 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [1.0, 0.2, 0.4],
+          "rotationSpeed": 60.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [-12.0, 1.0, -12.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.6, 0.6, 0.6],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 37,
+      "name": "Platform Spinning Octa 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.4, 1.0, 0.2],
+          "rotationSpeed": 60.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [12.0, 1.0, -12.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.6, 0.6, 0.6],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 38,
+      "name": "Platform Spinning Octa 3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.2, 0.4, 1.0],
+          "rotationSpeed": 60.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [-12.0, 1.0, 12.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.6, 0.6, 0.6],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 39,
+      "name": "Platform Spinning Octa 4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [1.0, 0.8, 0.2],
+          "rotationSpeed": 60.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [12.0, 1.0, 12.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.6, 0.6, 0.6],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 40,
+      "name": "Tri Prism Row 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.9, 0.3, 0.3],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/tri_prism.obj"
+        },
+        "Transform": {
+          "position": [-6.0, 0.5, 6.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 41,
+      "name": "Tri Prism Row 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.3, 0.9, 0.3],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/tri_prism.obj"
+        },
+        "Transform": {
+          "position": [-3.0, 0.5, 6.0],
+          "rotation": [0.0, 30.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 42,
+      "name": "Tri Prism Row 3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.3, 0.3, 0.9],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/tri_prism.obj"
+        },
+        "Transform": {
+          "position": [0.0, 0.5, 6.0],
+          "rotation": [0.0, 60.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 43,
+      "name": "Tri Prism Row 4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.9, 0.9, 0.3],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/tri_prism.obj"
+        },
+        "Transform": {
+          "position": [3.0, 0.5, 6.0],
+          "rotation": [0.0, 90.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 44,
+      "name": "Tri Prism Row 5",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.9, 0.3, 0.9],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/tri_prism.obj"
+        },
+        "Transform": {
+          "position": [6.0, 0.5, 6.0],
+          "rotation": [0.0, 120.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 45,
+      "name": "Wedge Row 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.85, 0.55, 0.3],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/wedge.obj"
+        },
+        "Transform": {
+          "position": [-6.0, 0.0, -6.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 46,
+      "name": "Wedge Row 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.55, 0.85, 0.3],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/wedge.obj"
+        },
+        "Transform": {
+          "position": [-3.0, 0.0, -6.0],
+          "rotation": [0.0, 45.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 47,
+      "name": "Wedge Row 3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.3, 0.55, 0.85],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/wedge.obj"
+        },
+        "Transform": {
+          "position": [0.0, 0.0, -6.0],
+          "rotation": [0.0, 90.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 48,
+      "name": "Wedge Row 4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.85, 0.3, 0.55],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/wedge.obj"
+        },
+        "Transform": {
+          "position": [3.0, 0.0, -6.0],
+          "rotation": [0.0, 135.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 49,
+      "name": "Wedge Row 5",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.3, 0.85, 0.85],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/wedge.obj"
+        },
+        "Transform": {
+          "position": [6.0, 0.0, -6.0],
+          "rotation": [0.0, 180.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 50,
+      "name": "Fast Spinning Pyramid 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [1.0, 0.1, 0.1],
+          "rotationSpeed": 80.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [9.0, 0.0, 5.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.8, 1.2, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 51,
+      "name": "Fast Spinning Pyramid 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.1, 1.0, 0.1],
+          "rotationSpeed": 80.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [-9.0, 0.0, 5.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.8, 1.2, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 52,
+      "name": "Fast Spinning Pyramid 3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.1, 0.1, 1.0],
+          "rotationSpeed": 80.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [9.0, 0.0, -5.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.8, 1.2, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 53,
+      "name": "Fast Spinning Pyramid 4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [1.0, 1.0, 0.1],
+          "rotationSpeed": 80.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [-9.0, 0.0, -5.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.8, 1.2, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 54,
+      "name": "Wall Section 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.4, 0.42, 0.48],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [0.0, 1.5, -14.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [20.0, 3.0, 0.3],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 55,
+      "name": "Wall Section 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.4, 0.42, 0.48],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [-14.0, 1.5, 0.0],
+          "rotation": [0.0, 90.0, 0.0],
+          "scale": [20.0, 3.0, 0.3],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 56,
+      "name": "Large Cylinder Tower",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.7, 0.75, 0.82],
+          "rotationSpeed": 5.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "Transform": {
+          "position": [-10.0, 2.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.2, 4.0, 1.2],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 57,
+      "name": "Cylinder Tower Cap",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.6, 0.2],
+          "rotationSpeed": 30.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [-10.0, 4.5, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.5, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 58,
+      "name": "Large Cube Platform",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.5, 0.52, 0.58],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [10.0, 0.25, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [3.0, 0.5, 3.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 59,
+      "name": "Platform Display Octa",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.1, 0.9, 0.6],
+          "rotationSpeed": 50.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [10.0, 1.5, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 60,
+      "name": "Scattered Cube 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.8, 0.4, 0.4],
+          "rotationSpeed": 10.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [5.0, 0.4, 9.0],
+          "rotation": [0.0, 25.0, 0.0],
+          "scale": [0.8, 0.8, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 61,
+      "name": "Scattered Cube 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.4, 0.8, 0.4],
+          "rotationSpeed": 15.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [-5.0, 0.4, 9.0],
+          "rotation": [0.0, 50.0, 0.0],
+          "scale": [0.8, 0.8, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 62,
+      "name": "Scattered Cube 3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.4, 0.4, 0.8],
+          "rotationSpeed": 20.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [0.0, 0.4, 10.0],
+          "rotation": [0.0, 75.0, 0.0],
+          "scale": [0.8, 0.8, 0.8],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 63,
+      "name": "Mini Pyramid Cluster 1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.75, 0.5],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [7.0, 0.0, 3.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.5, 0.5, 0.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 64,
+      "name": "Mini Pyramid Cluster 2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.75, 0.95, 0.5],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [7.5, 0.0, 2.5],
+          "rotation": [0.0, 30.0, 0.0],
+          "scale": [0.4, 0.4, 0.4],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 65,
+      "name": "Mini Pyramid Cluster 3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.5, 0.75, 0.95],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [6.5, 0.0, 2.3],
+          "rotation": [0.0, 60.0, 0.0],
+          "scale": [0.35, 0.35, 0.35],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 66,
+      "name": "Mini Pyramid Cluster 4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.95, 0.5, 0.75],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [-7.0, 0.0, 3.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [0.5, 0.5, 0.5],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 67,
+      "name": "Mini Pyramid Cluster 5",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [0.5, 0.95, 0.75],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [-7.5, 0.0, 2.5],
+          "rotation": [0.0, 30.0, 0.0],
+          "scale": [0.4, 0.4, 0.4],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 68,
+      "name": "Main Camera",
+      "components": {
+        "Camera": {
+          "projectionType": 0,
+          "verticalFov": 60.0,
+          "nearClip": 0.1,
+          "farClip": 300.0,
+          "orthographicSize": 10.0,
+          "isPrimary": true
+        },
+        "Transform": {
+          "position": [0.0, 8.0, 18.0],
+          "rotation": [-15.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 69,
+      "name": "Top Down Camera",
+      "components": {
+        "Camera": {
+          "projectionType": 1,
+          "verticalFov": 60.0,
+          "nearClip": 0.1,
+          "farClip": 300.0,
+          "orthographicSize": 20.0,
+          "isPrimary": false
+        },
+        "Transform": {
+          "position": [0.0, 25.0, 0.0],
+          "rotation": [-90.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 70,
+      "name": "Side View Camera",
+      "components": {
+        "Camera": {
+          "projectionType": 0,
+          "verticalFov": 50.0,
+          "nearClip": 0.1,
+          "farClip": 300.0,
+          "orthographicSize": 10.0,
+          "isPrimary": false
+        },
+        "Transform": {
+          "position": [20.0, 5.0, 0.0],
+          "rotation": [0.0, 90.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 71,
+      "name": "Corner Camera",
+      "components": {
+        "Camera": {
+          "projectionType": 0,
+          "verticalFov": 55.0,
+          "nearClip": 0.1,
+          "farClip": 300.0,
+          "orthographicSize": 10.0,
+          "isPrimary": false
+        },
+        "Transform": {
+          "position": [15.0, 10.0, 15.0],
+          "rotation": [-25.0, 135.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 72,
+      "name": "Close Up Camera",
+      "components": {
+        "Camera": {
+          "projectionType": 0,
+          "verticalFov": 40.0,
+          "nearClip": 0.1,
+          "farClip": 100.0,
+          "orthographicSize": 5.0,
+          "isPrimary": false
+        },
+        "Transform": {
+          "position": [3.0, 2.0, 5.0],
+          "rotation": [-10.0, 10.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 73,
+      "name": "Sun Light",
+      "components": {
         "Light": {
           "lightEnabled": true,
-          "lightColor": [1, 1, 1],
-          "lightIntensity": 1,
-          "ambientColor": [0.18, 0.18, 0.2]
+          "lightType": 0,
+          "lightColor": [1.0, 0.95, 0.9],
+          "lightIntensity": 1.0,
+          "lightRange": 100.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": true,
+          "ambientColor": [0.08, 0.08, 0.1]
+        },
+        "Transform": {
+          "position": [0.0, 0.0, 0.0],
+          "rotation": [-50.0, 30.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 74,
+      "name": "Red Point Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 1,
+          "lightColor": [1.0, 0.15, 0.1],
+          "lightIntensity": 3.5,
+          "lightRange": 8.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": false,
+          "ambientColor": [0.0, 0.0, 0.0]
+        },
+        "Transform": {
+          "position": [-5.0, 2.0, 5.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 75,
+      "name": "Blue Point Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 1,
+          "lightColor": [0.1, 0.3, 1.0],
+          "lightIntensity": 3.5,
+          "lightRange": 8.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": false,
+          "ambientColor": [0.0, 0.0, 0.0]
+        },
+        "Transform": {
+          "position": [5.0, 2.0, 5.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 76,
+      "name": "Green Point Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 1,
+          "lightColor": [0.1, 1.0, 0.3],
+          "lightIntensity": 3.0,
+          "lightRange": 7.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": false,
+          "ambientColor": [0.0, 0.0, 0.0]
+        },
+        "Transform": {
+          "position": [0.0, 2.0, -5.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 77,
+      "name": "Purple Spot Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 2,
+          "lightColor": [0.8, 0.2, 1.0],
+          "lightIntensity": 4.0,
+          "lightRange": 12.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 35.0,
+          "lightPrimary": false,
+          "ambientColor": [0.0, 0.0, 0.0]
+        },
+        "Transform": {
+          "position": [-8.0, 5.0, 0.0],
+          "rotation": [-45.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 78,
+      "name": "Orange Spot Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 2,
+          "lightColor": [1.0, 0.5, 0.1],
+          "lightIntensity": 4.0,
+          "lightRange": 12.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 35.0,
+          "lightPrimary": false,
+          "ambientColor": [0.0, 0.0, 0.0]
+        },
+        "Transform": {
+          "position": [8.0, 5.0, 0.0],
+          "rotation": [-45.0, 180.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 79,
+      "name": "Cyan Point Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 1,
+          "lightColor": [0.1, 0.95, 0.95],
+          "lightIntensity": 3.0,
+          "lightRange": 7.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": false,
+          "ambientColor": [0.0, 0.0, 0.0]
+        },
+        "Transform": {
+          "position": [-10.0, 1.5, -8.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 80,
+      "name": "Yellow Point Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 1,
+          "lightColor": [1.0, 0.95, 0.2],
+          "lightIntensity": 3.0,
+          "lightRange": 7.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": false,
+          "ambientColor": [0.0, 0.0, 0.0]
+        },
+        "Transform": {
+          "position": [10.0, 1.5, -8.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 81,
+      "name": "Pink Spot Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 2,
+          "lightColor": [1.0, 0.4, 0.6],
+          "lightIntensity": 3.5,
+          "lightRange": 10.0,
+          "innerConeAngle": 12.0,
+          "outerConeAngle": 28.0,
+          "lightPrimary": false,
+          "ambientColor": [0.0, 0.0, 0.0]
+        },
+        "Transform": {
+          "position": [0.0, 6.0, 8.0],
+          "rotation": [-50.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 82,
+      "name": "White Fill Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 1,
+          "lightColor": [0.9, 0.9, 1.0],
+          "lightIntensity": 2.0,
+          "lightRange": 10.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": false,
+          "ambientColor": [0.0, 0.0, 0.0]
+        },
+        "Transform": {
+          "position": [0.0, 3.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0],
+          "parent": 0
         }
       }
     }

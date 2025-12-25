@@ -683,7 +683,7 @@ void EditorInspectorPanel::RebuildUi()
         };
         updateLightVisibility();
 
-        auto updateLight = [this, light]() {
+        auto updateLight = [this, light, updateLightVisibility]() {
             if (m_buildingUi || !m_entity)
             {
                 return;

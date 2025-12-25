@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include "Aetherion/Core/Types.h"
 
@@ -47,6 +48,7 @@ private:
     std::string m_name;
     Runtime::EngineContext* m_context = nullptr;
     std::vector<std::shared_ptr<Entity>> m_entities;
+    std::unordered_map<Core::EntityId, Entity*> m_entityMap;
     std::vector<std::shared_ptr<System>> m_systems;
 };
 } // namespace Aetherion::Scene

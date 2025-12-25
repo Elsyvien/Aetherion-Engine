@@ -9,6 +9,7 @@
 #include <QStyle>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <array>
 
 #include "Aetherion/Editor/EditorSelection.h"
 #include "Aetherion/Scene/Entity.h"
@@ -323,15 +324,13 @@ Aetherion::Core::EntityId EditorHierarchyPanel::GetSelectedEntityId() const
 void EditorHierarchyPanel::setupContextMenu()
 {
     m_contextMenu = new QMenu(this);
-    
-    auto* createEmptyAction = m_contextMenu->addAction(tr("Create Empty"));
-    createEmptyAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N));
-    connect(createEmptyAction, &QAction::triggered, this, [this]() {
-        emit createEmptyEntityAtRootRequested();
-    });
-    
-    auto* createChildAction = m_contextMenu->addAction(tr("Create Empty Child"));
-    connect(createChildAction, &QAction::triggered, this, [this]() {
+
+    auto* addMenu = m_contextMenu->addMenu(tr("Add"));
+
+    auto* addEmptyAction = addMenu->addAction(tr("Empty"));
+    addEmptyAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N));
+    addEmptyAction->setProperty("requiresSelection", false);
+    connect(addEmptyAction, &QAction::triggered, this, [this]() {
         Core::EntityId id = GetSelectedEntityId();
         if (id != 0)
         {
@@ -343,22 +342,54 @@ void EditorHierarchyPanel::setupContextMenu()
         }
     });
 
-    auto* createLightAction = m_contextMenu->addAction(tr("Create Directional Light"));
-    connect(createLightAction, &QAction::triggered, this, [this]() {
+    auto* newObjectMenu = addMenu->addMenu(tr("New Object"));
+    struct MeshEntry
+    {
+        const char* label;
+        const char* assetId;
+    };
+    const std::array<MeshEntry, 9> meshEntries = {{
+        {"Cube", "meshes/cube.obj"},
+        {"Textured Cube", "meshes/cube.gltf"},
+        {"Pyramid", "meshes/pyramid.obj"},
+        {"Plane", "meshes/plane.obj"},
+        {"Cone", "meshes/cone.obj"},
+        {"Cylinder", "meshes/cylinder.obj"},
+        {"Tri Prism", "meshes/tri_prism.obj"},
+        {"Wedge", "meshes/wedge.obj"},
+        {"Octahedron", "meshes/octahedron.obj"},
+    }};
+    for (const auto& entry : meshEntries)
+    {
+        auto* action = newObjectMenu->addAction(tr(entry.label));
+        action->setProperty("requiresSelection", false);
+        connect(action, &QAction::triggered, this, [this, entry]() {
+            const Core::EntityId parentId = GetSelectedEntityId();
+            emit createMeshEntityRequested(parentId,
+                                           QString::fromLatin1(entry.assetId),
+                                           tr(entry.label));
+        });
+    }
+
+    auto* addLightAction = addMenu->addAction(tr("Directional Light"));
+    addLightAction->setProperty("requiresSelection", false);
+    connect(addLightAction, &QAction::triggered, this, [this]() {
         Core::EntityId id = GetSelectedEntityId();
         emit createLightEntityRequested(id);
     });
 
-    auto* createCameraAction = m_contextMenu->addAction(tr("Create Camera"));
-    connect(createCameraAction, &QAction::triggered, this, [this]() {
+    auto* addCameraAction = addMenu->addAction(tr("Camera"));
+    addCameraAction->setProperty("requiresSelection", false);
+    connect(addCameraAction, &QAction::triggered, this, [this]() {
         Core::EntityId id = GetSelectedEntityId();
         emit createCameraEntityRequested(id);
     });
 
     m_contextMenu->addSeparator();
-    
+
     auto* duplicateAction = m_contextMenu->addAction(tr("Duplicate"));
     duplicateAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
+    duplicateAction->setProperty("requiresSelection", true);
     connect(duplicateAction, &QAction::triggered, this, [this]() {
         Core::EntityId id = GetSelectedEntityId();
         if (id != 0)
@@ -366,9 +397,10 @@ void EditorHierarchyPanel::setupContextMenu()
             emit entityDuplicateRequested(id);
         }
     });
-    
+
     auto* renameAction = m_contextMenu->addAction(tr("Rename"));
     renameAction->setShortcut(QKeySequence(Qt::Key_F2));
+    renameAction->setProperty("requiresSelection", true);
     connect(renameAction, &QAction::triggered, this, [this]() {
         Core::EntityId id = GetSelectedEntityId();
         if (id != 0)
@@ -378,9 +410,10 @@ void EditorHierarchyPanel::setupContextMenu()
     });
     
     m_contextMenu->addSeparator();
-    
+
     auto* deleteAction = m_contextMenu->addAction(tr("Delete"));
     deleteAction->setShortcut(QKeySequence::Delete);
+    deleteAction->setProperty("requiresSelection", true);
     connect(deleteAction, &QAction::triggered, this, [this]() {
         Core::EntityId id = GetSelectedEntityId();
         if (id != 0)
@@ -405,21 +438,37 @@ void EditorHierarchyPanel::showContextMenu(const QPoint& pos)
     }
     
     const bool hasSelection = entityId != 0;
-    
-    for (QAction* action : m_contextMenu->actions())
-    {
-        const QString text = action->text();
-        if (text == tr("Create Empty") || text == tr("Create Directional Light") ||
-            text == tr("Create Camera"))
+
+    auto updateActionState = [hasSelection](QAction* action, const auto& self) -> void {
+        if (!action)
+        {
+            return;
+        }
+        if (auto* menu = action->menu())
         {
             action->setEnabled(true);
+            for (auto* subAction : menu->actions())
+            {
+                self(subAction, self);
+            }
+            return;
         }
-        else if (!action->isSeparator())
+
+        if (action->isSeparator())
         {
-            action->setEnabled(hasSelection);
+            return;
         }
+
+        const bool requiresSelection =
+            action->property("requiresSelection").toBool();
+        action->setEnabled(!requiresSelection || hasSelection);
+    };
+
+    for (QAction* action : m_contextMenu->actions())
+    {
+        updateActionState(action, updateActionState);
     }
-    
+
     m_contextMenu->exec(m_tree->mapToGlobal(pos));
 }
 

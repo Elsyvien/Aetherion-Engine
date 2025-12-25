@@ -1,532 +1,499 @@
 #include "Aetherion/Scene/SceneSerializer.h"
 
-#include <cctype>
-#include <cstdint>
+#include <array>
 #include <filesystem>
 #include <fstream>
-#include <optional>
-#include <regex>
-#include <sstream>
-#include <vector>
+#include <string>
+#include <utility>
 
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Runtime/EngineContext.h"
+#include "Aetherion/Scene/CameraComponent.h"
+#include "Aetherion/Scene/ColliderComponent.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/LightComponent.h"
-#include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
+#include "Aetherion/Scene/RigidbodyComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
+#include "nlohmann/json.hpp"
 
-namespace
-{
+namespace {
 using namespace Aetherion;
+using Json = nlohmann::ordered_json;
 
-std::string ExtractStringValue(const std::string& source, const std::string& key)
-{
-    const std::string needle = std::string("\"") + key + "\"";
-    size_t pos = source.find(needle);
-    if (pos == std::string::npos) return {};
-    pos = source.find(':', pos + needle.size());
-    if (pos == std::string::npos) return {};
-    pos = source.find('"', pos);
-    if (pos == std::string::npos) return {};
-    size_t start = pos + 1;
-    size_t end = source.find('"', start);
-    if (end == std::string::npos) return {};
-    return source.substr(start, end - start);
+float ReadNumber(const Json &obj, const char *key, float fallback) {
+  try {
+    return obj.value(key, fallback);
+  } catch (const nlohmann::json::exception &) {
+    return fallback;
+  }
 }
 
-std::optional<std::uint64_t> ExtractUint64(const std::string& source, const std::string& key)
-{
-    const std::string needle = std::string("\"") + key + "\"";
-    size_t pos = source.find(needle);
-    if (pos == std::string::npos) return std::nullopt;
-    pos = source.find(':', pos + needle.size());
-    if (pos == std::string::npos) return std::nullopt;
-    // find first digit
-    size_t start = source.find_first_of("0123456789", pos);
-    if (start == std::string::npos) return std::nullopt;
-    size_t end = start;
-    while (end < source.size() && std::isdigit(static_cast<unsigned char>(source[end]))) ++end;
-    return static_cast<std::uint64_t>(std::stoull(source.substr(start, end - start)));
+int ReadInt(const Json &obj, const char *key, int fallback) {
+  try {
+    return obj.value(key, fallback);
+  } catch (const nlohmann::json::exception &) {
+    return fallback;
+  }
 }
 
-std::optional<float> ExtractFloat(const std::string& source, const std::string& key)
-{
-    const std::string needle = std::string("\"") + key + "\"";
-    size_t pos = source.find(needle);
-    if (pos == std::string::npos) return std::nullopt;
-    pos = source.find(':', pos + needle.size());
-    if (pos == std::string::npos) return std::nullopt;
-    // find start of number (including '-')
-    size_t start = source.find_first_of("-0123456789", pos);
-    if (start == std::string::npos) return std::nullopt;
-    size_t end = start;
-    while (end < source.size())
-    {
-        char c = source[end];
-        if (!(std::isdigit(static_cast<unsigned char>(c)) || c == '.' || c == '-')) break;
-        ++end;
-    }
-    try { return std::stof(source.substr(start, end - start)); }
-    catch (...) { return std::nullopt; }
+Core::EntityId ReadEntityId(const Json &obj, const char *key,
+                            Core::EntityId fallback) {
+  try {
+    return obj.value(key, fallback);
+  } catch (const nlohmann::json::exception &) {
+    return fallback;
+  }
 }
 
-std::vector<float> ExtractFloatArray(const std::string& source, const std::string& key)
-{
-    std::vector<float> values;
-    const std::string needle = std::string("\"") + key + "\"";
-    size_t pos = source.find(needle);
-    if (pos == std::string::npos) return values;
-    pos = source.find('[', pos + needle.size());
-    if (pos == std::string::npos) return values;
-    size_t end = source.find(']', pos);
-    if (end == std::string::npos) return values;
-    std::string body = source.substr(pos + 1, end - pos - 1);
-    std::stringstream stream(body);
-    std::string token;
-    while (std::getline(stream, token, ','))
-    {
-        // trim
-        size_t a = token.find_first_not_of(" \t\n\r");
-        if (a == std::string::npos) continue;
-        size_t b = token.find_last_not_of(" \t\n\r");
-        std::string part = token.substr(a, b - a + 1);
-        try { values.push_back(std::stof(part)); } catch (...) { }
-    }
-    return values;
+bool ReadBool(const Json &obj, const char *key, bool fallback) {
+  try {
+    return obj.value(key, fallback);
+  } catch (const nlohmann::json::exception &) {
+    return fallback;
+  }
 }
 
-bool ExtractBool(const std::string& source, const std::string& key, bool defaultValue)
-{
-    const std::string needle = std::string("\"") + key + "\"";
-    size_t pos = source.find(needle);
-    if (pos == std::string::npos) return defaultValue;
-    pos = source.find(':', pos + needle.size());
-    if (pos == std::string::npos) return defaultValue;
-    size_t start = source.find_first_not_of(" \t\n\r", pos + 1);
-    if (start == std::string::npos) return defaultValue;
-    if (source.compare(start, 4, "true") == 0) return true;
-    if (source.compare(start, 5, "false") == 0) return false;
-    return defaultValue;
+std::string ReadString(const Json &obj, const char *key,
+                       const std::string &fallback) {
+  try {
+    return obj.value(key, fallback);
+  } catch (const nlohmann::json::exception &) {
+    return fallback;
+  }
 }
 
-std::vector<std::string> ExtractEntityBlocks(const std::string& content)
-{
-    std::vector<std::string> blocks;
-    const auto entitiesPos = content.find("\"entities\"");
-    if (entitiesPos == std::string::npos)
-    {
-        return blocks;
-    }
+bool ReadVec3(const Json &obj, const char *key, std::array<float, 3> &out,
+              std::size_t minSize) {
+  auto it = obj.find(key);
+  if (it == obj.end() || !it->is_array() || it->size() < minSize) {
+    return false;
+  }
 
-    const auto arrayStart = content.find('[', entitiesPos);
-    if (arrayStart == std::string::npos)
-    {
-        return blocks;
-    }
-
-    std::size_t cursor = arrayStart + 1;
-    while (cursor < content.size())
-    {
-        while (cursor < content.size() && std::isspace(static_cast<unsigned char>(content[cursor])))
-        {
-            ++cursor;
-        }
-
-        if (cursor >= content.size() || content[cursor] != '{')
-        {
-            break;
-        }
-
-        std::size_t depth = 0;
-        const std::size_t blockStart = cursor;
-        while (cursor < content.size())
-        {
-            if (content[cursor] == '{')
-            {
-                ++depth;
-            }
-            else if (content[cursor] == '}')
-            {
-                if (--depth == 0)
-                {
-                    ++cursor; // include closing brace
-                    blocks.emplace_back(content.substr(blockStart, cursor - blockStart));
-                    break;
-                }
-            }
-            ++cursor;
-        }
-    }
-
-    return blocks;
+  if (it->size() >= 1 && (*it)[0].is_number()) {
+    out[0] = (*it)[0].get<float>();
+  }
+  if (it->size() >= 2 && (*it)[1].is_number()) {
+    out[1] = (*it)[1].get<float>();
+  }
+  if (it->size() >= 3 && (*it)[2].is_number()) {
+    out[2] = (*it)[2].get<float>();
+  }
+  return true;
 }
 } // namespace
 
-namespace Aetherion::Scene
-{
-SceneSerializer::SceneSerializer(Runtime::EngineContext& context)
-    : m_context(context)
-{
+namespace Aetherion::Scene {
+SceneSerializer::SceneSerializer(Runtime::EngineContext &context)
+    : m_context(context) {}
+
+bool SceneSerializer::Save(const Scene &scene,
+                           const std::filesystem::path &path) const {
+  if (!std::filesystem::exists(path.parent_path())) {
+    std::filesystem::create_directories(path.parent_path());
+  }
+
+  std::ofstream out(path);
+  if (!out.is_open()) {
+    return false;
+  }
+
+  Json root;
+  root["name"] = scene.GetName();
+  root["entities"] = Json::array();
+
+  const auto &entities = scene.GetEntities();
+  for (const auto &entity : entities) {
+    if (!entity) {
+      continue;
+    }
+
+    Json entityJson;
+    entityJson["id"] = entity->GetId();
+    entityJson["name"] = entity->GetName();
+
+    Json components = Json::object();
+
+    if (auto transform = entity->GetComponent<TransformComponent>()) {
+      Json transformJson;
+      transformJson["position"] = {transform->GetPositionX(),
+                                   transform->GetPositionY(),
+                                   transform->GetPositionZ()};
+      transformJson["rotation"] = {transform->GetRotationXDegrees(),
+                                   transform->GetRotationYDegrees(),
+                                   transform->GetRotationZDegrees()};
+      transformJson["scale"] = {transform->GetScaleX(), transform->GetScaleY(),
+                                transform->GetScaleZ()};
+      transformJson["parent"] = transform->GetParentId();
+      components["Transform"] = std::move(transformJson);
+    }
+
+    if (auto mesh = entity->GetComponent<MeshRendererComponent>()) {
+      Json meshJson;
+      const auto color = mesh->GetColor();
+      meshJson["visible"] = mesh->IsVisible();
+      meshJson["color"] = {color[0], color[1], color[2]};
+      meshJson["rotationSpeed"] = mesh->GetRotationSpeedDegPerSec();
+      meshJson["albedoTexture"] = mesh->GetAlbedoTextureId();
+      meshJson["meshId"] = mesh->GetMeshAssetId();
+      components["MeshRenderer"] = std::move(meshJson);
+    }
+
+    if (auto light = entity->GetComponent<LightComponent>()) {
+      Json lightJson;
+      const auto color = light->GetColor();
+      const auto ambient = light->GetAmbientColor();
+      lightJson["lightEnabled"] = light->IsEnabled();
+      lightJson["lightType"] = static_cast<int>(light->GetType());
+      lightJson["lightColor"] = {color[0], color[1], color[2]};
+      lightJson["lightIntensity"] = light->GetIntensity();
+      lightJson["lightRange"] = light->GetRange();
+      lightJson["innerConeAngle"] = light->GetInnerConeAngle();
+      lightJson["outerConeAngle"] = light->GetOuterConeAngle();
+      lightJson["lightPrimary"] = light->IsPrimary();
+      lightJson["ambientColor"] = {ambient[0], ambient[1], ambient[2]};
+      components["Light"] = std::move(lightJson);
+    }
+
+    if (auto camera = entity->GetComponent<CameraComponent>()) {
+      Json cameraJson;
+      cameraJson["projectionType"] =
+          static_cast<int>(camera->GetProjectionType());
+      cameraJson["verticalFov"] = camera->GetVerticalFov();
+      cameraJson["nearClip"] = camera->GetNearClip();
+      cameraJson["farClip"] = camera->GetFarClip();
+      cameraJson["orthographicSize"] = camera->GetOrthographicSize();
+      cameraJson["isPrimary"] = camera->IsPrimary();
+      components["Camera"] = std::move(cameraJson);
+    }
+
+    if (auto rigidbody = entity->GetComponent<RigidbodyComponent>()) {
+      Json rbJson;
+      rbJson["motionType"] = static_cast<int>(rigidbody->GetMotionType());
+      rbJson["mass"] = rigidbody->GetMass();
+      rbJson["linearDamping"] = rigidbody->GetLinearDamping();
+      rbJson["angularDamping"] = rigidbody->GetAngularDamping();
+      rbJson["useGravity"] = rigidbody->UseGravity();
+      rbJson["friction"] = rigidbody->GetFriction();
+      rbJson["restitution"] = rigidbody->GetRestitution();
+      components["Rigidbody"] = std::move(rbJson);
+    }
+
+    if (auto collider = entity->GetComponent<ColliderComponent>()) {
+      Json colJson;
+      colJson["shapeType"] = static_cast<int>(collider->GetShapeType());
+      const auto halfExtents = collider->GetHalfExtents();
+      colJson["halfExtents"] = {halfExtents[0], halfExtents[1], halfExtents[2]};
+      colJson["radius"] = collider->GetRadius();
+      colJson["height"] = collider->GetHeight();
+      colJson["isTrigger"] = collider->IsTrigger();
+      const auto offset = collider->GetOffset();
+      colJson["offset"] = {offset[0], offset[1], offset[2]};
+      components["Collider"] = std::move(colJson);
+    }
+
+    entityJson["components"] = std::move(components);
+    root["entities"].push_back(std::move(entityJson));
+  }
+
+  out << root.dump(4);
+  return true;
 }
 
-bool SceneSerializer::Save(const Scene& scene, const std::filesystem::path& path) const
-{
-    if (!std::filesystem::exists(path.parent_path()))
-    {
-        std::filesystem::create_directories(path.parent_path());
-    }
+std::shared_ptr<Scene>
+SceneSerializer::Load(const std::filesystem::path &path) const {
+  std::ifstream input(path);
+  if (!input.is_open()) {
+    return nullptr;
+  }
 
-    std::ofstream out(path);
-    if (!out.is_open())
-    {
-        return false;
-    }
+  Json root;
+  try {
+    input >> root;
+  } catch (const nlohmann::json::exception &) {
+    return nullptr;
+  }
 
-    out << "{\n";
-    out << "  \"name\": \"" << scene.GetName() << "\",\n";
-    out << "  \"entities\": [\n";
+  auto scene = std::make_shared<Scene>(ReadString(root, "name", std::string()));
+  scene->BindContext(m_context);
 
-    const auto& entities = scene.GetEntities();
-    for (std::size_t i = 0; i < entities.size(); ++i)
-    {
-        const auto& entity = entities[i];
-        if (!entity)
-        {
-            continue;
-        }
-
-        out << "    {\n";
-        out << "      \"id\": " << entity->GetId() << ",\n";
-        out << "      \"name\": \"" << entity->GetName() << "\",\n";
-        out << "      \"components\": {\n";
-
-        bool wroteComponent = false;
-        if (auto transform = entity->GetComponent<TransformComponent>()) // Removed the erroneous 'сля'
-        {
-            out << "        \"Transform\": {\n";
-            out << "          \"position\": [" << transform->GetPositionX() << ", " << transform->GetPositionY() << ", " << transform->GetPositionZ() << "],\n";
-            out << "          \"rotation\": [" << transform->GetRotationXDegrees() << ", " << transform->GetRotationYDegrees() << ", " << transform->GetRotationZDegrees() << "],\n";
-            out << "          \"scale\": [" << transform->GetScaleX() << ", " << transform->GetScaleY() << ", " << transform->GetScaleZ() << "],\n";
-            out << "          \"parent\": " << transform->GetParentId() << "\n";
-            out << "        }";
-            wroteComponent = true;
-        }
-
-        if (auto mesh = entity->GetComponent<MeshRendererComponent>()){
-            if (wroteComponent)
-            {
-                out << " ,\n";
-            }
-            out << "        \"MeshRenderer\": {\n";
-            const auto color = mesh->GetColor();
-            out << "          \"visible\": " << (mesh->IsVisible() ? "true" : "false") << ",\n";
-            out << "          \"color\": [" << color[0] << ", " << color[1] << ", " << color[2] << "],\n";
-            out << "          \"rotationSpeed\": " << mesh->GetRotationSpeedDegPerSec() << ",\n";
-            out << "          \"albedoTexture\": \"" << mesh->GetAlbedoTextureId() << "\",\n";
-            out << "          \"meshId\": \"" << mesh->GetMeshAssetId() << "\"\n";
-            out << "        }";
-            wroteComponent = true;
-        }
-
-        if (auto light = entity->GetComponent<LightComponent>()){
-            if (wroteComponent)
-            {
-                out << " ,\n";
-            }
-            out << "        \"Light\": {\n";
-            const auto color = light->GetColor();
-            const auto ambient = light->GetAmbientColor();
-            out << "          \"lightEnabled\": " << (light->IsEnabled() ? "true" : "false") << ",\n";
-            out << "          \"lightType\": " << static_cast<int>(light->GetType()) << ",\n";
-            out << "          \"lightColor\": [" << color[0] << ", " << color[1] << ", " << color[2] << "],\n";
-            out << "          \"lightIntensity\": " << light->GetIntensity() << ",\n";
-            out << "          \"lightRange\": " << light->GetRange() << ",\n";
-            out << "          \"innerConeAngle\": " << light->GetInnerConeAngle() << ",\n";
-            out << "          \"outerConeAngle\": " << light->GetOuterConeAngle() << ",\n";
-            out << "          \"lightPrimary\": " << (light->IsPrimary() ? "true" : "false") << ",\n";
-            out << "          \"ambientColor\": [" << ambient[0] << ", " << ambient[1] << ", " << ambient[2] << "]\n";
-            out << "        }";
-            wroteComponent = true;
-        }
-
-        if (auto camera = entity->GetComponent<CameraComponent>()){
-            if (wroteComponent)
-            {
-                out << " ,\n";
-            }
-            out << "        \"Camera\": {\n";
-            out << "          \"projectionType\": " << static_cast<int>(camera->GetProjectionType()) << ",\n";
-            out << "          \"verticalFov\": " << camera->GetVerticalFov() << ",\n";
-            out << "          \"nearClip\": " << camera->GetNearClip() << ",\n";
-            out << "          \"farClip\": " << camera->GetFarClip() << ",\n";
-            out << "          \"orthographicSize\": " << camera->GetOrthographicSize() << ",\n";
-            out << "          \"isPrimary\": " << (camera->IsPrimary() ? "true" : "false") << "\n";
-            out << "        }";
-            wroteComponent = true;
-        }
-
-        out << "\n";
-        out << "      }\n";
-        out << "    }" << (i + 1 < entities.size() ? "," : "") << "\n";
-    }
-
-    out << "  ]\n";
-    out << "}\n";
-
-    return true;
-}
-
-std::shared_ptr<Scene> SceneSerializer::Load(const std::filesystem::path& path) const
-{
-    std::ifstream input(path);
-    if (!input.is_open())
-    {
-        return nullptr;
-    }
-
-    std::stringstream buffer;
-    buffer << input.rdbuf();
-    const std::string content = buffer.str();
-
-    auto scene = std::make_shared<Scene>(ExtractStringValue(content, "name"));
-    scene->BindContext(m_context);
-
-    const auto entityBlocks = ExtractEntityBlocks(content);
-    for (const auto& block : entityBlocks)
-    {
-        const auto id = ExtractUint64(block, "id").value_or(0);
-        auto entity = std::make_shared<Entity>(id, ExtractStringValue(block, "name"));
-
-        const auto position = ExtractFloatArray(block, "position");
-        const auto scale = ExtractFloatArray(block, "scale");
-        const auto rotation = ExtractFloatArray(block, "rotation");
-        const auto rotationLegacy = ExtractFloat(block, "rotationZ");
-        const auto parentId = ExtractUint64(block, "parent").value_or(0);
-        if (!position.empty() || !scale.empty() || !rotation.empty() || rotationLegacy.has_value())
-        {
-            auto transform = std::make_shared<TransformComponent>();
-            if (position.size() >= 3)
-            {
-                transform->SetPosition(position[0], position[1], position[2]);
-            }
-            else if (position.size() >= 2)
-            {
-                transform->SetPosition(position[0], position[1], 0.0f);
-            }
-            if (rotation.size() >= 3)
-            {
-                transform->SetRotationDegrees(rotation[0], rotation[1], rotation[2]);
-            }
-            else if (rotationLegacy.has_value())
-            {
-                transform->SetRotationDegrees(0.0f, 0.0f, *rotationLegacy);
-            }
-            if (scale.size() >= 3)
-            {
-                transform->SetScale(scale[0], scale[1], scale[2]);
-            }
-            else if (scale.size() >= 2)
-            {
-                transform->SetScale(scale[0], scale[1], 1.0f);
-            }
-            if (parentId != 0)
-            {
-                transform->SetParent(parentId);
-            }
-            entity->AddComponent(transform);
-        }
-
-        const auto visible = ExtractBool(block, "visible", true);
-        const auto meshColor = ExtractFloatArray(block, "color");
-        const auto rotationSpeed = ExtractFloat(block, "rotationSpeed");
-        const auto meshId = ExtractStringValue(block, "meshId");
-        const auto albedoTexture = ExtractStringValue(block, "albedoTexture");
-        if (!meshColor.empty() || rotationSpeed.has_value() || block.find("MeshRenderer") != std::string::npos)
-        {
-            auto mesh = std::make_shared<MeshRendererComponent>();
-            mesh->SetVisible(visible);
-            if (meshColor.size() >= 3)
-            {
-                mesh->SetColor(meshColor[0], meshColor[1], meshColor[2]);
-            }
-            if (rotationSpeed.has_value())
-            {
-                mesh->SetRotationSpeedDegPerSec(*rotationSpeed);
-            }
-            if (!meshId.empty())
-            {
-                mesh->SetMeshAssetId(meshId);
-            }
-            if (!albedoTexture.empty())
-            {
-                mesh->SetAlbedoTextureId(albedoTexture);
-            }
-            entity->AddComponent(mesh);
-        }
-
-        const auto lightEnabled = ExtractBool(block, "lightEnabled", true);
-        const auto lightType = ExtractUint64(block, "lightType");
-        const auto lightColor = ExtractFloatArray(block, "lightColor");
-        const auto lightIntensity = ExtractFloat(block, "lightIntensity");
-        const auto lightRange = ExtractFloat(block, "lightRange");
-        const auto lightInnerCone = ExtractFloat(block, "innerConeAngle");
-        const auto lightOuterCone = ExtractFloat(block, "outerConeAngle");
-        const auto lightPrimary = ExtractBool(block, "lightPrimary", false);
-        const auto ambientColor = ExtractFloatArray(block, "ambientColor");
-        if (lightType.has_value() || !lightColor.empty() || lightIntensity.has_value() ||
-            lightRange.has_value() || lightInnerCone.has_value() || lightOuterCone.has_value() ||
-            !ambientColor.empty() || block.find("\"Light\"") != std::string::npos)
-        {
-            auto light = std::make_shared<LightComponent>();
-            light->SetEnabled(lightEnabled);
-            if (lightType.has_value())
-            {
-                light->SetType(static_cast<LightComponent::LightType>(*lightType));
-            }
-            if (lightColor.size() >= 3)
-            {
-                light->SetColor(lightColor[0], lightColor[1], lightColor[2]);
-            }
-            if (lightIntensity.has_value())
-            {
-                light->SetIntensity(*lightIntensity);
-            }
-            if (lightRange.has_value())
-            {
-                light->SetRange(*lightRange);
-            }
-            if (lightInnerCone.has_value())
-            {
-                light->SetInnerConeAngle(*lightInnerCone);
-            }
-            if (lightOuterCone.has_value())
-            {
-                light->SetOuterConeAngle(*lightOuterCone);
-            }
-            if (lightPrimary)
-            {
-                light->SetPrimary(lightPrimary);
-            }
-            if (ambientColor.size() >= 3)
-            {
-                light->SetAmbientColor(ambientColor[0], ambientColor[1], ambientColor[2]);
-            }
-            entity->AddComponent(light);
-        }
-
-        const auto cameraProjection = ExtractUint64(block, "projectionType");
-        const auto cameraFov = ExtractFloat(block, "verticalFov");
-        const auto cameraNear = ExtractFloat(block, "nearClip");
-        const auto cameraFar = ExtractFloat(block, "farClip");
-        const auto cameraOrthoSize = ExtractFloat(block, "orthographicSize");
-        const auto cameraPrimary = ExtractBool(block, "isPrimary", false);
-
-        if (cameraProjection.has_value() || block.find("\"Camera\"") != std::string::npos)
-        {
-            auto camera = std::make_shared<CameraComponent>();
-            if (cameraProjection.has_value())
-            {
-                camera->SetProjectionType(static_cast<CameraComponent::ProjectionType>(*cameraProjection));
-            }
-            if (cameraFov.has_value()) camera->SetVerticalFov(*cameraFov);
-            if (cameraNear.has_value()) camera->SetNearClip(*cameraNear);
-            if (cameraFar.has_value()) camera->SetFarClip(*cameraFar);
-            if (cameraOrthoSize.has_value()) camera->SetOrthographicSize(*cameraOrthoSize);
-            camera->SetPrimary(cameraPrimary);
-            entity->AddComponent(camera);
-        }
-
-        scene->AddEntity(entity);
-    }
-
-    // Rebuild child lists after all entities are present.
-    for (const auto& entity : scene->GetEntities())
-    {
-        if (!entity)
-        {
-            continue;
-        }
-
-        auto transform = entity->GetComponent<TransformComponent>();
-        if (!transform || !transform->HasParent())
-        {
-            continue;
-        }
-
-        auto parent = scene->FindEntityById(transform->GetParentId());
-        if (!parent)
-        {
-            transform->ClearParent();
-            continue;
-        }
-
-        auto parentTransform = parent->GetComponent<TransformComponent>();
-        if (!parentTransform)
-        {
-            transform->ClearParent();
-            continue;
-        }
-
-        parentTransform->AddChild(entity->GetId());
-    }
-
+  auto entitiesIt = root.find("entities");
+  if (entitiesIt == root.end() || !entitiesIt->is_array()) {
     return scene;
-}
+  }
 
-std::shared_ptr<Scene> SceneSerializer::CreateDefaultScene() const
-{
-    auto scene = std::make_shared<Scene>("Main Scene");
-    scene->BindContext(m_context);
-
-    auto viewportEntity = std::make_shared<Entity>(1, "Viewport Quad");
-    auto transform = std::make_shared<TransformComponent>();
-    auto mesh = std::make_shared<MeshRendererComponent>();
-    mesh->SetRotationSpeedDegPerSec(15.0f);
-    viewportEntity->AddComponent(transform);
-    viewportEntity->AddComponent(mesh);
-    scene->AddEntity(viewportEntity);
-
-    auto lightEntity = std::make_shared<Entity>(2, "Directional Light");        
-    auto lightTransform = std::make_shared<TransformComponent>();
-    lightTransform->SetRotationDegrees(-55.0f, 215.0f, 0.0f);
-    auto light = std::make_shared<LightComponent>();
-    light->SetType(LightComponent::LightType::Directional);
-    light->SetPrimary(true);
-    lightEntity->AddComponent(lightTransform);
-    lightEntity->AddComponent(light);
-    scene->AddEntity(lightEntity);
-
-    auto cubeEntity = std::make_shared<Entity>(3, "Cube");
-    auto cubeTransform = std::make_shared<TransformComponent>();
-    cubeTransform->SetPosition(-2.0f, 0.0f, 0.0f);
-    auto cubeMesh = std::make_shared<MeshRendererComponent>();
-    cubeMesh->SetMeshAssetId("assets/meshes/cube.gltf");
-    cubeEntity->AddComponent(cubeTransform);
-    cubeEntity->AddComponent(cubeMesh);
-    scene->AddEntity(cubeEntity);
-
-    auto sphereEntity = std::make_shared<Entity>(4, "Sphere");
-    auto sphereTransform = std::make_shared<TransformComponent>();
-    sphereTransform->SetPosition(2.0f, 0.0f, 0.0f);
-    auto sphereMesh = std::make_shared<MeshRendererComponent>();
-    sphereMesh->SetMeshAssetId("assets/meshes/sphere.gltf");
-    sphereEntity->AddComponent(sphereTransform);
-    sphereEntity->AddComponent(sphereMesh);
-    scene->AddEntity(sphereEntity);
-
-    if (auto assets = m_context.GetAssetRegistry())
-    {
-        auto root = assets->GetRootPath();
-        if (root.empty())
-        {
-            root = std::filesystem::current_path();
-        }
-        assets->Scan(root.string());
+  for (const auto &entityJson : *entitiesIt) {
+    if (!entityJson.is_object()) {
+      continue;
     }
 
-    return scene;
+    const Core::EntityId id = ReadEntityId(entityJson, "id", 0);
+    const std::string name = ReadString(entityJson, "name", std::string());
+    auto entity = std::make_shared<Entity>(id, name);
+
+    auto componentsIt = entityJson.find("components");
+    if (componentsIt != entityJson.end() && componentsIt->is_object()) {
+      const Json &components = *componentsIt;
+
+      auto transformIt = components.find("Transform");
+      if (transformIt != components.end() && transformIt->is_object()) {
+        const Json &transformJson = *transformIt;
+        auto transform = std::make_shared<TransformComponent>();
+
+        std::array<float, 3> position{0.0f, 0.0f, 0.0f};
+        if (ReadVec3(transformJson, "position", position, 2)) {
+          transform->SetPosition(position[0], position[1], position[2]);
+        }
+
+        std::array<float, 3> rotation{0.0f, 0.0f, 0.0f};
+        const bool hasRotation =
+            ReadVec3(transformJson, "rotation", rotation, 3);
+        if (hasRotation) {
+          transform->SetRotationDegrees(rotation[0], rotation[1], rotation[2]);
+        } else {
+          auto rotZIt = transformJson.find("rotationZ");
+          if (rotZIt != transformJson.end() && rotZIt->is_number()) {
+            rotation[2] = rotZIt->get<float>();
+            transform->SetRotationDegrees(rotation[0], rotation[1],
+                                          rotation[2]);
+          }
+        }
+
+        std::array<float, 3> scale{1.0f, 1.0f, 1.0f};
+        if (ReadVec3(transformJson, "scale", scale, 2)) {
+          transform->SetScale(scale[0], scale[1], scale[2]);
+        }
+
+        const Core::EntityId parentId =
+            ReadEntityId(transformJson, "parent", 0);
+        if (parentId != 0) {
+          transform->SetParent(parentId);
+        }
+
+        entity->AddComponent(transform);
+      }
+
+      auto meshIt = components.find("MeshRenderer");
+      if (meshIt != components.end() && meshIt->is_object()) {
+        const Json &meshJson = *meshIt;
+        auto mesh = std::make_shared<MeshRendererComponent>();
+
+        mesh->SetVisible(ReadBool(meshJson, "visible", true));
+
+        std::array<float, 3> meshColor{1.0f, 1.0f, 1.0f};
+        if (ReadVec3(meshJson, "color", meshColor, 3)) {
+          mesh->SetColor(meshColor[0], meshColor[1], meshColor[2]);
+        }
+
+        mesh->SetRotationSpeedDegPerSec(
+            ReadNumber(meshJson, "rotationSpeed", 0.0f));
+
+        const std::string meshId =
+            ReadString(meshJson, "meshId", std::string());
+        if (!meshId.empty()) {
+          mesh->SetMeshAssetId(meshId);
+        }
+
+        const std::string albedoTexture =
+            ReadString(meshJson, "albedoTexture", std::string());
+        if (!albedoTexture.empty()) {
+          mesh->SetAlbedoTextureId(albedoTexture);
+        }
+
+        entity->AddComponent(mesh);
+      }
+
+      auto lightIt = components.find("Light");
+      if (lightIt != components.end() && lightIt->is_object()) {
+        const Json &lightJson = *lightIt;
+        auto light = std::make_shared<LightComponent>();
+
+        light->SetEnabled(ReadBool(lightJson, "lightEnabled", true));
+
+        int lightType = ReadInt(lightJson, "lightType", 0);
+        if (lightType < 0 || lightType > 2) {
+          lightType = 0;
+        }
+        light->SetType(static_cast<LightComponent::LightType>(lightType));
+
+        std::array<float, 3> lightColor{1.0f, 1.0f, 1.0f};
+        if (ReadVec3(lightJson, "lightColor", lightColor, 3)) {
+          light->SetColor(lightColor[0], lightColor[1], lightColor[2]);
+        }
+
+        light->SetIntensity(ReadNumber(lightJson, "lightIntensity", 1.0f));
+        light->SetRange(ReadNumber(lightJson, "lightRange", 10.0f));
+        light->SetInnerConeAngle(
+            ReadNumber(lightJson, "innerConeAngle", 15.0f));
+        light->SetOuterConeAngle(
+            ReadNumber(lightJson, "outerConeAngle", 30.0f));
+        light->SetPrimary(ReadBool(lightJson, "lightPrimary", false));
+
+        std::array<float, 3> ambientColor{0.0f, 0.0f, 0.0f};
+        if (ReadVec3(lightJson, "ambientColor", ambientColor, 3)) {
+          light->SetAmbientColor(ambientColor[0], ambientColor[1],
+                                 ambientColor[2]);
+        }
+
+        entity->AddComponent(light);
+      }
+
+      auto cameraIt = components.find("Camera");
+      if (cameraIt != components.end() && cameraIt->is_object()) {
+        const Json &cameraJson = *cameraIt;
+        auto camera = std::make_shared<CameraComponent>();
+
+        int projectionType = ReadInt(cameraJson, "projectionType", 0);
+        if (projectionType < 0 || projectionType > 1) {
+          projectionType = 0;
+        }
+        camera->SetProjectionType(
+            static_cast<CameraComponent::ProjectionType>(projectionType));
+        camera->SetVerticalFov(
+            ReadNumber(cameraJson, "verticalFov", camera->GetVerticalFov()));
+        camera->SetNearClip(
+            ReadNumber(cameraJson, "nearClip", camera->GetNearClip()));
+        camera->SetFarClip(
+            ReadNumber(cameraJson, "farClip", camera->GetFarClip()));
+        camera->SetOrthographicSize(ReadNumber(cameraJson, "orthographicSize",
+                                               camera->GetOrthographicSize()));
+        camera->SetPrimary(ReadBool(cameraJson, "isPrimary", false));
+
+        entity->AddComponent(camera);
+      }
+
+      auto rigidbodyIt = components.find("Rigidbody");
+      if (rigidbodyIt != components.end() && rigidbodyIt->is_object()) {
+        const Json &rbJson = *rigidbodyIt;
+        auto rigidbody = std::make_shared<RigidbodyComponent>();
+
+        int motionType = ReadInt(rbJson, "motionType", 2);
+        if (motionType < 0 || motionType > 2)
+          motionType = 2;
+        rigidbody->SetMotionType(
+            static_cast<RigidbodyComponent::MotionType>(motionType));
+        rigidbody->SetMass(ReadNumber(rbJson, "mass", 1.0f));
+        rigidbody->SetLinearDamping(ReadNumber(rbJson, "linearDamping", 0.05f));
+        rigidbody->SetAngularDamping(
+            ReadNumber(rbJson, "angularDamping", 0.05f));
+        rigidbody->SetUseGravity(ReadBool(rbJson, "useGravity", true));
+        rigidbody->SetFriction(ReadNumber(rbJson, "friction", 0.5f));
+        rigidbody->SetRestitution(ReadNumber(rbJson, "restitution", 0.0f));
+
+        entity->AddComponent(rigidbody);
+      }
+
+      auto colliderIt = components.find("Collider");
+      if (colliderIt != components.end() && colliderIt->is_object()) {
+        const Json &colJson = *colliderIt;
+        auto collider = std::make_shared<ColliderComponent>();
+
+        int shapeType = ReadInt(colJson, "shapeType", 0);
+        if (shapeType < 0 || shapeType > 2)
+          shapeType = 0;
+        collider->SetShapeType(
+            static_cast<ColliderComponent::ShapeType>(shapeType));
+
+        std::array<float, 3> halfExtents{0.5f, 0.5f, 0.5f};
+        if (ReadVec3(colJson, "halfExtents", halfExtents, 3)) {
+          collider->SetHalfExtents(halfExtents[0], halfExtents[1],
+                                   halfExtents[2]);
+        }
+
+        collider->SetRadius(ReadNumber(colJson, "radius", 0.5f));
+        collider->SetHeight(ReadNumber(colJson, "height", 1.0f));
+        collider->SetTrigger(ReadBool(colJson, "isTrigger", false));
+
+        std::array<float, 3> offset{0.0f, 0.0f, 0.0f};
+        if (ReadVec3(colJson, "offset", offset, 3)) {
+          collider->SetOffset(offset[0], offset[1], offset[2]);
+        }
+
+        entity->AddComponent(collider);
+      }
+    }
+
+    scene->AddEntity(entity);
+  }
+
+  // Rebuild child lists after all entities are present.
+  for (const auto &entity : scene->GetEntities()) {
+    if (!entity) {
+      continue;
+    }
+
+    auto transform = entity->GetComponent<TransformComponent>();
+    if (!transform || !transform->HasParent()) {
+      continue;
+    }
+
+    auto parent = scene->FindEntityById(transform->GetParentId());
+    if (!parent) {
+      transform->ClearParent();
+      continue;
+    }
+
+    auto parentTransform = parent->GetComponent<TransformComponent>();
+    if (!parentTransform) {
+      transform->ClearParent();
+      continue;
+    }
+
+    parentTransform->AddChild(entity->GetId());
+  }
+
+  return scene;
+}
+
+std::shared_ptr<Scene> SceneSerializer::CreateDefaultScene() const {
+  auto scene = std::make_shared<Scene>("Main Scene");
+  scene->BindContext(m_context);
+
+  auto viewportEntity = std::make_shared<Entity>(1, "Viewport Quad");
+  auto transform = std::make_shared<TransformComponent>();
+  auto mesh = std::make_shared<MeshRendererComponent>();
+  mesh->SetRotationSpeedDegPerSec(15.0f);
+  viewportEntity->AddComponent(transform);
+  viewportEntity->AddComponent(mesh);
+  scene->AddEntity(viewportEntity);
+
+  auto lightEntity = std::make_shared<Entity>(2, "Directional Light");
+  auto lightTransform = std::make_shared<TransformComponent>();
+  lightTransform->SetRotationDegrees(-55.0f, 215.0f, 0.0f);
+  auto light = std::make_shared<LightComponent>();
+  light->SetType(LightComponent::LightType::Directional);
+  light->SetPrimary(true);
+  lightEntity->AddComponent(lightTransform);
+  lightEntity->AddComponent(light);
+  scene->AddEntity(lightEntity);
+
+  auto cubeEntity = std::make_shared<Entity>(3, "Cube");
+  auto cubeTransform = std::make_shared<TransformComponent>();
+  cubeTransform->SetPosition(-2.0f, 0.0f, 0.0f);
+  auto cubeMesh = std::make_shared<MeshRendererComponent>();
+  cubeMesh->SetMeshAssetId("assets/meshes/cube.gltf");
+  cubeEntity->AddComponent(cubeTransform);
+  cubeEntity->AddComponent(cubeMesh);
+  scene->AddEntity(cubeEntity);
+
+  auto sphereEntity = std::make_shared<Entity>(4, "Sphere");
+  auto sphereTransform = std::make_shared<TransformComponent>();
+  sphereTransform->SetPosition(2.0f, 0.0f, 0.0f);
+  auto sphereMesh = std::make_shared<MeshRendererComponent>();
+  sphereMesh->SetMeshAssetId("assets/meshes/sphere.gltf");
+  sphereEntity->AddComponent(sphereTransform);
+  sphereEntity->AddComponent(sphereMesh);
+  scene->AddEntity(sphereEntity);
+
+  if (auto assets = m_context.GetAssetRegistry()) {
+    auto root = assets->GetRootPath();
+    if (root.empty()) {
+      root = std::filesystem::current_path();
+    }
+    assets->Scan(root.string());
+  }
+
+  return scene;
 }
 } // namespace Aetherion::Scene

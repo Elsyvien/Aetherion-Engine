@@ -71,6 +71,12 @@ endif()
 find_package(Qt6 6.2 COMPONENTS Widgets REQUIRED)
 find_package(Vulkan REQUIRED)
 
+# Jolt Physics
+set(PHYSICS_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/Engine/ThirdParty/JoltPhysics)
+set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(ENABLE_OBJECT_STREAM OFF CACHE BOOL "" FORCE)
+add_subdirectory(${PHYSICS_REPO_ROOT}/Build ${CMAKE_BINARY_DIR}/JoltPhysics)
+
 set(RUNTIME_SOURCES
     Engine/Core/src/Core.cpp
     Engine/Runtime/src/EngineApplication.cpp
@@ -89,7 +95,10 @@ set(RUNTIME_SOURCES
     Engine/Rendering/src/RenderingPlaceholder.cpp
     Engine/Rendering/src/VulkanContext.cpp
     Engine/Rendering/src/VulkanViewport.cpp
-    Engine/Physics/src/PhysicsPlaceholder.cpp
+    Engine/Physics/src/PhysicsWorld.cpp
+    Engine/Physics/src/PhysicsSystem.cpp
+    Engine/Scene/src/RigidbodyComponent.cpp
+    Engine/Scene/src/ColliderComponent.cpp
     Engine/Audio/src/AudioPlaceholder.cpp
     Engine/Scripting/src/ScriptingPlaceholder.cpp
 )
@@ -153,6 +162,7 @@ target_compile_features(AetherionRuntime PRIVATE cxx_std_20)
 target_link_libraries(AetherionRuntime
     PUBLIC
         Vulkan::Vulkan
+        Jolt
 )
 
 set(EDITOR_SOURCES

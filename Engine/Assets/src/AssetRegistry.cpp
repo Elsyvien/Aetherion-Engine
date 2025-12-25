@@ -5,6 +5,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <random>
@@ -470,11 +471,88 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
         return false;
     }
 
+    struct ObjVertexKey
+    {
+        int position = -1;
+        int texcoord = -1;
+        int normal = -1;
+    };
+
+    struct ObjVertexKeyHash
+    {
+        size_t operator()(const ObjVertexKey& key) const noexcept
+        {
+            size_t seed = std::hash<int>{}(key.position);
+            seed ^= std::hash<int>{}(key.texcoord) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<int>{}(key.normal) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            return seed;
+        }
+    };
+
+    struct ObjVertexKeyEq
+    {
+        bool operator()(const ObjVertexKey& lhs, const ObjVertexKey& rhs) const noexcept
+        {
+            return lhs.position == rhs.position &&
+                   lhs.texcoord == rhs.texcoord &&
+                   lhs.normal == rhs.normal;
+        }
+    };
+
+    auto resolveIndex = [](int value, size_t count) -> int {
+        if (value == 0)
+        {
+            return -1;
+        }
+        int idx = value;
+        if (idx < 0)
+        {
+            idx = static_cast<int>(count) + idx;
+        }
+        else
+        {
+            idx -= 1;
+        }
+        if (idx < 0 || idx >= static_cast<int>(count))
+        {
+            return -1;
+        }
+        return idx;
+    };
+
+    auto parseIndex = [](const std::string& value, int& outIndex) {
+        if (value.empty())
+        {
+            outIndex = 0;
+            return;
+        }
+        try
+        {
+            outIndex = std::stoi(value);
+        }
+        catch (const std::exception&)
+        {
+            outIndex = 0;
+        }
+    };
+
     std::vector<std::array<float, 3>> positions;
     std::vector<std::array<float, 4>> colors;
-    std::vector<std::array<float, 2>> uvs;
+    std::vector<std::array<float, 3>> normals;
     std::vector<std::array<float, 2>> texcoords;
+
+    std::vector<std::array<float, 3>> outPositions;
+    std::vector<std::array<float, 4>> outColors;
+    std::vector<std::array<float, 3>> outNormals;
+    std::vector<std::array<float, 2>> outUvs;
     std::vector<std::uint32_t> indices;
+
+    std::unordered_map<ObjVertexKey, std::uint32_t, ObjVertexKeyHash, ObjVertexKeyEq>
+        vertexLookup;
+    vertexLookup.reserve(1024);
+
+    bool hasNormals = false;
+    bool missingNormals = false;
 
     std::string line;
     while (std::getline(input, line))
@@ -503,16 +581,30 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
             float r = 1.0f;
             float g = 1.0f;
             float b = 1.0f;
+            float a = 1.0f;
             if (stream >> r >> g >> b)
             {
-                colors.push_back({r, g, b, 1.0f});
+                if (!(stream >> a))
+                {
+                    a = 1.0f;
+                }
+                colors.push_back({r, g, b, a});
             }
             else
             {
                 colors.push_back({1.0f, 1.0f, 1.0f, 1.0f});
             }
             positions.push_back({x, y, z});
-            uvs.push_back({0.0f, 0.0f});
+        }
+        else if (keyword == "vn")
+        {
+            float nx = 0.0f;
+            float ny = 0.0f;
+            float nz = 0.0f;
+            if (stream >> nx >> ny >> nz)
+            {
+                normals.push_back({nx, ny, nz});
+            }
         }
         else if (keyword == "vt")
         {
@@ -534,82 +626,94 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
                     continue;
                 }
 
-                int indexValue = 0;
+                int positionValue = 0;
                 int texValue = 0;
+                int normalValue = 0;
+
                 const size_t slash = token.find('/');
                 if (slash == std::string::npos)
                 {
-                    try
-                    {
-                        indexValue = std::stoi(token);
-                    }
-                    catch (const std::exception&)
-                    {
-                        continue;
-                    }
+                    parseIndex(token, positionValue);
                 }
                 else
                 {
-                    const std::string indexStr = token.substr(0, slash);
-                    if (!indexStr.empty())
-                    {
-                        try
-                        {
-                            indexValue = std::stoi(indexStr);
-                        }
-                        catch (const std::exception&)
-                        {
-                            indexValue = 0;
-                        }
-                    }
-
+                    parseIndex(token.substr(0, slash), positionValue);
                     const size_t slash2 = token.find('/', slash + 1);
-                    const std::string texStr =
-                        (slash2 == std::string::npos) ? token.substr(slash + 1)
-                                                      : token.substr(slash + 1, slash2 - slash - 1);
-                    if (!texStr.empty())
+                    if (slash2 == std::string::npos)
                     {
-                        try
+                        parseIndex(token.substr(slash + 1), texValue);
+                    }
+                    else
+                    {
+                        parseIndex(token.substr(slash + 1, slash2 - slash - 1), texValue);
+                        size_t slash3 = token.find('/', slash2 + 1);
+                        if (slash3 != std::string::npos)
                         {
-                            texValue = std::stoi(texStr);
+                            parseIndex(token.substr(slash2 + 1, slash3 - slash2 - 1),
+                                       normalValue);
                         }
-                        catch (const std::exception&)
+                        else
                         {
-                            texValue = 0;
+                            parseIndex(token.substr(slash2 + 1), normalValue);
                         }
                     }
                 }
 
-                if (indexValue == 0)
+                const int positionIndex = resolveIndex(positionValue, positions.size());
+                if (positionIndex < 0)
                 {
                     continue;
                 }
+                const int texIndex = resolveIndex(texValue, texcoords.size());
+                const int normalIndex = resolveIndex(normalValue, normals.size());
 
-                if (indexValue < 0)
+                const ObjVertexKey key{positionIndex, texIndex, normalIndex};
+                auto it = vertexLookup.find(key);
+                std::uint32_t vertexIndex = 0;
+                if (it == vertexLookup.end())
                 {
-                    indexValue = static_cast<int>(positions.size()) + indexValue + 1;
-                }
-
-                if (indexValue <= 0 || indexValue > static_cast<int>(positions.size()))
-                {
-                    continue;
-                }
-
-                if (texValue != 0 && !texcoords.empty())
-                {
-                    if (texValue < 0)
+                    outPositions.push_back(positions[static_cast<size_t>(positionIndex)]);
+                    if (static_cast<size_t>(positionIndex) < colors.size())
                     {
-                        texValue = static_cast<int>(texcoords.size()) + texValue + 1;
+                        outColors.push_back(colors[static_cast<size_t>(positionIndex)]);
                     }
-                    if (texValue > 0 && texValue <= static_cast<int>(texcoords.size()))
+                    else
                     {
-                        uvs[static_cast<size_t>(indexValue - 1)] =
-                            texcoords[static_cast<size_t>(texValue - 1)];
+                        outColors.push_back({1.0f, 1.0f, 1.0f, 1.0f});
                     }
-                }
 
-                const int adjustedIndex = indexValue - 1;
-                face.push_back(static_cast<std::uint32_t>(adjustedIndex));
+                    if (texIndex >= 0 && static_cast<size_t>(texIndex) < texcoords.size())
+                    {
+                        outUvs.push_back(texcoords[static_cast<size_t>(texIndex)]);
+                    }
+                    else
+                    {
+                        outUvs.push_back({0.0f, 0.0f});
+                    }
+
+                    if (normalIndex >= 0 && static_cast<size_t>(normalIndex) < normals.size())
+                    {
+                        auto normal = normals[static_cast<size_t>(normalIndex)];
+                        float normalValues[3] = {normal[0], normal[1], normal[2]};
+                        const float defaultNormal[3] = {0.0f, 0.0f, 1.0f};
+                        NormalizeVector(normalValues, defaultNormal);
+                        outNormals.push_back({normalValues[0], normalValues[1], normalValues[2]});
+                        hasNormals = true;
+                    }
+                    else
+                    {
+                        outNormals.push_back({0.0f, 0.0f, 1.0f});
+                        missingNormals = true;
+                    }
+
+                    vertexIndex = static_cast<std::uint32_t>(outPositions.size() - 1);
+                    vertexLookup.emplace(key, vertexIndex);
+                }
+                else
+                {
+                    vertexIndex = it->second;
+                }
+                face.push_back(vertexIndex);
             }
 
             if (face.size() >= 3)
@@ -624,18 +728,25 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
         }
     }
 
-    if (positions.empty() || indices.empty())
+    if (outPositions.empty() || indices.empty())
     {
         return false;
     }
 
-    mesh.positions = std::move(positions);
-    mesh.colors = std::move(colors);
-    mesh.uvs = std::move(uvs);
+    mesh.positions = std::move(outPositions);
+    mesh.colors = std::move(outColors);
+    mesh.normals = std::move(outNormals);
+    mesh.uvs = std::move(outUvs);
     mesh.indices = std::move(indices);
+
     if (mesh.colors.size() < mesh.positions.size())
     {
         mesh.colors.resize(mesh.positions.size(), {1.0f, 1.0f, 1.0f, 1.0f});
+    }
+    if (mesh.normals.size() < mesh.positions.size())
+    {
+        mesh.normals.resize(mesh.positions.size(), {0.0f, 0.0f, 1.0f});
+        missingNormals = true;
     }
     if (mesh.uvs.size() < mesh.positions.size())
     {
@@ -645,7 +756,11 @@ bool LoadObjMesh(const std::filesystem::path& sourcePath, AssetRegistry::MeshDat
     {
         mesh.tangents.resize(mesh.positions.size(), {1.0f, 0.0f, 0.0f, 1.0f});
     }
-    ComputeMeshNormals(mesh);
+
+    if (!hasNormals || missingNormals)
+    {
+        ComputeMeshNormals(mesh);
+    }
     ComputeMeshBounds(mesh);
     return true;
 }

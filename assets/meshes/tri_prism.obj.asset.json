@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "id": "65c270d7-eea5-45a5-acbe-143d357aa839",
+  "type": "Mesh",
+  "source": "meshes/tri_prism.obj"
+}

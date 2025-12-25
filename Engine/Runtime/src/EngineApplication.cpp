@@ -2,6 +2,7 @@
 
 #include <array>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -10,6 +11,7 @@
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -287,6 +289,28 @@ void Vec3Normalize(float v[3])
     v[2] *= invLen;
 }
 
+bool ContainsTokenCaseInsensitive(const std::string& value, const char* token)
+{
+    if (value.empty() || token == nullptr || token[0] == '\0')
+    {
+        return false;
+    }
+    std::string lowered = value;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::string loweredToken(token);
+    std::transform(loweredToken.begin(), loweredToken.end(), loweredToken.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lowered.find(loweredToken) != std::string::npos;
+}
+
+bool IsMovingLightName(const std::string& name)
+{
+    return ContainsTokenCaseInsensitive(name, "moving") ||
+           ContainsTokenCaseInsensitive(name, "orbit") ||
+           ContainsTokenCaseInsensitive(name, "bob");
+}
+
 class SceneSystemDispatcher final : public IRuntimeSystem
 {
 public:
@@ -370,9 +394,14 @@ public:
         RebuildRenderView();
     }
 
-    void Tick(EngineContext& context, float) override
+    void Tick(EngineContext& context, float deltaTime) override
     {
         m_context = &context;
+        m_timeSeconds += std::max(0.0f, deltaTime);
+        if (m_timeSeconds > 10000.0f)
+        {
+            m_timeSeconds = std::fmod(m_timeSeconds, 10000.0f);
+        }
         RebuildRenderView();
     }
 
@@ -436,6 +465,7 @@ private:
         bool foundPrimaryDirectional = false;
         bool foundCamera = false;
         bool foundPrimaryCamera = false;
+        std::unordered_set<Core::EntityId> movingLightIds;
         for (const auto& entity : entities)
         {
             if (!entity)
@@ -500,6 +530,37 @@ private:
                 default:
                     renderLight.type = Rendering::RenderLightType::Directional;
                     break;
+                }
+
+                const bool moving =
+                    (renderLight.type != Rendering::RenderLightType::Directional) &&
+                    IsMovingLightName(entity->GetName());
+                if (moving)
+                {
+                    movingLightIds.insert(entity->GetId());
+                    auto baseIt = m_movingLightBases.find(entity->GetId());
+                    if (baseIt == m_movingLightBases.end())
+                    {
+                        std::array<float, 3> base = {renderLight.position[0],
+                                                     renderLight.position[1],
+                                                     renderLight.position[2]};
+                        baseIt = m_movingLightBases.emplace(entity->GetId(), base).first;
+                    }
+
+                    const float speed =
+                        0.6f + 0.15f * static_cast<float>(entity->GetId() % 7);
+                    const float radius =
+                        0.7f + 0.2f * static_cast<float>(entity->GetId() % 5);
+                    const float height =
+                        0.25f + 0.1f * static_cast<float>(entity->GetId() % 3);
+                    const float angle = m_timeSeconds * speed;
+
+                    renderLight.position[0] =
+                        baseIt->second[0] + std::cos(angle) * radius;
+                    renderLight.position[2] =
+                        baseIt->second[2] + std::sin(angle) * radius;
+                    renderLight.position[1] =
+                        baseIt->second[1] + std::sin(angle * 1.7f) * height;
                 }
 
                 view->lights.push_back(renderLight);
@@ -648,10 +709,31 @@ private:
 
             view->batches[batchIndex].instances.push_back(instance);
         }
+
+        if (movingLightIds.empty())
+        {
+            m_movingLightBases.clear();
+        }
+        else
+        {
+            for (auto it = m_movingLightBases.begin(); it != m_movingLightBases.end();)
+            {
+                if (movingLightIds.find(it->first) == movingLightIds.end())
+                {
+                    it = m_movingLightBases.erase(it);
+                }
+                else
+                {
+                    ++it;
+                }
+            }
+        }
     }
 
     EngineContext* m_context{nullptr};
     std::weak_ptr<Scene::Scene> m_scene;
+    float m_timeSeconds{0.0f};
+    std::unordered_map<Core::EntityId, std::array<float, 3>> m_movingLightBases;
 };
 } // namespace
 

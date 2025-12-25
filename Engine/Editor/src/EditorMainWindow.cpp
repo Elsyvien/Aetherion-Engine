@@ -992,6 +992,10 @@ EditorMainWindow::EditorMainWindow(std::shared_ptr<Runtime::EngineApplication> r
         connect(m_hierarchyPanel, &EditorHierarchyPanel::createCameraEntityRequested, this, [this](Aetherion::Core::EntityId parentId) {
             CreateCameraEntity(parentId);
         });
+        connect(m_hierarchyPanel, &EditorHierarchyPanel::createMeshEntityRequested, this,
+                [this](Aetherion::Core::EntityId parentId, const QString& meshAssetId, const QString& displayName) {
+            CreateMeshEntity(parentId, meshAssetId, displayName);
+        });
     }
 
     if (m_inspectorPanel)
@@ -1087,6 +1091,9 @@ void EditorMainWindow::CreateMenuBarContent()
     fileMenu->addAction(tr("Open Project..."), [] {});
     auto* importGltf = fileMenu->addAction(tr("Import glTF..."));
     connect(importGltf, &QAction::triggered, this, &EditorMainWindow::ImportGltfAsset);
+    auto* openScene = fileMenu->addAction(tr("Open Scene..."));
+    openScene->setShortcut(QKeySequence::Open);
+    connect(openScene, &QAction::triggered, this, &EditorMainWindow::OpenScene);
     auto* saveScene = fileMenu->addAction(tr("Save Scene"));
     saveScene->setShortcut(QKeySequence::Save);
     connect(saveScene, &QAction::triggered, this, &EditorMainWindow::SaveScene);
@@ -1714,9 +1721,9 @@ void EditorMainWindow::ImportGltfAsset()
 
 void EditorMainWindow::AddAssetToScene(const QString& assetId)
 {
-    if (assetId.isEmpty() || !m_scene)
+    if (assetId.isEmpty())
     {
-        statusBar()->showMessage(tr("Cannot add asset: no active scene"), 2000);
+        statusBar()->showMessage(tr("Cannot add asset: invalid asset id"), 2000);
         return;
     }
 
@@ -1733,6 +1740,22 @@ void EditorMainWindow::AddAssetToScene(const QString& assetId)
     if (!entry)
     {
         statusBar()->showMessage(tr("Asset not found: %1").arg(assetId), 2000);
+        return;
+    }
+
+    if (entry->type == Assets::AssetRegistry::AssetType::Scene)
+    {
+        if (!ConfirmSaveIfDirty())
+        {
+            return;
+        }
+        LoadSceneFromPath(entry->path);
+        return;
+    }
+
+    if (!m_scene)
+    {
+        statusBar()->showMessage(tr("Cannot add asset: no active scene"), 2000);
         return;
     }
 
@@ -2230,6 +2253,22 @@ void EditorMainWindow::CreateLightEntity(Aetherion::Core::EntityId parentId)
 
     auto light = std::make_shared<Scene::LightComponent>();
     light->SetType(Scene::LightComponent::LightType::Directional);
+    bool hasPrimaryDirectional = false;
+    for (const auto& entity : m_scene->GetEntities())
+    {
+        if (entity)
+        {
+            if (auto existingLight = entity->GetComponent<Scene::LightComponent>())
+            {
+                if (existingLight->GetType() == Scene::LightComponent::LightType::Directional &&
+                    existingLight->IsPrimary())
+                {
+                    hasPrimaryDirectional = true;
+                    break;
+                }
+            }
+        }
+    }
     light->SetPrimary(!hasPrimaryDirectional);
     newEntity->AddComponent(transform);
     newEntity->AddComponent(light);
@@ -2311,6 +2350,108 @@ void EditorMainWindow::CreateCameraEntity(Aetherion::Core::EntityId parentId)
 
     AppendConsole(m_console, tr("Created camera"), ConsoleSeverity::Info);
     statusBar()->showMessage(tr("Camera created"), 3000);
+}
+
+void EditorMainWindow::CreateMeshEntity(Aetherion::Core::EntityId parentId,
+                                        const QString& meshAssetId,
+                                        const QString& displayName)
+{
+    if (!m_scene)
+    {
+        statusBar()->showMessage(tr("No active scene"), 2000);
+        return;
+    }
+
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto registry = ctx ? ctx->GetAssetRegistry() : nullptr;
+    if (!registry)
+    {
+        statusBar()->showMessage(tr("Asset registry unavailable"), 2000);
+        return;
+    }
+
+    const std::string assetRef = meshAssetId.toStdString();
+    const auto* entry = registry->FindEntry(assetRef);
+    if (!entry || entry->type != Assets::AssetRegistry::AssetType::Mesh)
+    {
+        statusBar()->showMessage(tr("Mesh asset not found: %1").arg(meshAssetId), 2000);
+        return;
+    }
+
+    Core::EntityId newId = 1;
+    for (const auto& entity : m_scene->GetEntities())
+    {
+        if (entity && entity->GetId() >= newId)
+        {
+            newId = entity->GetId() + 1;
+        }
+    }
+
+    QString entityLabel = displayName.trimmed();
+    if (entityLabel.isEmpty())
+    {
+        entityLabel = QString::fromStdString(entry->path.stem().string());
+    }
+    if (entityLabel.isEmpty())
+    {
+        entityLabel = tr("New Object");
+    }
+
+    auto newEntity = std::make_shared<Scene::Entity>(newId, entityLabel.toStdString());
+    auto transform = std::make_shared<Scene::TransformComponent>();
+    transform->SetPosition(0.0f, 0.0f, 0.0f);
+    transform->SetScale(1.0f, 1.0f, 1.0f);
+    if (parentId != 0)
+    {
+        transform->SetParent(parentId);
+    }
+
+    auto meshRenderer = std::make_shared<Scene::MeshRendererComponent>();
+    meshRenderer->SetMeshAssetId(assetRef);
+    meshRenderer->SetColor(1.0f, 1.0f, 1.0f);
+    if (const auto* cached = registry->GetMesh(entry->id); cached && !cached->textureIds.empty())
+    {
+        meshRenderer->SetAlbedoTextureId(cached->textureIds.front());
+    }
+
+    newEntity->AddComponent(transform);
+    newEntity->AddComponent(meshRenderer);
+
+    ExecuteCommand(std::make_unique<CreateEntityCommand>(m_scene, newEntity));
+
+    if (m_hierarchyPanel)
+    {
+        m_hierarchyPanel->BindScene(m_scene);
+        m_hierarchyPanel->SetSelectedEntity(newId);
+    }
+
+    if (m_selection)
+    {
+        m_selection->SelectEntity(newEntity);
+    }
+
+    AppendConsole(m_console, tr("Created mesh object '%1'").arg(entityLabel), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Mesh object created"), 3000);
+}
+
+void EditorMainWindow::OpenScene()
+{
+    if (!ConfirmSaveIfDirty())
+    {
+        return;
+    }
+
+    const std::filesystem::path sceneRoot = GetAssetsRootPath() / "scenes";
+    const QString startDir = QString::fromStdString(sceneRoot.generic_string());
+    const QString filter = tr("Scene Files (*.json)");
+    const QString selected =
+        QFileDialog::getOpenFileName(this, tr("Open Scene"), startDir, filter);
+    if (selected.isEmpty())
+    {
+        return;
+    }
+
+    LoadSceneFromPath(std::filesystem::path(selected.toStdString()));
 }
 
 void EditorMainWindow::SaveScene()

@@ -187,6 +187,10 @@ private:
     void CreateEmptyEntity(Aetherion::Core::EntityId parentId);
     void CreateLightEntity(Aetherion::Core::EntityId parentId);
     void CreateCameraEntity(Aetherion::Core::EntityId parentId);
+    void CreateMeshEntity(Aetherion::Core::EntityId parentId,
+                          const QString& meshAssetId,
+                          const QString& displayName);
+    void OpenScene();
     void SaveScene();
     void ReloadScene();
     bool ConfirmSaveIfDirty();

@@ -1,0 +1,1487 @@
+{
+  "name": "Lighting Showcase",
+  "entities": [
+    {
+      "id": 1,
+      "name": "Ground Plane",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.6,
+            0.62,
+            0.66
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/plane.obj"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            20.0,
+            1.0,
+            20.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Backdrop Wall",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.35,
+            0.38,
+            0.42
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            2.5,
+            -12.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            20.0,
+            5.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Center Cube",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.85,
+            0.9,
+            1.0
+          ],
+          "rotationSpeed": 20.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.gltf"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.5,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            25.0,
+            0.0
+          ],
+          "scale": [
+            1.2,
+            1.2,
+            1.2
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 4,
+      "name": "Hero Pyramid",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.9,
+            0.7,
+            0.4
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [
+            2.5,
+            0.0,
+            -1.5
+          ],
+          "rotation": [
+            0.0,
+            -15.0,
+            0.0
+          ],
+          "scale": [
+            1.1,
+            1.1,
+            1.1
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 5,
+      "name": "Tall Pillar",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.7,
+            0.8,
+            0.95
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [
+            -2.6,
+            1.5,
+            -1.0
+          ],
+          "rotation": [
+            0.0,
+            15.0,
+            0.0
+          ],
+          "scale": [
+            0.6,
+            3.0,
+            0.6
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 6,
+      "name": "Hero Cone",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.9,
+            0.6,
+            0.4
+          ],
+          "rotationSpeed": 10.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [
+            -2.2,
+            0.5,
+            2.2
+          ],
+          "rotation": [
+            0.0,
+            35.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 7,
+      "name": "Hero Cylinder",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.4,
+            0.7,
+            0.95
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "Transform": {
+          "position": [
+            2.8,
+            0.5,
+            2.6
+          ],
+          "rotation": [
+            0.0,
+            -25.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 8,
+      "name": "Hero Tri Prism",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.65,
+            0.85,
+            0.6
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/tri_prism.obj"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.5,
+            -3.2
+          ],
+          "rotation": [
+            0.0,
+            10.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 9,
+      "name": "Hero Wedge",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.75,
+            0.65,
+            0.55
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/wedge.obj"
+        },
+        "Transform": {
+          "position": [
+            -3.2,
+            0.0,
+            -3.2
+          ],
+          "rotation": [
+            0.0,
+            20.0,
+            0.0
+          ],
+          "scale": [
+            1.2,
+            1.0,
+            1.2
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 10,
+      "name": "Hero Octahedron",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.6,
+            0.8,
+            0.9
+          ],
+          "rotationSpeed": 30.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [
+            3.2,
+            0.6,
+            -3.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 11,
+      "name": "Grid A1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.9,
+            0.9,
+            0.95
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [
+            -8.0,
+            0.5,
+            -8.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 12,
+      "name": "Grid A2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.9,
+            0.7,
+            0.4
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [
+            -4.0,
+            0.0,
+            -8.0
+          ],
+          "rotation": [
+            0.0,
+            25.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 13,
+      "name": "Grid A3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.8,
+            0.5,
+            0.4
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [
+            4.0,
+            0.5,
+            -8.0
+          ],
+          "rotation": [
+            0.0,
+            50.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 14,
+      "name": "Grid A4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.4,
+            0.7,
+            0.9
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "Transform": {
+          "position": [
+            8.0,
+            0.5,
+            -8.0
+          ],
+          "rotation": [
+            0.0,
+            75.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 15,
+      "name": "Grid B1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.7,
+            0.8,
+            0.6
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/tri_prism.obj"
+        },
+        "Transform": {
+          "position": [
+            -8.0,
+            0.5,
+            -4.0
+          ],
+          "rotation": [
+            0.0,
+            100.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 16,
+      "name": "Grid B2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.7,
+            0.6,
+            0.5
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/wedge.obj"
+        },
+        "Transform": {
+          "position": [
+            -4.0,
+            0.0,
+            -4.0
+          ],
+          "rotation": [
+            0.0,
+            125.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 17,
+      "name": "Grid B3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.6,
+            0.8,
+            0.9
+          ],
+          "rotationSpeed": 12.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [
+            4.0,
+            0.6,
+            -4.0
+          ],
+          "rotation": [
+            0.0,
+            150.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 18,
+      "name": "Grid B4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.8,
+            0.9,
+            0.7
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [
+            8.0,
+            0.5,
+            -4.0
+          ],
+          "rotation": [
+            0.0,
+            175.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 19,
+      "name": "Grid C1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.9,
+            0.9,
+            0.95
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [
+            -8.0,
+            0.5,
+            4.0
+          ],
+          "rotation": [
+            0.0,
+            200.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 20,
+      "name": "Grid C2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.9,
+            0.7,
+            0.4
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/pyramid.obj"
+        },
+        "Transform": {
+          "position": [
+            -4.0,
+            0.0,
+            4.0
+          ],
+          "rotation": [
+            0.0,
+            225.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 21,
+      "name": "Grid C3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.8,
+            0.5,
+            0.4
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [
+            4.0,
+            0.5,
+            4.0
+          ],
+          "rotation": [
+            0.0,
+            250.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 22,
+      "name": "Grid C4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.4,
+            0.7,
+            0.9
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "Transform": {
+          "position": [
+            8.0,
+            0.5,
+            4.0
+          ],
+          "rotation": [
+            0.0,
+            275.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 23,
+      "name": "Grid D1",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.7,
+            0.8,
+            0.6
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/tri_prism.obj"
+        },
+        "Transform": {
+          "position": [
+            -8.0,
+            0.5,
+            8.0
+          ],
+          "rotation": [
+            0.0,
+            300.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 24,
+      "name": "Grid D2",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.7,
+            0.6,
+            0.5
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/wedge.obj"
+        },
+        "Transform": {
+          "position": [
+            -4.0,
+            0.0,
+            8.0
+          ],
+          "rotation": [
+            0.0,
+            325.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 25,
+      "name": "Grid D3",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.6,
+            0.8,
+            0.9
+          ],
+          "rotationSpeed": 12.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [
+            4.0,
+            0.6,
+            8.0
+          ],
+          "rotation": [
+            0.0,
+            350.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 26,
+      "name": "Grid D4",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.8,
+            0.9,
+            0.7
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [
+            8.0,
+            0.5,
+            8.0
+          ],
+          "rotation": [
+            0.0,
+            15.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 27,
+      "name": "Stack Base",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.75,
+            0.75,
+            0.8
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [
+            -6.0,
+            0.25,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.5,
+            0.5,
+            1.5
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 28,
+      "name": "Stack Mid",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.8,
+            0.82,
+            0.9
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Transform": {
+          "position": [
+            -6.0,
+            0.75,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            0.5,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 29,
+      "name": "Stack Top",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.6,
+            0.9,
+            0.95
+          ],
+          "rotationSpeed": 18.0,
+          "albedoTexture": "",
+          "meshId": "meshes/octahedron.obj"
+        },
+        "Transform": {
+          "position": [
+            -6.0,
+            1.36,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            0.6,
+            0.6,
+            0.6
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 30,
+      "name": "Plinth Base",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.6,
+            0.65,
+            0.7
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "Transform": {
+          "position": [
+            6.0,
+            0.2,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.2,
+            0.4,
+            1.2
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 31,
+      "name": "Plinth Top",
+      "components": {
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.9,
+            0.7,
+            0.5
+          ],
+          "rotationSpeed": 0.0,
+          "albedoTexture": "",
+          "meshId": "meshes/cone.obj"
+        },
+        "Transform": {
+          "position": [
+            6.0,
+            0.75,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            0.7,
+            0.7,
+            0.7
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 32,
+      "name": "Main Camera",
+      "components": {
+        "Camera": {
+          "projectionType": 0,
+          "verticalFov": 50.0,
+          "nearClip": 0.1,
+          "farClip": 200.0,
+          "orthographicSize": 10.0,
+          "isPrimary": true
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            4.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 33,
+      "name": "Overhead Camera",
+      "components": {
+        "Camera": {
+          "projectionType": 1,
+          "verticalFov": 60.0,
+          "nearClip": 0.1,
+          "farClip": 200.0,
+          "orthographicSize": 12.0,
+          "isPrimary": false
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            12.0,
+            0.0
+          ],
+          "rotation": [
+            -90.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 34,
+      "name": "Side Camera",
+      "components": {
+        "Camera": {
+          "projectionType": 0,
+          "verticalFov": 55.0,
+          "nearClip": 0.1,
+          "farClip": 200.0,
+          "orthographicSize": 10.0,
+          "isPrimary": false
+        },
+        "Transform": {
+          "position": [
+            12.0,
+            3.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            90.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 35,
+      "name": "Sun Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 0,
+          "lightColor": [
+            1.0,
+            0.95,
+            0.85
+          ],
+          "lightIntensity": 1.2,
+          "lightRange": 50.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": true,
+          "ambientColor": [
+            0.1,
+            0.1,
+            0.12
+          ]
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            -45.0,
+            45.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 36,
+      "name": "Moving Red Point Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 1,
+          "lightColor": [
+            1.0,
+            0.2,
+            0.2
+          ],
+          "lightIntensity": 3.0,
+          "lightRange": 7.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": false,
+          "ambientColor": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "Transform": {
+          "position": [
+            -3.0,
+            1.5,
+            2.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 37,
+      "name": "Moving Blue Spot Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 2,
+          "lightColor": [
+            0.2,
+            0.4,
+            1.0
+          ],
+          "lightIntensity": 4.0,
+          "lightRange": 9.0,
+          "innerConeAngle": 12.0,
+          "outerConeAngle": 28.0,
+          "lightPrimary": false,
+          "ambientColor": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "Transform": {
+          "position": [
+            3.0,
+            3.0,
+            2.0
+          ],
+          "rotation": [
+            -40.0,
+            -45.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 38,
+      "name": "Green Point Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 1,
+          "lightColor": [
+            0.2,
+            1.0,
+            0.4
+          ],
+          "lightIntensity": 2.5,
+          "lightRange": 6.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": false,
+          "ambientColor": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            1.2,
+            -4.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 39,
+      "name": "Purple Spot Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 2,
+          "lightColor": [
+            0.8,
+            0.4,
+            1.0
+          ],
+          "lightIntensity": 3.5,
+          "lightRange": 10.0,
+          "innerConeAngle": 14.0,
+          "outerConeAngle": 32.0,
+          "lightPrimary": false,
+          "ambientColor": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "Transform": {
+          "position": [
+            -6.0,
+            3.0,
+            -2.0
+          ],
+          "rotation": [
+            -30.0,
+            30.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 40,
+      "name": "Warm Point Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 1,
+          "lightColor": [
+            1.0,
+            0.7,
+            0.3
+          ],
+          "lightIntensity": 2.8,
+          "lightRange": 6.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": false,
+          "ambientColor": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "Transform": {
+          "position": [
+            6.0,
+            1.5,
+            -2.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    },
+    {
+      "id": 41,
+      "name": "Cool Fill Light",
+      "components": {
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 1,
+          "lightColor": [
+            0.4,
+            0.6,
+            1.0
+          ],
+          "lightIntensity": 2.0,
+          "lightRange": 7.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": false,
+          "ambientColor": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            1.5,
+            6.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        }
+      }
+    }
+  ]
+}

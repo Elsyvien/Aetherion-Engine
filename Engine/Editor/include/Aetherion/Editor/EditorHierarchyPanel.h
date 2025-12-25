@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHash>
+#include <QString>
 #include <QWidget>
 
 #include "Aetherion/Core/Types.h"
@@ -42,6 +43,9 @@ signals:
     void createEmptyEntityAtRootRequested();
     void createLightEntityRequested(Aetherion::Core::EntityId parentId);
     void createCameraEntityRequested(Aetherion::Core::EntityId parentId);
+    void createMeshEntityRequested(Aetherion::Core::EntityId parentId,
+                                   const QString& meshAssetId,
+                                   const QString& displayName);
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;

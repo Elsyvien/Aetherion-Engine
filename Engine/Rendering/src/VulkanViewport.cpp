@@ -55,7 +55,8 @@ struct Vertex
     float uv[2];
 };
 
-constexpr uint32_t kMaxLights = VulkanViewport::kMaxLights;
+// `VulkanViewport::kMaxLights` is private; mirror its value here locally.
+constexpr uint32_t kMaxLights = 8u;
 
 struct alignas(16) LightUniform
 {
@@ -167,6 +168,47 @@ void Mat4Scale(float out[16], float x, float y, float z)
     out[0] = x;
     out[5] = y;
     out[10] = z;
+}
+
+void Mat4Compose(float out[16],
+                 float tx, float ty, float tz,
+                 float rx, float ry, float rz, // radians
+                 float sx, float sy, float sz)
+{
+    // R = Rz * Ry * Rx
+    const float cx = std::cos(rx);
+    const float sx_sin = std::sin(rx);
+    const float cy = std::cos(ry);
+    const float sy_sin = std::sin(ry);
+    const float cz = std::cos(rz);
+    const float sz_sin = std::sin(rz);
+
+    const float cxsy = cx * sy_sin;
+    const float sxsy = sx_sin * sy_sin;
+
+    // Row 0
+    out[0] = (cy * cz) * sx;
+    out[4] = (cz * sxsy - cx * sz_sin) * sy;
+    out[8] = (cxsy * cz + sx_sin * sz_sin) * sz;
+    out[12] = tx;
+
+    // Row 1
+    out[1] = (cy * sz_sin) * sx;
+    out[5] = (cx * cz + sxsy * sz_sin) * sy;
+    out[9] = (-cz * sx_sin + cxsy * sz_sin) * sz;
+    out[13] = ty;
+
+    // Row 2
+    out[2] = (-sy_sin) * sx;
+    out[6] = (cy * sx_sin) * sy;
+    out[10] = (cx * cy) * sz;
+    out[14] = tz;
+
+    // Row 3
+    out[3] = 0.0f;
+    out[7] = 0.0f;
+    out[11] = 0.0f;
+    out[15] = 1.0f;
 }
 
 std::array<float, 3> Mat4TransformPoint(const float m[16], const std::array<float, 3>& p)
@@ -4519,29 +4561,39 @@ std::vector<VulkanViewport::DrawInstance> VulkanViewport::InstancesFromView(cons
     std::vector<DrawInstance> instances;
     instances.reserve(view.instances.size());
 
-    std::unordered_map<Core::EntityId, const Scene::TransformComponent*> transformLookup = view.transforms;
-    if (transformLookup.empty())
+    // Optimization: Avoid copying maps if possible by using pointers
+    const std::unordered_map<Core::EntityId, const Scene::TransformComponent*>* transformLookupPtr = &view.transforms;
+    std::unordered_map<Core::EntityId, const Scene::TransformComponent*> localTransformLookup;
+
+    if (view.transforms.empty())
     {
+        // View didn't provide pre-built map, so build it locally
         for (const auto& instance : view.instances)
         {
             if (instance.transform)
             {
-                transformLookup.emplace(instance.entityId, instance.transform);
+                localTransformLookup.emplace(instance.entityId, instance.transform);
             }
         }
+        transformLookupPtr = &localTransformLookup;
     }
+    const auto& transformLookup = *transformLookupPtr;
 
-    std::unordered_map<Core::EntityId, const Scene::MeshRendererComponent*> meshLookup = view.meshes;
-    if (meshLookup.empty())
+    const std::unordered_map<Core::EntityId, const Scene::MeshRendererComponent*>* meshLookupPtr = &view.meshes;
+    std::unordered_map<Core::EntityId, const Scene::MeshRendererComponent*> localMeshLookup;
+
+    if (view.meshes.empty())
     {
         for (const auto& instance : view.instances)
         {
             if (instance.mesh)
             {
-                meshLookup.emplace(instance.entityId, instance.mesh);
+                localMeshLookup.emplace(instance.entityId, instance.mesh);
             }
         }
+        meshLookupPtr = &localMeshLookup;
     }
+    const auto& meshLookup = *meshLookupPtr;
 
     std::unordered_map<Core::EntityId, std::array<float, 16>> worldCache;
     auto modelFor = [&](auto&& self, Core::EntityId id) -> const std::array<float, 16>&
@@ -4565,32 +4617,17 @@ std::vector<VulkanViewport::DrawInstance> VulkanViewport::InstancesFromView(cons
         const auto meshIt = meshLookup.find(id);
         const float spinDeg =
             (meshIt != meshLookup.end() && meshIt->second) ? meshIt->second->GetRotationSpeedDegPerSec() * timeSeconds : 0.0f;
-        const float radiansX = transform->GetRotationXDegrees() * (3.14159265358979323846f / 180.0f);
-        const float radiansY = transform->GetRotationYDegrees() * (3.14159265358979323846f / 180.0f);
-        const float radiansZ = (transform->GetRotationZDegrees() + spinDeg) * (3.14159265358979323846f / 180.0f);
-
-        float t[16];
-        Mat4Translation(t, transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ());
-
-        float rx[16];
-        float ry[16];
-        float rz[16];
-        float rzy[16];
-        float r[16];
-        Mat4RotationX(rx, radiansX);
-        Mat4RotationY(ry, radiansY);
-        Mat4RotationZ(rz, radiansZ);
-        Mat4Mul(rzy, rz, ry);
-        Mat4Mul(r, rzy, rx);
-
-        float s[16];
-        Mat4Scale(s, transform->GetScaleX(), transform->GetScaleY(), transform->GetScaleZ());
-
-        float tr[16];
-        Mat4Mul(tr, t, r);
+        
+        static constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
+        const float radiansX = transform->GetRotationXDegrees() * kDegToRad;
+        const float radiansY = transform->GetRotationYDegrees() * kDegToRad;
+        const float radiansZ = (transform->GetRotationZDegrees() + spinDeg) * kDegToRad;
 
         float localModel[16];
-        Mat4Mul(localModel, tr, s);
+        Mat4Compose(localModel,
+            transform->GetPositionX(), transform->GetPositionY(), transform->GetPositionZ(),
+            radiansX, radiansY, radiansZ,
+            transform->GetScaleX(), transform->GetScaleY(), transform->GetScaleZ());
 
         if (transform->HasParent())
         {

@@ -1,0 +1,61 @@
+"C:\Program Files\CMake\bin\cmake.exe" -SC:\Users\maxwi\source\repos\Aetherion-Engine -BC:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw --check-build-system CMakeFiles\Makefile.cmake 0
+Re-run cmake file: Makefile older than: ../CMakeLists.txt
+Warning: Interprocedural optimizations are not supported for this target, turn off the option INTERPROCEDURAL_OPTIMIZATION to disable this warning
+-- Configuring done
+-- Generating done
+-- Build files have been written to: C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw
+"C:\Program Files\CMake\bin\cmake.exe" -E cmake_progress_start C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\CMakeFiles C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\\CMakeFiles\progress.marks
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f CMakeFiles\Makefile2 all
+mingw32-make.exe[1]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f CMakeFiles\AetherionShaders.dir\build.make CMakeFiles/AetherionShaders.dir/depend
+mingw32-make.exe[2]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+"C:\Program Files\CMake\bin\cmake.exe" -E cmake_depends "MinGW Makefiles" C:\Users\maxwi\source\repos\Aetherion-Engine C:\Users\maxwi\source\repos\Aetherion-Engine C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\CMakeFiles\AetherionShaders.dir\DependInfo.cmake --color=
+mingw32-make.exe[2]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f CMakeFiles\AetherionShaders.dir\build.make CMakeFiles/AetherionShaders.dir/build
+mingw32-make.exe[2]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+[  0%] Generating shaders/viewport_triangle.vert.spv, shaders/viewport_triangle.frag.spv, shaders/viewport_picking.frag.spv, shaders/viewport_picking_uint.frag.spv, shaders/viewport_postprocess.vert.spv, shaders/viewport_postprocess.frag.spv, shaders/viewport_postprocess_uint.frag.spv
+C:\VulkanSDK\1.4.335.0\Bin\glslangValidator.exe -V C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_triangle.vert -o C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/shaders/viewport_triangle.vert.spv
+C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_triangle.vert
+C:\VulkanSDK\1.4.335.0\Bin\glslangValidator.exe -V C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_triangle.frag -o C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/shaders/viewport_triangle.frag.spv
+C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_triangle.frag
+C:\VulkanSDK\1.4.335.0\Bin\glslangValidator.exe -V C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_picking.frag -o C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/shaders/viewport_picking.frag.spv
+C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_picking.frag
+C:\VulkanSDK\1.4.335.0\Bin\glslangValidator.exe -V C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_picking_uint.frag -o C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/shaders/viewport_picking_uint.frag.spv
+C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_picking_uint.frag
+C:\VulkanSDK\1.4.335.0\Bin\glslangValidator.exe -V C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_postprocess.vert -o C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/shaders/viewport_postprocess.vert.spv
+C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_postprocess.vert
+C:\VulkanSDK\1.4.335.0\Bin\glslangValidator.exe -V C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_postprocess.frag -o C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/shaders/viewport_postprocess.frag.spv
+C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_postprocess.frag
+C:\VulkanSDK\1.4.335.0\Bin\glslangValidator.exe -V C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_postprocess_uint.frag -o C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/shaders/viewport_postprocess_uint.frag.spv
+C:/Users/maxwi/source/repos/Aetherion-Engine/Engine/Rendering/shaders/viewport_postprocess_uint.frag
+mingw32-make.exe[2]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+[  0%] Built target AetherionShaders
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f JoltPhysics\CMakeFiles\Jolt_autogen.dir\build.make JoltPhysics/CMakeFiles/Jolt_autogen.dir/depend
+mingw32-make.exe[2]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+"C:\Program Files\CMake\bin\cmake.exe" -E cmake_depends "MinGW Makefiles" C:\Users\maxwi\source\repos\Aetherion-Engine C:\Users\maxwi\source\repos\Aetherion-Engine\Engine\ThirdParty\JoltPhysics\Build C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\JoltPhysics C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\JoltPhysics\CMakeFiles\Jolt_autogen.dir\DependInfo.cmake --color=
+mingw32-make.exe[2]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f JoltPhysics\CMakeFiles\Jolt_autogen.dir\build.make JoltPhysics/CMakeFiles/Jolt_autogen.dir/build
+mingw32-make.exe[2]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+[  1%] Automatic MOC and UIC for target Jolt
+cd /d C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\JoltPhysics && "C:\Program Files\CMake\bin\cmake.exe" -E cmake_autogen C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/JoltPhysics/CMakeFiles/Jolt_autogen.dir/AutogenInfo.json Debug
+AutoGen: Refreshing parse cache because it doesn't exist.
+AutoMoc: Generating "SRC:/build-mingw/JoltPhysics/Jolt_autogen/moc_predefs.h", because it doesn't exist.
+C:/Qt/Tools/mingw1310_64/bin/g++.exe -dM -E -c "C:/Program Files/CMake/share/cmake-3.22/Modules/CMakeCXXCompilerABI.cpp" "-DAETHERION_APP_VERSION=\"0.0.1\"" -DJPH_DEBUG_RENDERER -DJPH_PROFILE_ENABLED -DJPH_USE_AVX -DJPH_USE_AVX2 -DJPH_USE_F16C -DJPH_USE_FMADD -DJPH_USE_LZCNT -DJPH_USE_SSE4_1 -DJPH_USE_SSE4_2 -DJPH_USE_TZCNT -D_DEBUG -IC:/Users/maxwi/source/repos/Aetherion-Engine/Engine/ThirdParty/JoltPhysics -IC:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++ -IC:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/x86_64-w64-mingw32 -IC:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/backward -IC:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include -IC:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include-fixed -IC:/Qt/Tools/mingw1310_64/x86_64-w64-mingw32/include
+
+AutoMoc subprocess error
+------------------------
+The content generation command for "SRC:/build-mingw/JoltPhysics/Jolt_autogen/moc_predefs.h" failed.
+
+Command
+-------
+C:/Qt/Tools/mingw1310_64/bin/g++.exe -dM -E -c "C:/Program Files/CMake/share/cmake-3.22/Modules/CMakeCXXCompilerABI.cpp" "-DAETHERION_APP_VERSION=\"0.0.1\"" -DJPH_DEBUG_RENDERER -DJPH_PROFILE_ENABLED -DJPH_USE_AVX -DJPH_USE_AVX2 -DJPH_USE_F16C -DJPH_USE_FMADD -DJPH_USE_LZCNT -DJPH_USE_SSE4_1 -DJPH_USE_SSE4_2 -DJPH_USE_TZCNT -D_DEBUG -IC:/Users/maxwi/source/repos/Aetherion-Engine/Engine/ThirdParty/JoltPhysics -IC:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++ -IC:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/x86_64-w64-mingw32 -IC:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include/c++/backward -IC:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include -IC:/Qt/Tools/mingw1310_64/lib/gcc/x86_64-w64-mingw32/13.1.0/include-fixed -IC:/Qt/Tools/mingw1310_64/x86_64-w64-mingw32/include
+
+Output
+------
+
+
+mingw32-make.exe[2]: *** [JoltPhysics\CMakeFiles\Jolt_autogen.dir\build.make:70: JoltPhysics/CMakeFiles/Jolt_autogen] Error 1
+mingw32-make.exe[2]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+mingw32-make.exe[1]: *** [CMakeFiles\Makefile2:267: JoltPhysics/CMakeFiles/Jolt_autogen.dir/all] Error 2
+mingw32-make.exe[1]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+mingw32-make.exe: *** [Makefile:135: all] Error 2

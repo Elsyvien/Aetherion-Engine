@@ -1,0 +1,68 @@
+"C:\Program Files\CMake\bin\cmake.exe" -SC:\Users\maxwi\source\repos\Aetherion-Engine -BC:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw --check-build-system CMakeFiles\Makefile.cmake 0
+Re-run cmake file: Makefile older than: ../CMakeLists.txt
+Warning: Interprocedural optimizations are not supported for this target, turn off the option INTERPROCEDURAL_OPTIMIZATION to disable this warning
+-- Configuring done
+-- Generating done
+-- Build files have been written to: C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw
+"C:\Program Files\CMake\bin\cmake.exe" -E cmake_progress_start C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\CMakeFiles C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\\CMakeFiles\progress.marks
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f CMakeFiles\Makefile2 all
+mingw32-make.exe[1]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f CMakeFiles\AetherionShaders.dir\build.make CMakeFiles/AetherionShaders.dir/depend
+mingw32-make.exe[2]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+"C:\Program Files\CMake\bin\cmake.exe" -E cmake_depends "MinGW Makefiles" C:\Users\maxwi\source\repos\Aetherion-Engine C:\Users\maxwi\source\repos\Aetherion-Engine C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\CMakeFiles\AetherionShaders.dir\DependInfo.cmake --color=
+mingw32-make.exe[2]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f CMakeFiles\AetherionShaders.dir\build.make CMakeFiles/AetherionShaders.dir/build
+mingw32-make.exe[2]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+mingw32-make.exe[2]: Nothing to be done for 'CMakeFiles/AetherionShaders.dir/build'.
+mingw32-make.exe[2]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+[  0%] Built target AetherionShaders
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f CMakeFiles\AetherionRuntime_autogen.dir\build.make CMakeFiles/AetherionRuntime_autogen.dir/depend
+mingw32-make.exe[2]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+"C:\Program Files\CMake\bin\cmake.exe" -E cmake_depends "MinGW Makefiles" C:\Users\maxwi\source\repos\Aetherion-Engine C:\Users\maxwi\source\repos\Aetherion-Engine C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\CMakeFiles\AetherionRuntime_autogen.dir\DependInfo.cmake --color=
+mingw32-make.exe[2]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f CMakeFiles\AetherionRuntime_autogen.dir\build.make CMakeFiles/AetherionRuntime_autogen.dir/build
+mingw32-make.exe[2]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+[  1%] Automatic MOC and UIC for target AetherionRuntime
+"C:\Program Files\CMake\bin\cmake.exe" -E cmake_autogen C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime_autogen.dir/AutogenInfo.json Debug
+AutoGen: Parsing "SRC:/Engine/Physics/src/PhysicsSystem.cpp"
+AutoGen: Parsing "SRC:/Engine/Scene/src/ColliderComponent.cpp"
+AutoGen: Parsing "SRC:/Engine/Physics/src/PhysicsWorld.cpp"
+AutoGen: Parsing "SRC:/Engine/Scene/src/RigidbodyComponent.cpp"
+AutoGen: Parsing "SRC:/Engine/Scene/src/Scene.cpp"
+AutoGen: Writing the parse cache file "SRC:/build-mingw/CMakeFiles/AetherionRuntime_autogen.dir/ParseCache.txt"
+mingw32-make.exe[2]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+[  1%] Built target AetherionRuntime_autogen
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f CMakeFiles\AetherionRuntime.dir\build.make CMakeFiles/AetherionRuntime.dir/depend
+mingw32-make.exe[2]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+"C:\Program Files\CMake\bin\cmake.exe" -E cmake_depends "MinGW Makefiles" C:\Users\maxwi\source\repos\Aetherion-Engine C:\Users\maxwi\source\repos\Aetherion-Engine C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw C:\Users\maxwi\source\repos\Aetherion-Engine\build-mingw\CMakeFiles\AetherionRuntime.dir\DependInfo.cmake --color=
+Dependencies file "CMakeFiles/AetherionRuntime.dir/AetherionRuntime_autogen/mocs_compilation.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Assets/src/AssetRegistry.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Audio/src/AudioPlaceholder.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Core/src/Core.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Platform/src/PlatformAbstraction.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Rendering/src/RenderingPlaceholder.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Rendering/src/VulkanContext.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Rendering/src/VulkanViewport.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Runtime/src/EngineApplication.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Runtime/src/EngineContext.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Scene/src/CameraComponent.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Scene/src/Component.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Scene/src/Entity.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Scene/src/LightComponent.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Scene/src/MeshRendererComponent.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Scene/src/Scene.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Scene/src/SceneSerializer.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Scene/src/System.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Scene/src/TransformComponent.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/AetherionRuntime.dir/Engine/Scripting/src/ScriptingPlaceholder.cpp.obj.d" is newer than depends file "C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw/CMakeFiles/AetherionRuntime.dir/compiler_depend.internal".
+Consolidate compiler generated dependencies of target AetherionRuntime
+mingw32-make.exe[2]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe  -f CMakeFiles\AetherionRuntime.dir\build.make CMakeFiles/AetherionRuntime.dir/build
+mingw32-make.exe[2]: Entering directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+[  2%] Building CXX object CMakeFiles/AetherionRuntime.dir/Engine/Runtime/src/EngineApplication.cpp.obj
+C:\Qt\Tools\mingw1310_64\bin\g++.exe -DAETHERION_APP_VERSION=\"0.0.1\" @CMakeFiles/AetherionRuntime.dir/includes_CXX.rsp -g -std=c++20 -MD -MT CMakeFiles/AetherionRuntime.dir/Engine/Runtime/src/EngineApplication.cpp.obj -MF CMakeFiles\AetherionRuntime.dir\Engine\Runtime\src\EngineApplication.cpp.obj.d -o CMakeFiles\AetherionRuntime.dir\Engine\Runtime\src\EngineApplication.cpp.obj -c C:\Users\maxwi\source\repos\Aetherion-Engine\Engine\Runtime\src\EngineApplication.cpp
+mingw32-make.exe[2]: *** [CMakeFiles\AetherionRuntime.dir\build.make:106: CMakeFiles/AetherionRuntime.dir/Engine/Runtime/src/EngineApplication.cpp.obj] Error 1
+mingw32-make.exe[2]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+mingw32-make.exe[1]: *** [CMakeFiles\Makefile2:132: CMakeFiles/AetherionRuntime.dir/all] Error 2
+mingw32-make.exe[1]: Leaving directory 'C:/Users/maxwi/source/repos/Aetherion-Engine/build-mingw'
+mingw32-make.exe: *** [Makefile:90: all] Error 2

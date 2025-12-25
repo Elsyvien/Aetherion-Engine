@@ -21,7 +21,12 @@ Scene::~Scene() = default;
 
 void Scene::AddEntity(std::shared_ptr<Entity> entity)
 {
+    if (!entity)
+    {
+        return;
+    }
     // TODO: Route through ECS world to ensure deterministic ordering and ownership.
+    m_entityMap[entity->GetId()] = entity.get();
     m_entities.push_back(std::move(entity));
 }
 
@@ -32,19 +37,46 @@ void Scene::RemoveEntity(Core::EntityId id)
         return;
     }
 
-    // First, unparent any children of this entity
-    for (const auto& entity : m_entities)
+    auto it = m_entityMap.find(id);
+    if (it == m_entityMap.end())
     {
-        if (!entity)
+        return;
+    }
+
+    Entity* entityPtr = it->second;
+
+    // Handle Transform hierarchy: unparent children and detach from parent
+    if (auto transform = entityPtr->GetComponent<TransformComponent>())
+    {
+        // Unparent children
+        // Copy the list to avoid iterator invalidation
+        auto children = transform->GetChildren();
+        for (auto childId : children)
         {
-            continue;
+            if (auto childEntity = FindEntityById(childId))
+            {
+                if (auto childTransform = childEntity->GetComponent<TransformComponent>())
+                {
+                    childTransform->ClearParent();
+                }
+            }
         }
-        auto transform = entity->GetComponent<TransformComponent>();
-        if (transform && transform->GetParentId() == id)
+
+        // Detach from parent
+        Core::EntityId parentId = transform->GetParentId();
+        if (parentId != 0)
         {
-            transform->ClearParent();
+            if (auto parentEntity = FindEntityById(parentId))
+            {
+                if (auto parentTransform = parentEntity->GetComponent<TransformComponent>())
+                {
+                    parentTransform->RemoveChild(id);
+                }
+            }
         }
     }
+
+    m_entityMap.erase(it);
 
     // Remove the entity from the list
     m_entities.erase(
@@ -62,12 +94,10 @@ const std::vector<std::shared_ptr<Entity>>& Scene::GetEntities() const noexcept
 
 std::shared_ptr<Entity> Scene::FindEntityById(Core::EntityId id) const noexcept
 {
-    for (const auto& entity : m_entities)
+    auto it = m_entityMap.find(id);
+    if (it != m_entityMap.end())
     {
-        if (entity && entity->GetId() == id)
-        {
-            return entity;
-        }
+        return it->second->shared_from_this();
     }
     return nullptr;
 }
