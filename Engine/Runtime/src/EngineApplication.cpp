@@ -30,7 +30,7 @@
 
 #include "Aetherion/Audio/AudioPlaceholder.h"
 #include "Aetherion/Assets/AssetRegistry.h"
-#include "Aetherion/Physics/PhysicsPlaceholder.h"
+#include "Aetherion/Physics/PhysicsWorld.h"
 #include "Aetherion/Rendering/RenderView.h"
 #include "Aetherion/Rendering/VulkanContext.h"
 #include "Aetherion/Scene/Entity.h"
@@ -42,6 +42,8 @@
 #include "Aetherion/Scene/System.h"
 #include "Aetherion/Scene/TransformComponent.h"
 #include "Aetherion/Scripting/ScriptingPlaceholder.h"
+#include "Aetherion/Platform/PlatformAbstraction.h"
+#include "Aetherion/Core/Math.h"
 
 namespace Aetherion::Runtime
 {
@@ -148,97 +150,50 @@ std::string BoolToOnOff(bool value)
 
 void Mat4Identity(float out[16])
 {
-    std::memset(out, 0, sizeof(float) * 16);
-    out[0] = 1.0f;
-    out[5] = 1.0f;
-    out[10] = 1.0f;
-    out[15] = 1.0f;
+    Core::Math::Mat4Identity(out);
 }
 
 void Mat4Mul(float out[16], const float a[16], const float b[16])
 {
-    float r[16];
-    for (int c = 0; c < 4; ++c)
-    {
-        for (int rIdx = 0; rIdx < 4; ++rIdx)
-        {
-            r[c * 4 + rIdx] = a[0 * 4 + rIdx] * b[c * 4 + 0] + a[1 * 4 + rIdx] *
-                              b[c * 4 + 1] + a[2 * 4 + rIdx] * b[c * 4 + 2] +
-                              a[3 * 4 + rIdx] * b[c * 4 + 3];
-        }
-    }
-    std::memcpy(out, r, sizeof(r));
+    Core::Math::Mat4Mul(out, a, b);
 }
 
 void Mat4RotationX(float out[16], float radians)
 {
-    Mat4Identity(out);
-    const float c = std::cos(radians);
-    const float s = std::sin(radians);
-    out[5] = c;
-    out[9] = -s;
-    out[6] = s;
-    out[10] = c;
+    Core::Math::Mat4RotationX(out, radians);
 }
 
 void Mat4RotationY(float out[16], float radians)
 {
-    Mat4Identity(out);
-    const float c = std::cos(radians);
-    const float s = std::sin(radians);
-    out[0] = c;
-    out[8] = s;
-    out[2] = -s;
-    out[10] = c;
+    Core::Math::Mat4RotationY(out, radians);
 }
 
 void Mat4RotationZ(float out[16], float radians)
 {
-    Mat4Identity(out);
-    const float c = std::cos(radians);
-    const float s = std::sin(radians);
-    out[0] = c;
-    out[4] = -s;
-    out[1] = s;
-    out[5] = c;
+    Core::Math::Mat4RotationZ(out, radians);
 }
 
 void Mat4Translation(float out[16], float x, float y, float z)
 {
-    Mat4Identity(out);
-    out[12] = x;
-    out[13] = y;
-    out[14] = z;
+    Core::Math::Mat4Translation(out, x, y, z);
 }
 
 void Mat4Scale(float out[16], float x, float y, float z)
 {
-    Mat4Identity(out);
-    out[0] = x;
-    out[5] = y;
-    out[10] = z;
+    Core::Math::Mat4Scale(out, x, y, z);
 }
 
 std::array<float, 16> BuildLocalMatrix(const Scene::TransformComponent& transform)
 {
-    float t[16];
-    float rx[16];
-    float ry[16];
-    float rz[16];
-    float rzy[16];
-    float r[16];
-    float s[16];
-    float tr[16];
+    static constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
     float local[16];
-    Mat4Translation(t, transform.GetPositionX(), transform.GetPositionY(), transform.GetPositionZ());
-    Mat4RotationX(rx, transform.GetRotationXDegrees() * (3.14159265358979323846f / 180.0f));
-    Mat4RotationY(ry, transform.GetRotationYDegrees() * (3.14159265358979323846f / 180.0f));
-    Mat4RotationZ(rz, transform.GetRotationZDegrees() * (3.14159265358979323846f / 180.0f));
-    Mat4Mul(rzy, rz, ry);
-    Mat4Mul(r, rzy, rx);
-    Mat4Scale(s, transform.GetScaleX(), transform.GetScaleY(), transform.GetScaleZ());
-    Mat4Mul(tr, t, r);
-    Mat4Mul(local, tr, s);
+    Core::Math::Mat4Compose(local,
+        transform.GetPositionX(), transform.GetPositionY(), transform.GetPositionZ(),
+        transform.GetRotationXDegrees() * kDegToRad,
+        transform.GetRotationYDegrees() * kDegToRad,
+        transform.GetRotationZDegrees() * kDegToRad,
+        transform.GetScaleX(), transform.GetScaleY(), transform.GetScaleZ());
+    
     std::array<float, 16> out{};
     std::memcpy(out.data(), local, sizeof(local));
     return out;
@@ -778,7 +733,7 @@ void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerbo
     m_context->SetVulkanContext(vulkanContext);
     m_context->SetRenderView(std::make_shared<Rendering::RenderView>());
     m_context->SetAssetRegistry(std::make_shared<Assets::AssetRegistry>());
-    m_context->SetPhysicsSystem(std::make_shared<Physics::PhysicsWorldStub>());
+    m_context->SetPhysicsSystem(std::make_shared<Physics::PhysicsWorld>());
     m_context->SetAudioSystem(std::make_shared<Audio::AudioEngineStub>());
     m_context->SetScriptingRuntime(std::make_shared<Scripting::ScriptingRuntimeStub>());
     m_context->SetProjectName("Aetherion");
@@ -1036,7 +991,13 @@ void EngineApplication::PumpEvents()
 
 void EngineApplication::DebugPrint(const std::string& message, bool isError) const
 {
-    auto& stream = isError ? std::cerr : std::cout;
-    stream << "[Engine] " << message << std::endl;
+    if (isError)
+    {
+        Core::Log::Error(message);
+    }
+    else
+    {
+        Core::Log::Info(message);
+    }
 }
 } // namespace Aetherion::Runtime

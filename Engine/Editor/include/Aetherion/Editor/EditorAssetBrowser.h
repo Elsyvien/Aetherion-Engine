@@ -21,6 +21,8 @@ public:
         QString label;
         QString id;
         bool isHeader{false};
+        QString iconPath;
+        QString assetPath;
     };
 
     explicit EditorAssetBrowser(QWidget* parent = nullptr);

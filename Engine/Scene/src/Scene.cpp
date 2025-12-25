@@ -25,8 +25,21 @@ void Scene::AddEntity(std::shared_ptr<Entity> entity)
     {
         return;
     }
+
+    const Core::EntityId id = entity->GetId();
+    if (id == 0)
+    {
+        return;
+    }
+
+    if (m_entityMap.find(id) != m_entityMap.end())
+    {
+        // Entity with this ID already exists in the scene.
+        return;
+    }
+
     // TODO: Route through ECS world to ensure deterministic ordering and ownership.
-    m_entityMap[entity->GetId()] = entity.get();
+    m_entityMap[id] = entity.get();
     m_entities.push_back(std::move(entity));
 }
 

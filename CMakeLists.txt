@@ -79,6 +79,7 @@ add_subdirectory(${PHYSICS_REPO_ROOT}/Build ${CMAKE_BINARY_DIR}/JoltPhysics)
 
 set(RUNTIME_SOURCES
     Engine/Core/src/Core.cpp
+    Engine/Core/src/UUID.cpp
     Engine/Runtime/src/EngineApplication.cpp
     Engine/Runtime/src/EngineContext.cpp
     Engine/Scene/src/Scene.cpp
@@ -97,6 +98,7 @@ set(RUNTIME_SOURCES
     Engine/Rendering/src/VulkanViewport.cpp
     Engine/Physics/src/PhysicsWorld.cpp
     Engine/Physics/src/PhysicsSystem.cpp
+    Engine/Physics/src/PhysicsContactListener.cpp
     Engine/Scene/src/RigidbodyComponent.cpp
     Engine/Scene/src/ColliderComponent.cpp
     Engine/Audio/src/AudioPlaceholder.cpp

@@ -1468,7 +1468,7 @@ void EditorMainWindow::RefreshAssetBrowser()
     if (!registry)
     {
         const QString label = tr("Assets unavailable");
-        items.push_back({label, label, true});
+        items.push_back({label, label, true, QString(), QString()});
         m_assetBrowser->SetItems(items);
         return;
     }
@@ -1504,10 +1504,20 @@ void EditorMainWindow::RefreshAssetBrowser()
         }
     }
 
+    auto iconForType = [](Assets::AssetRegistry::AssetType type) -> QString {
+        switch (type)
+        {
+        case Assets::AssetRegistry::AssetType::Mesh:
+            return QStringLiteral(":/aetherion/icons/mesh.svg");
+        default:
+            return QStringLiteral(":/aetherion/icons/file.svg");
+        }
+    };
+
     for (size_t i = 0; i < categoryCount; ++i)
     {
         const QString header = tr(categories[i].label);
-        items.push_back({header, header, true});
+        items.push_back({header, header, true, QString(), QString()});
 
         auto& list = grouped[i];
         std::sort(list.begin(), list.end(), [](const auto* lhs, const auto* rhs) {
@@ -1528,7 +1538,9 @@ void EditorMainWindow::RefreshAssetBrowser()
             }
             const QString label = QString::fromStdString(displayPath.generic_string());
             const QString id = QString::fromStdString(entry->id);
-            items.push_back({QString("  %1").arg(label), id, false});
+            const QString assetPath = QString::fromStdString(entry->path.string());
+            items.push_back({QString("  %1").arg(label), id, false,
+                             iconForType(entry->type), assetPath});
         }
     }
 

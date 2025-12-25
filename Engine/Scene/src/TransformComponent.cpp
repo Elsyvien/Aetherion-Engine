@@ -32,6 +32,21 @@ void TransformComponent::SetScale(float x, float y, float z) noexcept
     m_scale[2] = z;
 }
 
+void TransformComponent::SetPosition(const std::array<float, 3>& position) noexcept
+{
+    m_position = position;
+}
+
+void TransformComponent::SetRotationDegrees(const std::array<float, 3>& rotationDegrees) noexcept
+{
+    m_rotationDegrees = rotationDegrees;
+}
+
+void TransformComponent::SetScale(const std::array<float, 3>& scale) noexcept
+{
+    m_scale = scale;
+}
+
 void TransformComponent::SetParent(Core::EntityId parentId) noexcept
 {
     m_parentId = parentId;

@@ -83,6 +83,7 @@ private:
     QDoubleSpinBox* m_meshRotationSpeed = nullptr;
     QComboBox* m_meshAsset = nullptr;
     QComboBox* m_meshTexture = nullptr;
+    QCheckBox* m_meshVisible = nullptr;
     QCheckBox* m_lightEnabled = nullptr;
     QComboBox* m_lightType = nullptr;
     QDoubleSpinBox* m_lightColorR = nullptr;

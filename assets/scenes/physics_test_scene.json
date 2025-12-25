@@ -1,0 +1,588 @@
+{
+    "name": "Physics Test Scene",
+    "entities": [
+        {
+            "id": 1,
+            "name": "Ground Plane",
+            "components": {
+                "Transform": {
+                    "position": [
+                        0.0,
+                        -0.5,
+                        0.0
+                    ],
+                    "rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "scale": [
+                        50.0,
+                        1.0,
+                        50.0
+                    ],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [
+                        0.4,
+                        0.45,
+                        0.5
+                    ],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 0,
+                    "mass": 1.0,
+                    "linearDamping": 0.0,
+                    "angularDamping": 0.0,
+                    "useGravity": false,
+                    "friction": 0.8,
+                    "restitution": 0.1
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [
+                        25.0,
+                        0.5,
+                        25.0
+                    ],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            }
+        },
+        {
+            "id": 2,
+            "name": "Directional Light",
+            "components": {
+                "Transform": {
+                    "position": [
+                        0.0,
+                        10.0,
+                        0.0
+                    ],
+                    "rotation": [
+                        -45.0,
+                        30.0,
+                        0.0
+                    ],
+                    "scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "parent": 0
+                },
+                "Light": {
+                    "lightEnabled": true,
+                    "lightType": 0,
+                    "lightColor": [
+                        1.0,
+                        0.98,
+                        0.9
+                    ],
+                    "lightIntensity": 1.2,
+                    "lightRange": 100.0,
+                    "innerConeAngle": 15.0,
+                    "outerConeAngle": 30.0,
+                    "lightPrimary": true,
+                    "ambientColor": [
+                        0.15,
+                        0.18,
+                        0.25
+                    ]
+                }
+            }
+        },
+        {
+            "id": 10,
+            "name": "Falling Cube 1",
+            "components": {
+                "Transform": {
+                    "position": [
+                        0.0,
+                        8.0,
+                        0.0
+                    ],
+                    "rotation": [
+                        15.0,
+                        25.0,
+                        10.0
+                    ],
+                    "scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [
+                        0.9,
+                        0.3,
+                        0.2
+                    ],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 1.0,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.6,
+                    "restitution": 0.3
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [
+                        0.5,
+                        0.5,
+                        0.5
+                    ],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            }
+        },
+        {
+            "id": 11,
+            "name": "Falling Cube 2",
+            "components": {
+                "Transform": {
+                    "position": [
+                        -2.5,
+                        12.0,
+                        1.0
+                    ],
+                    "rotation": [
+                        0.0,
+                        45.0,
+                        0.0
+                    ],
+                    "scale": [
+                        1.2,
+                        1.2,
+                        1.2
+                    ],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [
+                        0.2,
+                        0.7,
+                        0.3
+                    ],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 1.5,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.6,
+                    "restitution": 0.2
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [
+                        0.6,
+                        0.6,
+                        0.6
+                    ],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            }
+        },
+        {
+            "id": 12,
+            "name": "Falling Cube 3",
+            "components": {
+                "Transform": {
+                    "position": [
+                        3.0,
+                        15.0,
+                        -1.5
+                    ],
+                    "rotation": [
+                        30.0,
+                        60.0,
+                        15.0
+                    ],
+                    "scale": [
+                        0.8,
+                        0.8,
+                        0.8
+                    ],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [
+                        0.2,
+                        0.4,
+                        0.9
+                    ],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 0.8,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.6,
+                    "restitution": 0.4
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [
+                        0.4,
+                        0.4,
+                        0.4
+                    ],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            }
+        },
+        {
+            "id": 13,
+            "name": "Falling Cube 4",
+            "components": {
+                "Transform": {
+                    "position": [
+                        -1.0,
+                        18.0,
+                        2.5
+                    ],
+                    "rotation": [
+                        45.0,
+                        0.0,
+                        30.0
+                    ],
+                    "scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [
+                        0.95,
+                        0.8,
+                        0.2
+                    ],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 1.2,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.6,
+                    "restitution": 0.25
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [
+                        0.5,
+                        0.5,
+                        0.5
+                    ],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            }
+        },
+        {
+            "id": 14,
+            "name": "Falling Cube 5",
+            "components": {
+                "Transform": {
+                    "position": [
+                        1.5,
+                        22.0,
+                        -0.5
+                    ],
+                    "rotation": [
+                        10.0,
+                        75.0,
+                        5.0
+                    ],
+                    "scale": [
+                        1.5,
+                        1.5,
+                        1.5
+                    ],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [
+                        0.8,
+                        0.3,
+                        0.8
+                    ],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 2.0,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.6,
+                    "restitution": 0.15
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [
+                        0.75,
+                        0.75,
+                        0.75
+                    ],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            }
+        },
+        {
+            "id": 20,
+            "name": "Falling Sphere 1",
+            "components": {
+                "Transform": {
+                    "position": [
+                        -3.0,
+                        10.0,
+                        -2.0
+                    ],
+                    "rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [
+                        1.0,
+                        0.5,
+                        0.0
+                    ],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/sphere.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 1.0,
+                    "linearDamping": 0.02,
+                    "angularDamping": 0.01,
+                    "useGravity": true,
+                    "friction": 0.4,
+                    "restitution": 0.6
+                },
+                "Collider": {
+                    "shapeType": 1,
+                    "halfExtents": [
+                        0.5,
+                        0.5,
+                        0.5
+                    ],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            }
+        },
+        {
+            "id": 21,
+            "name": "Falling Sphere 2",
+            "components": {
+                "Transform": {
+                    "position": [
+                        2.0,
+                        14.0,
+                        3.0
+                    ],
+                    "rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "scale": [
+                        0.7,
+                        0.7,
+                        0.7
+                    ],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [
+                        0.3,
+                        0.9,
+                        0.9
+                    ],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/sphere.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 0.5,
+                    "linearDamping": 0.02,
+                    "angularDamping": 0.01,
+                    "useGravity": true,
+                    "friction": 0.4,
+                    "restitution": 0.7
+                },
+                "Collider": {
+                    "shapeType": 1,
+                    "halfExtents": [
+                        0.5,
+                        0.5,
+                        0.5
+                    ],
+                    "radius": 0.35,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            }
+        },
+        {
+            "id": 22,
+            "name": "Falling Sphere 3",
+            "components": {
+                "Transform": {
+                    "position": [
+                        0.0,
+                        20.0,
+                        0.0
+                    ],
+                    "rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "scale": [
+                        1.5,
+                        1.5,
+                        1.5
+                    ],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [
+                        0.95,
+                        0.2,
+                        0.5
+                    ],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/sphere.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 3.0,
+                    "linearDamping": 0.02,
+                    "angularDamping": 0.01,
+                    "useGravity": true,
+                    "friction": 0.3,
+                    "restitution": 0.5
+                },
+                "Collider": {
+                    "shapeType": 1,
+                    "halfExtents": [
+                        0.5,
+                        0.5,
+                        0.5
+                    ],
+                    "radius": 0.75,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            }
+        }
+    ]
+}

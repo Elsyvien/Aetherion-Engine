@@ -30,6 +30,8 @@ public:
         Other
     };
 
+    static const char* AssetTypeToString(AssetType type);
+
     struct AssetEntry
     {
         std::string id;

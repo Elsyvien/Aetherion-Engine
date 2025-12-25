@@ -26,6 +26,11 @@ public:
     [[nodiscard]] float GetScaleX() const noexcept { return m_scale[0]; }
     [[nodiscard]] float GetScaleY() const noexcept { return m_scale[1]; }
     [[nodiscard]] float GetScaleZ() const noexcept { return m_scale[2]; }
+    
+    [[nodiscard]] const std::array<float, 3>& GetPosition() const noexcept { return m_position; }
+    [[nodiscard]] const std::array<float, 3>& GetRotationDegrees() const noexcept { return m_rotationDegrees; }
+    [[nodiscard]] const std::array<float, 3>& GetScale() const noexcept { return m_scale; }
+    
     [[nodiscard]] Core::EntityId GetParentId() const noexcept { return m_parentId; }
     [[nodiscard]] bool HasParent() const noexcept { return m_parentId != 0; }
     [[nodiscard]] const std::vector<Core::EntityId>& GetChildren() const noexcept { return m_children; }
@@ -33,6 +38,9 @@ public:
     void SetPosition(float x, float y, float z) noexcept;
     void SetRotationDegrees(float xDegrees, float yDegrees, float zDegrees) noexcept;
     void SetScale(float x, float y, float z) noexcept;
+    void SetPosition(const std::array<float, 3>& position) noexcept;
+    void SetRotationDegrees(const std::array<float, 3>& rotationDegrees) noexcept;
+    void SetScale(const std::array<float, 3>& scale) noexcept;
     void SetParent(Core::EntityId parentId) noexcept;
     void ClearParent() noexcept;
     void AddChild(Core::EntityId childId);

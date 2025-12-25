@@ -16,6 +16,7 @@
 #include "Aetherion/Scene/RigidbodyComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
+#include "Aetherion/Core/Math.h"
 #include "nlohmann/json.hpp"
 
 namespace {
@@ -117,14 +118,12 @@ bool SceneSerializer::Save(const Scene &scene,
 
     if (auto transform = entity->GetComponent<TransformComponent>()) {
       Json transformJson;
-      transformJson["position"] = {transform->GetPositionX(),
-                                   transform->GetPositionY(),
-                                   transform->GetPositionZ()};
-      transformJson["rotation"] = {transform->GetRotationXDegrees(),
-                                   transform->GetRotationYDegrees(),
-                                   transform->GetRotationZDegrees()};
-      transformJson["scale"] = {transform->GetScaleX(), transform->GetScaleY(),
-                                transform->GetScaleZ()};
+      const auto& pos = transform->GetPosition();
+      const auto& rot = transform->GetRotationDegrees();
+      const auto& sca = transform->GetScale();
+      transformJson["position"] = {pos[0], pos[1], pos[2]};
+      transformJson["rotation"] = {rot[0], rot[1], rot[2]};
+      transformJson["scale"] = {sca[0], sca[1], sca[2]};
       transformJson["parent"] = transform->GetParentId();
       components["Transform"] = std::move(transformJson);
     }
