@@ -79,4 +79,9 @@ std::shared_ptr<Scripting::ScriptingRuntimeStub>
 EngineContext::GetScriptingRuntime() const noexcept {
   return m_scriptingRuntime;
 }
+
+void EngineContext::SetSimulationState(bool playing, bool paused) noexcept {
+  m_simulationPlaying = playing;
+  m_simulationPaused = paused;
+}
 } // namespace Aetherion::Runtime

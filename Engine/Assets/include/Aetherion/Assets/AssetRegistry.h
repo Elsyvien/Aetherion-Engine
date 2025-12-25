@@ -71,6 +71,17 @@ public:
         std::vector<std::string> materialIds;
     };
 
+    struct MeshImportSettings
+    {
+        float scale{1.0f};
+        bool centerMesh{false};
+        bool generateNormals{false};
+        bool generateTangents{false};
+        bool flipUVs{false};
+        bool flipWinding{false};
+        bool optimize{false};
+    };
+
     struct CachedMaterial
     {
         std::string id;
@@ -94,6 +105,12 @@ public:
     [[nodiscard]] const CachedMesh* GetMesh(const std::string& id) const;
     [[nodiscard]] const CachedTexture* GetTexture(const std::string& id) const;
     [[nodiscard]] const CachedMaterial* GetMaterial(const std::string& id) const;
+    [[nodiscard]] MeshImportSettings GetMeshImportSettings(
+        const std::string& assetId) const;
+    bool SetMeshImportSettings(const std::string& assetId,
+                               const MeshImportSettings& settings);
+    bool ReimportMeshAsset(const std::string& assetId,
+                           std::string* outMessage = nullptr);
     [[nodiscard]] const MeshData* GetMeshData(const std::string& assetId) const noexcept;
     [[nodiscard]] const MeshData* LoadMeshData(const std::string& assetId);
 

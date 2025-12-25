@@ -23,3 +23,5 @@ compile_commands.json
 
 # Agent documentation
 agent.md
+build_log_design.txt
+build_log_ui.txt

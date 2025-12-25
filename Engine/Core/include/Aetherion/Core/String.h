@@ -22,4 +22,12 @@ namespace Aetherion::Core::String
         }
         return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
     }
+
+    inline bool ContainsCaseInsensitive(const std::string& value, const std::string& token)
+    {
+        if (value.empty() || token.empty()) return false;
+        std::string loweredValue = ToLower(value);
+        std::string loweredToken = ToLower(token);
+        return loweredValue.find(loweredToken) != std::string::npos;
+    }
 }

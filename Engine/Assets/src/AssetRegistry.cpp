@@ -11,30 +11,16 @@
 #include <iterator>
 #include <limits>
 #include <random>
-#include <regex>
 #include <sstream>
 #include <unordered_set>
 
 #define CGLTF_IMPLEMENTATION
 #include "cgltf/cgltf.h"
+#include "nlohmann/json.hpp"
 
 namespace {
 using namespace Aetherion::Assets;
-
-std::string ToLower(std::string value) {
-  std::transform(
-      value.begin(), value.end(), value.begin(),
-      [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-  return value;
-}
-
-bool HasSuffix(const std::string &value, const std::string &suffix) {
-  if (value.size() < suffix.size()) {
-    return false;
-  }
-  return value.compare(value.size() - suffix.size(), suffix.size(), suffix) ==
-         0;
-}
+using Json = nlohmann::json;
 
 bool PathHasSegment(const std::filesystem::path &path,
                     const std::string &segment) {
@@ -47,8 +33,9 @@ bool PathHasSegment(const std::filesystem::path &path,
 }
 
 bool IsMetadataPath(const std::filesystem::path &path) {
-  const std::string filename = ToLower(path.filename().string());
-  return HasSuffix(filename, ".asset.json");
+  const std::string filename =
+      Aetherion::Core::String::ToLower(path.filename().string());
+  return Aetherion::Core::String::HasSuffix(filename, ".asset.json");
 }
 
 std::filesystem::path
@@ -58,69 +45,178 @@ BuildMetadataPath(const std::filesystem::path &assetPath) {
   return metaPath;
 }
 
-bool ReadMetadataFile(const std::filesystem::path &metaPath, std::string &outId,
-                      std::string *outSource, std::string *outType) {
+std::string BuildSourceLabel(const std::filesystem::path &assetPath,
+                             const std::filesystem::path &rootPath) {
+  std::error_code ec;
+  std::filesystem::path relative =
+      std::filesystem::relative(assetPath, rootPath, ec);
+  return (!ec && !relative.empty()) ? relative.generic_string()
+                                    : assetPath.filename().generic_string();
+}
+
+bool LoadMetadataJson(const std::filesystem::path &metaPath, Json &outRoot) {
   std::ifstream input(metaPath);
   if (!input.is_open()) {
     return false;
   }
 
-  std::string content((std::istreambuf_iterator<char>(input)),
-                      std::istreambuf_iterator<char>());
-  input.close();
+  try {
+    input >> outRoot;
+    return outRoot.is_object();
+  } catch (const std::exception &) {
+    return false;
+  }
+}
 
-  std::smatch match;
-  std::regex idRegex("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
-  if (std::regex_search(content, match, idRegex) && match.size() >= 2) {
-    outId = match[1].str();
-  } else {
+bool WriteMetadataJson(const std::filesystem::path &metaPath,
+                       const Json &root) {
+  std::ofstream output(metaPath, std::ios::trunc);
+  if (!output.is_open()) {
     return false;
   }
 
-  if (outSource) {
-    std::regex sourceRegex("\\\"source\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
-    if (std::regex_search(content, match, sourceRegex) && match.size() >= 2) {
-      *outSource = match[1].str();
-    }
-  }
-
-  if (outType) {
-    std::regex typeRegex("\\\"type\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
-    if (std::regex_search(content, match, typeRegex) && match.size() >= 2) {
-      *outType = match[1].str();
-    }
-  }
-
+  output << root.dump(4) << "\n";
   return true;
+}
+
+AssetRegistry::MeshImportSettings DefaultMeshImportSettings() {
+  return AssetRegistry::MeshImportSettings{};
+}
+
+float SanitizeImportScale(float value) {
+  if (!std::isfinite(value) || value <= 0.0f) {
+    return 1.0f;
+  }
+  return value;
+}
+
+AssetRegistry::MeshImportSettings
+ReadMeshImportSettingsFromJson(const Json &root) {
+  auto settings = DefaultMeshImportSettings();
+  const auto importIt = root.find("import");
+  if (importIt == root.end() || !importIt->is_object()) {
+    return settings;
+  }
+
+  const Json &import = *importIt;
+  if (import.contains("scale") && import["scale"].is_number()) {
+    settings.scale = import["scale"].get<float>();
+  }
+  if (import.contains("centerMesh") && import["centerMesh"].is_boolean()) {
+    settings.centerMesh = import["centerMesh"].get<bool>();
+  }
+  if (import.contains("generateNormals") &&
+      import["generateNormals"].is_boolean()) {
+    settings.generateNormals = import["generateNormals"].get<bool>();
+  }
+  if (import.contains("generateTangents") &&
+      import["generateTangents"].is_boolean()) {
+    settings.generateTangents = import["generateTangents"].get<bool>();
+  }
+  if (import.contains("flipUVs") && import["flipUVs"].is_boolean()) {
+    settings.flipUVs = import["flipUVs"].get<bool>();
+  }
+  if (import.contains("flipWinding") && import["flipWinding"].is_boolean()) {
+    settings.flipWinding = import["flipWinding"].get<bool>();
+  }
+  if (import.contains("optimize") && import["optimize"].is_boolean()) {
+    settings.optimize = import["optimize"].get<bool>();
+  }
+
+  settings.scale = SanitizeImportScale(settings.scale);
+  return settings;
+}
+
+void WriteMeshImportSettingsToJson(
+    Json &root, const AssetRegistry::MeshImportSettings &settings,
+    bool overwrite) {
+  if (!root.contains("import") || !root["import"].is_object()) {
+    root["import"] = Json::object();
+  }
+
+  Json &import = root["import"];
+  if (overwrite || !import.contains("scale") || !import["scale"].is_number()) {
+    import["scale"] = SanitizeImportScale(settings.scale);
+  }
+  if (overwrite || !import.contains("centerMesh") ||
+      !import["centerMesh"].is_boolean()) {
+    import["centerMesh"] = settings.centerMesh;
+  }
+  if (overwrite || !import.contains("generateNormals") ||
+      !import["generateNormals"].is_boolean()) {
+    import["generateNormals"] = settings.generateNormals;
+  }
+  if (overwrite || !import.contains("generateTangents") ||
+      !import["generateTangents"].is_boolean()) {
+    import["generateTangents"] = settings.generateTangents;
+  }
+  if (overwrite || !import.contains("flipUVs") ||
+      !import["flipUVs"].is_boolean()) {
+    import["flipUVs"] = settings.flipUVs;
+  }
+  if (overwrite || !import.contains("flipWinding") ||
+      !import["flipWinding"].is_boolean()) {
+    import["flipWinding"] = settings.flipWinding;
+  }
+  if (overwrite || !import.contains("optimize") ||
+      !import["optimize"].is_boolean()) {
+    import["optimize"] = settings.optimize;
+  }
+}
+
+bool ReadMetadataFile(const std::filesystem::path &metaPath, std::string &outId,
+                      std::string *outSource, std::string *outType) {
+  try {
+    Json root;
+    if (!LoadMetadataJson(metaPath, root)) {
+      return false;
+    }
+
+    if (root.contains("id") && root["id"].is_string()) {
+      outId = root["id"].get<std::string>();
+    } else {
+      return false;
+    }
+
+    if (outSource && root.contains("source") && root["source"].is_string()) {
+      *outSource = root["source"].get<std::string>();
+    }
+
+    if (outType && root.contains("type") && root["type"].is_string()) {
+      *outType = root["type"].get<std::string>();
+    }
+
+    return true;
+  } catch (const std::exception &) {
+    return false;
+  }
 }
 
 void WriteMetadataFile(const std::filesystem::path &metaPath,
                        const std::string &id, AssetRegistry::AssetType type,
                        const std::string &source) {
-  std::ofstream output(metaPath, std::ios::trunc);
-  if (!output.is_open()) {
-    return;
+  Json root;
+  if (!LoadMetadataJson(metaPath, root) || !root.is_object()) {
+    root = Json::object();
   }
 
-  output << "{\n";
-  output << "  \"version\": 1,\n";
-  output << "  \"id\": \"" << id << "\",\n";
-  output << "  \"type\": \"" << AssetRegistry::AssetTypeToString(type)
-         << "\",\n";
-  output << "  \"source\": \"" << source << "\"\n";
-  output << "}\n";
-  output.close();
+  root["version"] = 1;
+  root["id"] = id;
+  root["type"] = AssetRegistry::AssetTypeToString(type);
+  root["source"] = source;
+
+  if (type == AssetRegistry::AssetType::Mesh) {
+    WriteMeshImportSettingsToJson(root, DefaultMeshImportSettings(), false);
+  }
+
+  WriteMetadataJson(metaPath, root);
 }
 
 bool EnsureMetadataForAsset(const std::filesystem::path &assetPath,
                             const std::filesystem::path &rootPath,
                             AssetRegistry::AssetType type, std::string &outId) {
   std::error_code ec;
-  std::filesystem::path relative =
-      std::filesystem::relative(assetPath, rootPath, ec);
-  std::string sourceLabel = (!ec && !relative.empty())
-                                ? relative.generic_string()
-                                : assetPath.filename().generic_string();
+  std::string sourceLabel = BuildSourceLabel(assetPath, rootPath);
 
   const std::filesystem::path metaPath = BuildMetadataPath(assetPath);
   std::string existingId;
@@ -182,7 +278,8 @@ std::string MakePathKey(const std::filesystem::path &path,
 }
 
 AssetRegistry::AssetType ClassifyAssetType(const std::filesystem::path &path) {
-  const std::string ext = ToLower(path.extension().string());
+  const std::string ext =
+      Aetherion::Core::String::ToLower(path.extension().string());
   if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" ||
       ext == ".bmp" || ext == ".gif" || ext == ".dds" || ext == ".ktx" ||
       ext == ".ktx2") {
@@ -291,6 +388,153 @@ void NormalizeVector(float v[3], const float fallback[3]) {
     v[0] = fallback[0];
     v[1] = fallback[1];
     v[2] = fallback[2];
+  }
+}
+
+bool ComputeMeshBoundsFromIndices(const AssetRegistry::MeshData &mesh,
+                                  std::array<float, 3> &outMin,
+                                  std::array<float, 3> &outMax) {
+  bool hasValue = false;
+  auto updateBounds = [&](const std::array<float, 3> &pos) {
+    if (!std::isfinite(pos[0]) || !std::isfinite(pos[1]) ||
+        !std::isfinite(pos[2])) {
+      return;
+    }
+    if (!hasValue) {
+      outMin = pos;
+      outMax = pos;
+      hasValue = true;
+      return;
+    }
+    outMin[0] = std::min(outMin[0], pos[0]);
+    outMin[1] = std::min(outMin[1], pos[1]);
+    outMin[2] = std::min(outMin[2], pos[2]);
+    outMax[0] = std::max(outMax[0], pos[0]);
+    outMax[1] = std::max(outMax[1], pos[1]);
+    outMax[2] = std::max(outMax[2], pos[2]);
+  };
+
+  if (!mesh.indices.empty()) {
+    for (auto index : mesh.indices) {
+      if (index >= mesh.positions.size()) {
+        continue;
+      }
+      updateBounds(mesh.positions[index]);
+    }
+  }
+
+  if (!hasValue) {
+    for (const auto &pos : mesh.positions) {
+      updateBounds(pos);
+    }
+  }
+
+  return hasValue;
+}
+
+void ApplyMeshImportSettings(
+    AssetRegistry::MeshData &mesh,
+    const AssetRegistry::MeshImportSettings &settings) {
+  const float scale = SanitizeImportScale(settings.scale);
+  if (scale != 1.0f) {
+    for (auto &pos : mesh.positions) {
+      pos[0] *= scale;
+      pos[1] *= scale;
+      pos[2] *= scale;
+    }
+  }
+
+  if (settings.flipUVs && !mesh.uvs.empty()) {
+    for (auto &uv : mesh.uvs) {
+      uv[1] = 1.0f - uv[1];
+    }
+  }
+
+  if (settings.flipWinding && mesh.indices.size() >= 3) {
+    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+      std::swap(mesh.indices[i + 1], mesh.indices[i + 2]);
+    }
+  }
+}
+
+void ApplyMeshCentering(AssetRegistry::MeshData &mesh,
+                        const AssetRegistry::MeshImportSettings &settings) {
+  if (!settings.centerMesh || mesh.positions.empty()) {
+    return;
+  }
+
+  std::array<float, 3> minV{};
+  std::array<float, 3> maxV{};
+  if (!ComputeMeshBoundsFromIndices(mesh, minV, maxV)) {
+    return;
+  }
+
+  const std::array<float, 3> center = {(minV[0] + maxV[0]) * 0.5f,
+                                       (minV[1] + maxV[1]) * 0.5f,
+                                       (minV[2] + maxV[2]) * 0.5f};
+  for (auto &pos : mesh.positions) {
+    pos[0] -= center[0];
+    pos[1] -= center[1];
+    pos[2] -= center[2];
+  }
+}
+
+template <typename T>
+void CompactAttribute(std::vector<T> &values,
+                      const std::vector<std::uint32_t> &remap) {
+  std::vector<T> output;
+  output.reserve(remap.size());
+  for (size_t i = 0; i < values.size() && i < remap.size(); ++i) {
+    if (remap[i] != std::numeric_limits<std::uint32_t>::max()) {
+      output.push_back(values[i]);
+    }
+  }
+  values = std::move(output);
+}
+
+void CompactMeshData(AssetRegistry::MeshData &mesh) {
+  if (mesh.positions.empty() || mesh.indices.empty()) {
+    return;
+  }
+
+  std::vector<bool> used(mesh.positions.size(), false);
+  for (auto idx : mesh.indices) {
+    if (idx < used.size()) {
+      used[idx] = true;
+    }
+  }
+
+  std::vector<std::uint32_t> remap(mesh.positions.size(),
+                                   std::numeric_limits<std::uint32_t>::max());
+  std::uint32_t next = 0;
+  for (size_t i = 0; i < used.size(); ++i) {
+    if (used[i]) {
+      remap[i] = next++;
+    }
+  }
+
+  if (next == mesh.positions.size()) {
+    return;
+  }
+
+  CompactAttribute(mesh.positions, remap);
+  if (mesh.normals.size() == remap.size()) {
+    CompactAttribute(mesh.normals, remap);
+  }
+  if (mesh.colors.size() == remap.size()) {
+    CompactAttribute(mesh.colors, remap);
+  }
+  if (mesh.uvs.size() == remap.size()) {
+    CompactAttribute(mesh.uvs, remap);
+  }
+  if (mesh.tangents.size() == remap.size()) {
+    CompactAttribute(mesh.tangents, remap);
+  }
+
+  for (auto &idx : mesh.indices) {
+    if (idx < remap.size()) {
+      idx = remap[idx];
+    }
   }
 }
 
@@ -634,6 +878,7 @@ bool SanitizeMeshData(AssetRegistry::MeshData &mesh, bool recomputeNormals,
 }
 
 bool LoadObjMesh(const std::filesystem::path &sourcePath,
+                 const AssetRegistry::MeshImportSettings &settings,
                  AssetRegistry::MeshData &mesh) {
   std::ifstream input(sourcePath);
   if (!input.is_open()) {
@@ -856,7 +1101,25 @@ bool LoadObjMesh(const std::filesystem::path &sourcePath,
   mesh.uvs = std::move(outUvs);
   mesh.indices = std::move(indices);
 
-  return SanitizeMeshData(mesh, !hasNormals || missingNormals, true);
+  ApplyMeshImportSettings(mesh, settings);
+
+  const bool recomputeNormals =
+      settings.generateNormals || !hasNormals || missingNormals;
+  const bool recomputeTangents = settings.generateTangents || settings.flipUVs;
+  if (!SanitizeMeshData(mesh, recomputeNormals, recomputeTangents)) {
+    return false;
+  }
+
+  if (settings.optimize) {
+    CompactMeshData(mesh);
+  }
+
+  ApplyMeshCentering(mesh, settings);
+  if (settings.optimize || settings.centerMesh) {
+    ComputeMeshBounds(mesh);
+  }
+
+  return true;
 }
 
 int AssetTypeOrder(AssetRegistry::AssetType type) {
@@ -1204,10 +1467,13 @@ AssetRegistry::LoadMeshData(const std::string &assetId) {
     return nullptr;
   }
 
-  const std::string extension = ToLower(sourcePath.extension().string());
+  const auto settings = GetMeshImportSettings(assetId);
+
+  const std::string extension =
+      Aetherion::Core::String::ToLower(sourcePath.extension().string());
   if (extension == ".obj") {
     MeshData mesh{};
-    if (!LoadObjMesh(sourcePath, mesh)) {
+    if (!LoadObjMesh(sourcePath, settings, mesh)) {
       return nullptr;
     }
 
@@ -1402,8 +1668,22 @@ AssetRegistry::LoadMeshData(const std::string &assetId) {
 
   cgltf_free(data);
 
-  if (!SanitizeMeshData(mesh, !loadedNormals, !loadedTangents)) {
+  ApplyMeshImportSettings(mesh, settings);
+
+  const bool recomputeNormals = settings.generateNormals || !loadedNormals;
+  const bool recomputeTangents =
+      settings.generateTangents || settings.flipUVs || !loadedTangents;
+  if (!SanitizeMeshData(mesh, recomputeNormals, recomputeTangents)) {
     return nullptr;
+  }
+
+  if (settings.optimize) {
+    CompactMeshData(mesh);
+  }
+
+  ApplyMeshCentering(mesh, settings);
+  if (settings.optimize || settings.centerMesh) {
+    ComputeMeshBounds(mesh);
   }
 
   auto &stored = m_meshData[assetId];
@@ -1573,12 +1853,169 @@ AssetRegistry::GetMaterial(const std::string &id) const {
   return &it->second;
 }
 
+AssetRegistry::MeshImportSettings
+AssetRegistry::GetMeshImportSettings(const std::string &assetId) const {
+  auto settings = DefaultMeshImportSettings();
+  if (assetId.empty()) {
+    return settings;
+  }
+
+  const AssetEntry *entry = FindEntry(assetId);
+  std::filesystem::path assetPath;
+  AssetType type = AssetType::Other;
+  if (entry) {
+    assetPath = entry->path;
+    type = entry->type;
+  } else {
+    assetPath = std::filesystem::path(assetId);
+    if (!assetPath.is_absolute() && !m_rootPath.empty()) {
+      assetPath = m_rootPath / assetPath;
+    }
+    type = ClassifyAssetType(assetPath);
+  }
+
+  if (type != AssetType::Mesh) {
+    return settings;
+  }
+
+  std::error_code ec;
+  const std::filesystem::path metaPath = BuildMetadataPath(assetPath);
+  if (!std::filesystem::exists(metaPath, ec)) {
+    return settings;
+  }
+
+  Json root;
+  if (!LoadMetadataJson(metaPath, root)) {
+    return settings;
+  }
+
+  return ReadMeshImportSettingsFromJson(root);
+}
+
+bool AssetRegistry::SetMeshImportSettings(const std::string &assetId,
+                                          const MeshImportSettings &settings) {
+  if (assetId.empty()) {
+    return false;
+  }
+
+  const AssetEntry *entry = FindEntry(assetId);
+  if (!entry) {
+    return false;
+  }
+
+  const std::filesystem::path assetPath = entry->path;
+  const AssetType type = entry->type;
+  const std::string id = entry->id;
+
+  if (type != AssetType::Mesh || assetPath.empty()) {
+    return false;
+  }
+
+  const std::filesystem::path rootPath =
+      m_rootPath.empty() ? assetPath.parent_path() : m_rootPath;
+  const std::string sourceLabel = BuildSourceLabel(assetPath, rootPath);
+  const std::filesystem::path metaPath = BuildMetadataPath(assetPath);
+
+  Json root;
+  if (!LoadMetadataJson(metaPath, root) || !root.is_object()) {
+    root = Json::object();
+  }
+
+  root["version"] = 1;
+  root["id"] = id;
+  root["type"] = AssetTypeToString(type);
+  root["source"] = sourceLabel;
+  WriteMeshImportSettingsToJson(root, settings, true);
+
+  return WriteMetadataJson(metaPath, root);
+}
+
+bool AssetRegistry::ReimportMeshAsset(const std::string &assetId,
+                                      std::string *outMessage) {
+  if (assetId.empty()) {
+    if (outMessage) {
+      *outMessage = "Invalid asset id";
+    }
+    return false;
+  }
+
+  const AssetEntry *entry = FindEntry(assetId);
+  if (!entry || entry->type != AssetType::Mesh) {
+    if (outMessage) {
+      *outMessage = "Asset is not a mesh";
+    }
+    return false;
+  }
+
+  std::filesystem::path sourcePath = entry->path;
+  std::error_code ec;
+  if (sourcePath.empty() || !std::filesystem::exists(sourcePath, ec)) {
+    if (outMessage) {
+      *outMessage = "Mesh source not found";
+    }
+    return false;
+  }
+
+  const std::string extension =
+      Aetherion::Core::String::ToLower(sourcePath.extension().string());
+  bool success = true;
+  std::string message;
+
+  if (extension == ".gltf" || extension == ".glb") {
+    const auto result = ImportGltf(sourcePath.string(), true);
+    success = result.success;
+    message = result.message;
+    if (success) {
+      std::unordered_set<std::string> keepMaterials(result.materials.begin(),
+                                                    result.materials.end());
+      for (auto it = m_materials.begin(); it != m_materials.end();) {
+        if (it->first.rfind(entry->id + ":mat:", 0) == 0 &&
+            keepMaterials.find(it->first) == keepMaterials.end()) {
+          it = m_materials.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    }
+  } else if (extension == ".obj") {
+    message = "OBJ reimported";
+    success = true;
+  } else {
+    message = "Unsupported mesh format";
+    success = false;
+  }
+
+  if (success) {
+    m_meshData.erase(entry->id);
+
+    AssetChange change{};
+    change.id = entry->id;
+    change.type = AssetType::Mesh;
+    change.kind = AssetChange::Kind::Modified;
+    change.serial = ++m_changeSerial;
+    m_changeLog.push_back(change);
+
+    const size_t maxChanges = 2048;
+    if (m_changeLog.size() > maxChanges) {
+      m_changeLog.erase(
+          m_changeLog.begin(),
+          m_changeLog.begin() +
+              static_cast<std::ptrdiff_t>(m_changeLog.size() - maxChanges));
+    }
+  }
+
+  if (outMessage) {
+    *outMessage = message;
+  }
+  return success;
+}
+
 std::uint64_t AssetRegistry::GetChangeSerial() const noexcept {
   return m_changeSerial;
 }
 
-void AssetRegistry::GetChangesSince(std::uint64_t serial,
-                                    std::vector<AssetChange> &out) const {
+void AssetRegistry::GetChangesSince(
+    std::uint64_t serial, std::vector<AssetRegistry::AssetChange> &out) const {
   out.clear();
   for (const auto &change : m_changeLog) {
     if (change.serial > serial) {

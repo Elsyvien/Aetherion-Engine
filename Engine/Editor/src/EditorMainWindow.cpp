@@ -2634,6 +2634,12 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
         return;
     }
 
+    if (m_runtimeApp)
+    {
+        m_runtimeApp->SetSimulationPlaying(false);
+        m_runtimeApp->SetSimulationPaused(false);
+    }
+
     m_scene = m_runtimeApp->GetActiveScene();
     if (m_selection)
     {
@@ -3026,11 +3032,15 @@ void EditorMainWindow::UpdateRuntimeControlStates()
 
 void EditorMainWindow::StartOrStopPlaySession()
 {
-    if (m_isPlaying && !m_isPaused)
+    if (m_isPlaying)
     {
         m_isPlaying = false;
         m_isPaused = false;
-        AppendConsole(m_console, tr("Stopped play session (runtime stub)"), ConsoleSeverity::Info);
+        if (m_runtimeApp)
+        {
+            m_runtimeApp->SetSimulationPlaying(false);
+        }
+        AppendConsole(m_console, tr("Stopped play session"), ConsoleSeverity::Info);
         statusBar()->showMessage(tr("Stopped play session"), 2000);
         UpdateRuntimeControlStates();
         return;
@@ -3038,7 +3048,12 @@ void EditorMainWindow::StartOrStopPlaySession()
 
     m_isPlaying = true;
     m_isPaused = false;
-    AppendConsole(m_console, tr("Started play session (runtime stub)"), ConsoleSeverity::Info);
+    if (m_runtimeApp)
+    {
+        m_runtimeApp->SetSimulationPlaying(true);
+        m_runtimeApp->SetSimulationPaused(false);
+    }
+    AppendConsole(m_console, tr("Started play session"), ConsoleSeverity::Info);
     statusBar()->showMessage(tr("Play session started"), 2000);
     UpdateRuntimeControlStates();
 }
@@ -3052,7 +3067,11 @@ void EditorMainWindow::TogglePauseSession()
     }
 
     m_isPaused = !m_isPaused;
-    AppendConsole(m_console, m_isPaused ? tr("Paused session (runtime stub)") : tr("Resumed session (runtime stub)"), ConsoleSeverity::Info);
+    if (m_runtimeApp)
+    {
+        m_runtimeApp->SetSimulationPaused(m_isPaused);
+    }
+    AppendConsole(m_console, m_isPaused ? tr("Paused session") : tr("Resumed session"), ConsoleSeverity::Info);
     statusBar()->showMessage(m_isPaused ? tr("Session paused") : tr("Session resumed"), 2000);
     UpdateRuntimeControlStates();
 }
@@ -3065,8 +3084,12 @@ void EditorMainWindow::StepSimulationOnce()
         return;
     }
 
-    AppendConsole(m_console, tr("Stepped simulation once (placeholder)"), ConsoleSeverity::Info);
-    statusBar()->showMessage(tr("Stepped simulation (placeholder)"), 2000);
+    if (m_runtimeApp)
+    {
+        m_runtimeApp->StepSimulationOnce();
+    }
+    AppendConsole(m_console, tr("Stepped simulation once"), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Stepped simulation"), 2000);
 }
 
 void EditorMainWindow::ActivateModeTab(int index)

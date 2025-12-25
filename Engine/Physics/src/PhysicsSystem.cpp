@@ -43,8 +43,15 @@ std::array<float, 3> QuaternionToEuler(const std::array<float, 4> &q) {
 
 namespace Aetherion::Physics {
 
-PhysicsSystem::PhysicsSystem()
-    : m_physicsWorld(std::make_unique<PhysicsWorld>()) {}
+PhysicsSystem::PhysicsSystem(std::shared_ptr<PhysicsWorld> physicsWorld)
+    : m_physicsWorld(std::move(physicsWorld))
+{
+  if (!m_physicsWorld)
+  {
+    m_physicsWorld = std::make_shared<PhysicsWorld>();
+    m_ownsPhysicsWorld = true;
+  }
+}
 
 PhysicsSystem::~PhysicsSystem() { Shutdown(); }
 
@@ -54,7 +61,7 @@ bool PhysicsSystem::Initialize() {
 
 void PhysicsSystem::Shutdown() {
   UnbindScene();
-  if (m_physicsWorld) {
+  if (m_physicsWorld && m_ownsPhysicsWorld) {
     m_physicsWorld->Shutdown();
   }
 }

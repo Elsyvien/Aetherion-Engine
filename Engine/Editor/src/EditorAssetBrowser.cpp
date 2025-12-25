@@ -218,11 +218,12 @@ void EditorAssetBrowser::updateVisibleItems()
     {
         if (item.isHeader)
         {
+            const bool isCategoryHeader = item.label.endsWith('/');
             pendingHeader = item;
-            hasPendingHeader = true;
+            hasPendingHeader = isCategoryHeader;
             headerAddedForCategory = false;
 
-            if (m_filterText.isEmpty())
+            if (m_filterText.isEmpty() || !isCategoryHeader)
             {
                 addHeaderItem(item);
                 headerAddedForCategory = true;

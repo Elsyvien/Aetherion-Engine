@@ -6,7 +6,6 @@
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/TransformComponent.h"
 
-
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -19,7 +18,6 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
-
 
 #include <iostream>
 #define STB_IMAGE_IMPLEMENTATION
@@ -539,6 +537,7 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds,
   const auto instances = InstancesFromView(view, m_timeSeconds);
   UpdateSelectionBuffer(instances, view);
   UpdateLightGizmoBuffer(view);
+  UpdateColliderBuffer(view);
 
   VkDevice device = m_context->GetDevice();
   VkQueue graphicsQueue = m_context->GetGraphicsQueue();
@@ -908,6 +907,16 @@ void VulkanViewport::DestroyDeviceResources() {
   }
   m_lightGizmoVertexMemory = VK_NULL_HANDLE;
   m_lightGizmoVertexCount = 0;
+
+  if (device != VK_NULL_HANDLE && m_colliderVertexBuffer != VK_NULL_HANDLE) {
+    vkDestroyBuffer(device, m_colliderVertexBuffer, nullptr);
+  }
+  m_colliderVertexBuffer = VK_NULL_HANDLE;
+  if (device != VK_NULL_HANDLE && m_colliderVertexMemory != VK_NULL_HANDLE) {
+    vkFreeMemory(device, m_colliderVertexMemory, nullptr);
+  }
+  m_colliderVertexMemory = VK_NULL_HANDLE;
+  m_colliderVertexCount = 0;
 
   for (auto &pool : m_descriptorPools) {
     if (device != VK_NULL_HANDLE && pool != VK_NULL_HANDLE) {
@@ -2168,6 +2177,16 @@ void VulkanViewport::CreateLineBuffers() {
                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                m_lightGizmoVertexBuffer, m_lightGizmoVertexMemory);
   m_lightGizmoVertexCount = 0;
+
+  // Collider debug buffer: support many colliders with wireframe shapes.
+  // Box: 24 verts, Sphere: ~96 verts, Capsule: ~128 verts
+  const size_t maxColliderVerts = 256 * 128; // Up to 256 colliders
+  CreateBuffer(gpu, device, sizeof(Vertex) * maxColliderVerts,
+               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               m_colliderVertexBuffer, m_colliderVertexMemory);
+  m_colliderVertexCount = 0;
 }
 
 void VulkanViewport::CreateSceneResources() {
@@ -3107,6 +3126,19 @@ void VulkanViewport::RecordOpaquePass(
     vkCmdDraw(cb, m_lightGizmoVertexCount, 1, 0, 0);
   }
 
+  // Render collider debug wireframes
+  if (m_overlayPipeline != VK_NULL_HANDLE &&
+      m_colliderVertexBuffer != VK_NULL_HANDLE && m_colliderVertexCount > 0) {
+    baseConstants.flags = kInstanceFlagUnlit;
+    vkCmdPushConstants(cb, m_pipelineLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT |
+                           VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(InstancePushConstants), &baseConstants);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_overlayPipeline);
+    vkCmdBindVertexBuffers(cb, 0, 1, &m_colliderVertexBuffer, offsets);
+    vkCmdDraw(cb, m_colliderVertexCount, 1, 0, 0);
+  }
+
   vkCmdEndRenderPass(cb);
 }
 
@@ -4040,6 +4072,247 @@ void VulkanViewport::UpdateLightGizmoBuffer(const RenderView &view) {
   m_lightGizmoVertexCount = static_cast<uint32_t>(vertices.size());
 }
 
+void VulkanViewport::UpdateColliderBuffer(const RenderView &view) {
+  m_colliderVertexCount = 0;
+  if (!view.showColliders || m_colliderVertexMemory == VK_NULL_HANDLE) {
+    return;
+  }
+
+  if (view.colliders.empty()) {
+    return;
+  }
+
+  std::vector<Vertex> vertices;
+  vertices.reserve(view.colliders.size() * 128);
+
+  const float normal[3] = {0.0f, 1.0f, 0.0f};
+
+  auto addLine = [&](const float a[3], const float b[3], const float color[4]) {
+    vertices.push_back(Vertex{{a[0], a[1], a[2]},
+                              {normal[0], normal[1], normal[2]},
+                              {color[0], color[1], color[2], color[3]},
+                              {0.0f, 0.0f}});
+    vertices.push_back(Vertex{{b[0], b[1], b[2]},
+                              {normal[0], normal[1], normal[2]},
+                              {color[0], color[1], color[2], color[3]},
+                              {0.0f, 0.0f}});
+  };
+
+  auto transformPoint = [](const float m[16], float x, float y,
+                           float z) -> std::array<float, 3> {
+    return {m[0] * x + m[4] * y + m[8] * z + m[12],
+            m[1] * x + m[5] * y + m[9] * z + m[13],
+            m[2] * x + m[6] * y + m[10] * z + m[14]};
+  };
+
+  auto addCircle = [&](const float center[3], const float right[3],
+                       const float up[3], float radius, const float color[4],
+                       int segments = 24) {
+    constexpr float kTwoPi = 6.28318530718f;
+    for (int i = 0; i < segments; ++i) {
+      float a0 = static_cast<float>(i) * kTwoPi / static_cast<float>(segments);
+      float a1 =
+          static_cast<float>(i + 1) * kTwoPi / static_cast<float>(segments);
+      float p0[3] = {center[0] + std::cos(a0) * radius * right[0] +
+                         std::sin(a0) * radius * up[0],
+                     center[1] + std::cos(a0) * radius * right[1] +
+                         std::sin(a0) * radius * up[1],
+                     center[2] + std::cos(a0) * radius * right[2] +
+                         std::sin(a0) * radius * up[2]};
+      float p1[3] = {center[0] + std::cos(a1) * radius * right[0] +
+                         std::sin(a1) * radius * up[0],
+                     center[1] + std::cos(a1) * radius * right[1] +
+                         std::sin(a1) * radius * up[1],
+                     center[2] + std::cos(a1) * radius * right[2] +
+                         std::sin(a1) * radius * up[2]};
+      addLine(p0, p1, color);
+    }
+  };
+
+  auto addHalfCircle =
+      [&](const float center[3], const float right[3], const float up[3],
+          float radius, const float color[4], bool topHalf, int segments = 12) {
+        constexpr float kPi = 3.14159265359f;
+        float startAngle = topHalf ? 0.0f : kPi;
+        for (int i = 0; i < segments; ++i) {
+          float a0 = startAngle +
+                     static_cast<float>(i) * kPi / static_cast<float>(segments);
+          float a1 = startAngle + static_cast<float>(i + 1) * kPi /
+                                      static_cast<float>(segments);
+          float p0[3] = {center[0] + std::cos(a0) * radius * right[0] +
+                             std::sin(a0) * radius * up[0],
+                         center[1] + std::cos(a0) * radius * right[1] +
+                             std::sin(a0) * radius * up[1],
+                         center[2] + std::cos(a0) * radius * right[2] +
+                             std::sin(a0) * radius * up[2]};
+          float p1[3] = {center[0] + std::cos(a1) * radius * right[0] +
+                             std::sin(a1) * radius * up[0],
+                         center[1] + std::cos(a1) * radius * right[1] +
+                             std::sin(a1) * radius * up[1],
+                         center[2] + std::cos(a1) * radius * right[2] +
+                             std::sin(a1) * radius * up[2]};
+          addLine(p0, p1, color);
+        }
+      };
+
+  for (const auto &collider : view.colliders) {
+    // Color based on type: trigger=yellow, static=green, dynamic=cyan
+    float color[4];
+    if (collider.isTrigger) {
+      color[0] = 0.9f;
+      color[1] = 0.9f;
+      color[2] = 0.2f;
+      color[3] = 1.0f;
+    } else if (collider.isStatic) {
+      color[0] = 0.2f;
+      color[1] = 0.8f;
+      color[2] = 0.2f;
+      color[3] = 1.0f;
+    } else {
+      color[0] = 0.2f;
+      color[1] = 0.8f;
+      color[2] = 0.8f;
+      color[3] = 1.0f;
+    }
+
+    const float *m = collider.worldMatrix;
+    const float ox = collider.offset[0];
+    const float oy = collider.offset[1];
+    const float oz = collider.offset[2];
+
+    if (collider.shapeType == 0) {
+      // Box: 12 edges
+      const float hx = collider.halfExtents[0];
+      const float hy = collider.halfExtents[1];
+      const float hz = collider.halfExtents[2];
+
+      // 8 corners in local space (with offset)
+      std::array<std::array<float, 3>, 8> corners = {{
+          {{ox - hx, oy - hy, oz - hz}},
+          {{ox + hx, oy - hy, oz - hz}},
+          {{ox + hx, oy + hy, oz - hz}},
+          {{ox - hx, oy + hy, oz - hz}},
+          {{ox - hx, oy - hy, oz + hz}},
+          {{ox + hx, oy - hy, oz + hz}},
+          {{ox + hx, oy + hy, oz + hz}},
+          {{ox - hx, oy + hy, oz + hz}},
+      }};
+
+      // Transform to world space
+      std::array<std::array<float, 3>, 8> worldCorners;
+      for (size_t i = 0; i < 8; ++i) {
+        worldCorners[i] =
+            transformPoint(m, corners[i][0], corners[i][1], corners[i][2]);
+      }
+
+      // 12 edges
+      constexpr std::array<std::pair<int, int>, 12> edges = {{{0, 1},
+                                                              {1, 2},
+                                                              {2, 3},
+                                                              {3, 0},
+                                                              {4, 5},
+                                                              {5, 6},
+                                                              {6, 7},
+                                                              {7, 4},
+                                                              {0, 4},
+                                                              {1, 5},
+                                                              {2, 6},
+                                                              {3, 7}}};
+
+      for (const auto &edge : edges) {
+        addLine(worldCorners[edge.first].data(),
+                worldCorners[edge.second].data(), color);
+      }
+    } else if (collider.shapeType == 1) {
+      // Sphere: 3 circles
+      float center[3];
+      auto c = transformPoint(m, ox, oy, oz);
+      center[0] = c[0];
+      center[1] = c[1];
+      center[2] = c[2];
+
+      // Extract scale from matrix (approximate)
+      float scaleX = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+      float radius = collider.radius * scaleX;
+
+      // XY circle
+      float rightXY[3] = {1.0f, 0.0f, 0.0f};
+      float upXY[3] = {0.0f, 1.0f, 0.0f};
+      addCircle(center, rightXY, upXY, radius, color);
+
+      // XZ circle
+      float rightXZ[3] = {1.0f, 0.0f, 0.0f};
+      float upXZ[3] = {0.0f, 0.0f, 1.0f};
+      addCircle(center, rightXZ, upXZ, radius, color);
+
+      // YZ circle
+      float rightYZ[3] = {0.0f, 1.0f, 0.0f};
+      float upYZ[3] = {0.0f, 0.0f, 1.0f};
+      addCircle(center, rightYZ, upYZ, radius, color);
+    } else if (collider.shapeType == 2) {
+      // Capsule: cylinder + hemispheres
+      float halfHeight = collider.height * 0.5f;
+      float radius = collider.radius;
+
+      // Top and bottom centers
+      auto topCenter = transformPoint(m, ox, oy + halfHeight, oz);
+      auto bottomCenter = transformPoint(m, ox, oy - halfHeight, oz);
+
+      // Extract scale from matrix
+      float scaleX = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+      float scaledRadius = radius * scaleX;
+
+      // Circles at top and bottom
+      float rightXZ[3] = {1.0f, 0.0f, 0.0f};
+      float upXZ[3] = {0.0f, 0.0f, 1.0f};
+      addCircle(topCenter.data(), rightXZ, upXZ, scaledRadius, color);
+      addCircle(bottomCenter.data(), rightXZ, upXZ, scaledRadius, color);
+
+      // Vertical lines connecting circles
+      for (int i = 0; i < 4; ++i) {
+        float angle = static_cast<float>(i) * 1.5708f;
+        float dx = std::cos(angle) * scaledRadius;
+        float dz = std::sin(angle) * scaledRadius;
+        float top[3] = {topCenter[0] + dx, topCenter[1], topCenter[2] + dz};
+        float bottom[3] = {bottomCenter[0] + dx, bottomCenter[1],
+                           bottomCenter[2] + dz};
+        addLine(top, bottom, color);
+      }
+
+      // Hemisphere arcs
+      float rightYZ[3] = {0.0f, 1.0f, 0.0f};
+      float upYZ[3] = {0.0f, 0.0f, 1.0f};
+      float rightXY[3] = {1.0f, 0.0f, 0.0f};
+      float upXY[3] = {0.0f, 1.0f, 0.0f};
+
+      addHalfCircle(topCenter.data(), rightXY, upXY, scaledRadius, color, true);
+      addHalfCircle(topCenter.data(), upXZ, upXY, scaledRadius, color, true);
+      addHalfCircle(bottomCenter.data(), rightXY, upXY, scaledRadius, color,
+                    false);
+      addHalfCircle(bottomCenter.data(), upXZ, upXY, scaledRadius, color,
+                    false);
+    }
+  }
+
+  if (vertices.empty()) {
+    return;
+  }
+
+  // Cap to buffer size
+  const size_t maxVerts = 256 * 128;
+  if (vertices.size() > maxVerts) {
+    vertices.resize(maxVerts);
+  }
+
+  void *data = nullptr;
+  vkMapMemory(m_context->GetDevice(), m_colliderVertexMemory, 0,
+              sizeof(Vertex) * vertices.size(), 0, &data);
+  std::memcpy(data, vertices.data(), sizeof(Vertex) * vertices.size());
+  vkUnmapMemory(m_context->GetDevice(), m_colliderVertexMemory);
+
+  m_colliderVertexCount = static_cast<uint32_t>(vertices.size());
+}
+
 void VulkanViewport::SetCameraPosition(float x, float y, float z) noexcept {
   m_cameraX = x;
   m_cameraY = y;
@@ -4196,11 +4469,12 @@ VulkanViewport::InstancesFromView(const RenderView &view,
             ? meshIt->second->GetRotationSpeedDegPerSec() * timeSeconds
             : 0.0f;
 
-    static constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
-    const float radiansX = transform->GetRotationXDegrees() * kDegToRad;
-    const float radiansY = transform->GetRotationYDegrees() * kDegToRad;
+    const float radiansX =
+        transform->GetRotationXDegrees() * Core::Math::DegToRad;
+    const float radiansY =
+        transform->GetRotationYDegrees() * Core::Math::DegToRad;
     const float radiansZ =
-        (transform->GetRotationZDegrees() + spinDeg) * kDegToRad;
+        (transform->GetRotationZDegrees() + spinDeg) * Core::Math::DegToRad;
 
     float localModel[16];
     Core::Math::Mat4Compose(

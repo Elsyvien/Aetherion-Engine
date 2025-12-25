@@ -63,6 +63,21 @@ public:
   [[nodiscard]] std::shared_ptr<Scripting::ScriptingRuntimeStub>
   GetScriptingRuntime() const noexcept;
 
+  // Simulation state (play/pause/step) shared with runtime systems
+  void SetSimulationState(bool playing, bool paused) noexcept;
+  [[nodiscard]] bool IsSimulationPlaying() const noexcept {
+    return m_simulationPlaying;
+  }
+  [[nodiscard]] bool IsSimulationPaused() const noexcept {
+    return m_simulationPaused;
+  }
+  void RequestSimulationStep() noexcept { m_stepOnceRequested = true; }
+  [[nodiscard]] bool ConsumeSimulationStepRequest() noexcept {
+    const bool requested = m_stepOnceRequested;
+    m_stepOnceRequested = false;
+    return requested;
+  }
+
   // EngineContext owns shared references to service singletons. Providers
   // remain alive until replaced or cleared by Set* methods or during
   // EngineApplication::Shutdown().
@@ -74,5 +89,8 @@ private:
   std::shared_ptr<Physics::PhysicsWorld> m_physicsSystem;
   std::shared_ptr<Audio::AudioEngineStub> m_audioSystem;
   std::shared_ptr<Scripting::ScriptingRuntimeStub> m_scriptingRuntime;
+  bool m_simulationPlaying{false};
+  bool m_simulationPaused{false};
+  bool m_stepOnceRequested{false};
 };
 } // namespace Aetherion::Runtime

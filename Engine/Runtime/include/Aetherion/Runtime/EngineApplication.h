@@ -33,6 +33,16 @@ public:
 
     void RegisterSystem(std::shared_ptr<IRuntimeSystem> system);
 
+    void SetSimulationPlaying(bool playing);
+    void SetSimulationPaused(bool paused);
+    void StepSimulationOnce();
+    [[nodiscard]] bool IsSimulationPlaying() const noexcept {
+        return m_simulationPlaying;
+    }
+    [[nodiscard]] bool IsSimulationPaused() const noexcept {
+        return m_simulationPaused;
+    }
+
     [[nodiscard]] std::shared_ptr<EngineContext> GetContext() const noexcept;
 
     [[nodiscard]] std::shared_ptr<Scene::Scene> GetActiveScene() const noexcept;
@@ -51,6 +61,8 @@ private:
     bool m_enableVerboseLogging{true};
     bool m_initialized{false};
     bool m_sceneSystemsConfigured{false};
+    bool m_simulationPlaying{false};
+    bool m_simulationPaused{false};
 
     void DebugPrint(const std::string& message, bool isError = false) const;
     void RegisterPlaceholderSystems();

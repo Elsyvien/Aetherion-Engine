@@ -411,6 +411,16 @@ void EditorHierarchyPanel::setupContextMenu()
     
     m_contextMenu->addSeparator();
 
+    auto* expandAllAction = m_contextMenu->addAction(tr("Expand All"));
+    expandAllAction->setProperty("requiresSelection", false);
+    connect(expandAllAction, &QAction::triggered, m_tree, &QTreeWidget::expandAll);
+
+    auto* collapseAllAction = m_contextMenu->addAction(tr("Collapse All"));
+    collapseAllAction->setProperty("requiresSelection", false);
+    connect(collapseAllAction, &QAction::triggered, m_tree, &QTreeWidget::collapseAll);
+
+    m_contextMenu->addSeparator();
+
     auto* deleteAction = m_contextMenu->addAction(tr("Delete"));
     deleteAction->setShortcut(QKeySequence::Delete);
     deleteAction->setProperty("requiresSelection", true);

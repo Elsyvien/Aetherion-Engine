@@ -20,7 +20,7 @@ namespace Aetherion::Physics {
 /// - Syncing physics transforms back to scene TransformComponents
 class PhysicsSystem {
 public:
-  PhysicsSystem();
+  explicit PhysicsSystem(std::shared_ptr<PhysicsWorld> physicsWorld = nullptr);
   ~PhysicsSystem();
 
   PhysicsSystem(const PhysicsSystem &) = delete;
@@ -71,7 +71,7 @@ private:
   void DestroyBodyForEntity(Core::EntityId entityId);
   void WriteBackTransforms();
 
-  std::unique_ptr<PhysicsWorld> m_physicsWorld;
+  std::shared_ptr<PhysicsWorld> m_physicsWorld;
   Scene::Scene *m_scene{nullptr};
 
   // Map entity ID to physics body handle
@@ -80,6 +80,7 @@ private:
   bool m_enabled{true};
   float m_fixedTimestep{1.0f / 60.0f};
   float m_accumulator{0.0f};
+  bool m_ownsPhysicsWorld{false};
 };
 
 } // namespace Aetherion::Physics

@@ -7,6 +7,10 @@
 
 namespace Aetherion::Core::Math
 {
+    inline constexpr float PI = 3.14159265358979323846f;
+    inline constexpr float DegToRad = PI / 180.0f;
+    inline constexpr float RadToDeg = 180.0f / PI;
+
     inline void Mat4Identity(float out[16])
     {
         std::memset(out, 0, sizeof(float) * 16);

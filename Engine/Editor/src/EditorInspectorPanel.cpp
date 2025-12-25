@@ -9,6 +9,7 @@
 #include <QImageReader>
 #include <QLabel>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
@@ -352,13 +353,114 @@ void EditorInspectorPanel::RebuildUi() {
               form->addRow(tr("Texture IDs"), textureLabel);
             }
           } else {
-            form->addRow(tr("Materials"), new QLabel(tr("N/A"), formHost));
-            form->addRow(tr("Textures"), new QLabel(tr("N/A"), formHost));
+            form->addRow(tr("Materials"), new QLabel(tr("N/A"), formHost));     
+            form->addRow(tr("Textures"), new QLabel(tr("N/A"), formHost));      
           }
+
+          const std::string meshId = entry->id;
+          const auto importSettings = registry->GetMeshImportSettings(meshId);
+
+          auto *importHeader = new QLabel(tr("Import Settings"), formHost);
+          QFont importFont = importHeader->font();
+          importFont.setBold(true);
+          importHeader->setFont(importFont);
+          form->addRow(importHeader);
+
+          auto *importScale = new QDoubleSpinBox(formHost);
+          importScale->setRange(0.001, 1000.0);
+          importScale->setDecimals(3);
+          importScale->setSingleStep(0.1);
+          importScale->setValue(importSettings.scale);
+
+          auto *importCenter = new QCheckBox(formHost);
+          importCenter->setChecked(importSettings.centerMesh);
+
+          auto *importNormals = new QCheckBox(formHost);
+          importNormals->setChecked(importSettings.generateNormals);
+          auto *importTangents = new QCheckBox(formHost);
+          importTangents->setChecked(importSettings.generateTangents);
+          auto *importFlipUvs = new QCheckBox(formHost);
+          importFlipUvs->setChecked(importSettings.flipUVs);
+          auto *importFlipWinding = new QCheckBox(formHost);
+          importFlipWinding->setChecked(importSettings.flipWinding);
+          auto *importOptimize = new QCheckBox(formHost);
+          importOptimize->setChecked(importSettings.optimize);
+
+          importCenter->setToolTip(tr("Recenters the mesh to its bounds"));
+          importOptimize->setToolTip(tr("Compacts unused vertices"));
+          importFlipWinding->setToolTip(
+              tr("Reverses triangle winding for backface culling"));
+
+          form->addRow(tr("Scale"), importScale);
+          form->addRow(tr("Center Mesh"), importCenter);
+          form->addRow(tr("Generate Normals"), importNormals);
+          form->addRow(tr("Generate Tangents"), importTangents);
+          form->addRow(tr("Flip UVs"), importFlipUvs);
+          form->addRow(tr("Flip Winding"), importFlipWinding);
+          form->addRow(tr("Optimize"), importOptimize);
+
+          auto applyImportSettings =
+              [this, meshId, importScale, importNormals, importTangents,
+               importFlipUvs, importFlipWinding, importOptimize, importCenter]() {
+                if (!m_assetRegistry) {
+                  return;
+                }
+
+                Assets::AssetRegistry::MeshImportSettings settings{};
+                settings.scale = static_cast<float>(importScale->value());
+                settings.centerMesh = importCenter->isChecked();
+                settings.generateNormals = importNormals->isChecked();
+                settings.generateTangents = importTangents->isChecked();
+                settings.flipUVs = importFlipUvs->isChecked();
+                settings.flipWinding = importFlipWinding->isChecked();
+                settings.optimize = importOptimize->isChecked();
+
+                m_assetRegistry->SetMeshImportSettings(meshId, settings);
+              };
+
+          connect(importScale, qOverload<double>(&QDoubleSpinBox::valueChanged),
+                  this, [applyImportSettings](double) {
+                    applyImportSettings();
+                  });
+          connect(importCenter, &QCheckBox::toggled, this,
+                  [applyImportSettings](bool) { applyImportSettings(); });
+          connect(importNormals, &QCheckBox::toggled, this,
+                  [applyImportSettings](bool) { applyImportSettings(); });
+          connect(importTangents, &QCheckBox::toggled, this,
+                  [applyImportSettings](bool) { applyImportSettings(); });
+          connect(importFlipUvs, &QCheckBox::toggled, this,
+                  [applyImportSettings](bool) { applyImportSettings(); });
+          connect(importFlipWinding, &QCheckBox::toggled, this,
+                  [applyImportSettings](bool) { applyImportSettings(); });
+          connect(importOptimize, &QCheckBox::toggled, this,
+                  [applyImportSettings](bool) { applyImportSettings(); });
+
+          auto *reimportButton = new QPushButton(tr("Reimport"), formHost);
+          form->addRow(reimportButton);
+
+          connect(reimportButton, &QPushButton::clicked, this,
+                  [this, meshId, applyImportSettings]() {
+                    if (!m_assetRegistry) {
+                      return;
+                    }
+
+                    applyImportSettings();
+
+                    std::string message;
+                    const bool success =
+                        m_assetRegistry->ReimportMeshAsset(meshId, &message);
+                    if (!success) {
+                      QMessageBox::warning(this, tr("Mesh Reimport Failed"),
+                                           QString::fromStdString(message));
+                      return;
+                    }
+
+                    RebuildUi();
+                  });
         }
       } else {
         const QString status = registry ? tr("Not found in registry")
-                                        : tr("Asset registry unavailable");
+                                        : tr("Asset registry unavailable");     
         form->addRow(tr("Status"), new QLabel(status, formHost));
       }
 
@@ -466,20 +568,47 @@ void EditorInspectorPanel::RebuildUi() {
     return container;
   };
 
+  auto makeVectorRow = [this](const QString& label, QDoubleSpinBox* x, QDoubleSpinBox* y, QDoubleSpinBox* z, float resetVal) {
+      auto* container = new QWidget(m_content);
+      auto* layout = new QHBoxLayout(container);
+      layout->setContentsMargins(0, 0, 0, 0);
+      layout->setSpacing(2);
+
+      layout->addWidget(new QLabel("X", container));
+      layout->addWidget(x, 1);
+      layout->addWidget(new QLabel("Y", container));
+      layout->addWidget(y, 1);
+      layout->addWidget(new QLabel("Z", container));
+      layout->addWidget(z, 1);
+
+      auto* resetBtn = new QToolButton(container);
+      resetBtn->setText("R");
+      resetBtn->setToolTip(tr("Reset %1").arg(label));
+      resetBtn->setFixedSize(20, 20); // Small button
+      connect(resetBtn, &QToolButton::clicked, this, [x, y, z, resetVal] {
+          x->setValue(resetVal);
+          y->setValue(resetVal);
+          z->setValue(resetVal);
+      });
+      layout->addWidget(resetBtn);
+
+      return container;
+  };
+
   if (transform) {
     auto *formHost = new QWidget(m_content);
     auto *form = new QFormLayout(formHost);
     form->setLabelAlignment(Qt::AlignLeft);
 
-    m_posX = makeSpin(-10.0, 10.0, 0.01);
-    m_posY = makeSpin(-10.0, 10.0, 0.01);
-    m_posZ = makeSpin(-10.0, 10.0, 0.01);
-    m_rotX = makeSpin(-180.0, 180.0, 1.0);
-    m_rotY = makeSpin(-180.0, 180.0, 1.0);
-    m_rotZ = makeSpin(-180.0, 180.0, 1.0);
-    m_scaleX = makeSpin(0.001, 10.0, 0.01);
-    m_scaleY = makeSpin(0.001, 10.0, 0.01);
-    m_scaleZ = makeSpin(0.001, 10.0, 0.01);
+    m_posX = makeSpin(-10000.0, 10000.0, 0.1);
+    m_posY = makeSpin(-10000.0, 10000.0, 0.1);
+    m_posZ = makeSpin(-10000.0, 10000.0, 0.1);
+    m_rotX = makeSpin(-360.0, 360.0, 1.0);
+    m_rotY = makeSpin(-360.0, 360.0, 1.0);
+    m_rotZ = makeSpin(-360.0, 360.0, 1.0);
+    m_scaleX = makeSpin(0.001, 10000.0, 0.1);
+    m_scaleY = makeSpin(0.001, 10000.0, 0.1);
+    m_scaleZ = makeSpin(0.001, 10000.0, 0.1);
 
     m_posX->setValue(transform->GetPositionX());
     m_posY->setValue(transform->GetPositionY());
@@ -491,15 +620,9 @@ void EditorInspectorPanel::RebuildUi() {
     m_scaleY->setValue(transform->GetScaleY());
     m_scaleZ->setValue(transform->GetScaleZ());
 
-    form->addRow(tr("Position X"), m_posX);
-    form->addRow(tr("Position Y"), m_posY);
-    form->addRow(tr("Position Z"), m_posZ);
-    form->addRow(tr("Rotation X (deg)"), m_rotX);
-    form->addRow(tr("Rotation Y (deg)"), m_rotY);
-    form->addRow(tr("Rotation Z (deg)"), m_rotZ);
-    form->addRow(tr("Scale X"), m_scaleX);
-    form->addRow(tr("Scale Y"), m_scaleY);
-    form->addRow(tr("Scale Z"), m_scaleZ);
+    form->addRow(tr("Position"), makeVectorRow(tr("Position"), m_posX, m_posY, m_posZ, 0.0f));
+    form->addRow(tr("Rotation"), makeVectorRow(tr("Rotation"), m_rotX, m_rotY, m_rotZ, 0.0f));
+    form->addRow(tr("Scale"), makeVectorRow(tr("Scale"), m_scaleX, m_scaleY, m_scaleZ, 1.0f));
 
     auto applyAndEmit = [this, transform]() {
       if (m_buildingUi || !m_entity) {

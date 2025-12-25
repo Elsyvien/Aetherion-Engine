@@ -1,7 +1,7 @@
 #include "Aetherion/Runtime/EngineApplication.h"
 
-#include <array>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -28,976 +28,999 @@
 #include <unistd.h>
 #endif
 
-#include "Aetherion/Audio/AudioPlaceholder.h"
 #include "Aetherion/Assets/AssetRegistry.h"
+#include "Aetherion/Audio/AudioPlaceholder.h"
+#include "Aetherion/Core/Math.h"
+#include "Aetherion/Core/String.h"
+#include "Aetherion/Physics/PhysicsSystem.h"
 #include "Aetherion/Physics/PhysicsWorld.h"
+#include "Aetherion/Platform/PlatformAbstraction.h"
 #include "Aetherion/Rendering/RenderView.h"
 #include "Aetherion/Rendering/VulkanContext.h"
-#include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/CameraComponent.h"
+#include "Aetherion/Scene/ColliderComponent.h"
+#include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
+#include "Aetherion/Scene/RigidbodyComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/SceneSerializer.h"
 #include "Aetherion/Scene/System.h"
 #include "Aetherion/Scene/TransformComponent.h"
 #include "Aetherion/Scripting/ScriptingPlaceholder.h"
-#include "Aetherion/Platform/PlatformAbstraction.h"
-#include "Aetherion/Core/Math.h"
 
-namespace Aetherion::Runtime
-{
-namespace
-{
-std::filesystem::path FindAssetsRoot(std::filesystem::path start)
-{
-    if (start.empty())
-    {
-        return {};
-    }
-
-    std::error_code ec;
-    auto probe = std::filesystem::absolute(start, ec);
-    if (ec)
-    {
-        probe = std::move(start);
-    }
-
-    for (int i = 0; i < 8; ++i)
-    {
-        std::filesystem::path candidate = probe / "assets";
-        if (std::filesystem::exists(candidate, ec))
-        {
-            return candidate;
-        }
-        if (!probe.has_parent_path())
-        {
-            break;
-        }
-        probe = probe.parent_path();
-    }
-
+namespace Aetherion::Runtime {
+namespace {
+std::filesystem::path FindAssetsRoot(std::filesystem::path start) {
+  if (start.empty()) {
     return {};
+  }
+
+  std::error_code ec;
+  auto probe = std::filesystem::absolute(start, ec);
+  if (ec) {
+    probe = std::move(start);
+  }
+
+  for (int i = 0; i < 8; ++i) {
+    std::filesystem::path candidate = probe / "assets";
+    if (std::filesystem::exists(candidate, ec)) {
+      return candidate;
+    }
+    if (!probe.has_parent_path()) {
+      break;
+    }
+    probe = probe.parent_path();
+  }
+
+  return {};
 }
 
-std::filesystem::path GetExecutableDir()
-{
+std::filesystem::path GetExecutableDir() {
 #ifdef _WIN32
-    std::wstring buffer;
-    buffer.resize(MAX_PATH);
-    const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-    if (length == 0)
-    {
-        return {};
-    }
-    buffer.resize(length);
-    return std::filesystem::path(buffer).parent_path();
-#elif defined(__APPLE__)
-    uint32_t size = 0;
-    _NSGetExecutablePath(nullptr, &size);
-    std::string buffer(size, '\0');
-    if (_NSGetExecutablePath(buffer.data(), &size) != 0)
-    {
-        return {};
-    }
-    return std::filesystem::path(buffer).parent_path();
-#elif defined(__linux__)
-    std::array<char, 4096> buffer{};
-    const ssize_t length = readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
-    if (length <= 0)
-    {
-        return {};
-    }
-    buffer[static_cast<size_t>(length)] = '\0';
-    return std::filesystem::path(buffer.data()).parent_path();
-#else
+  std::wstring buffer;
+  buffer.resize(MAX_PATH);
+  const DWORD length = GetModuleFileNameW(nullptr, buffer.data(),
+                                          static_cast<DWORD>(buffer.size()));
+  if (length == 0) {
     return {};
+  }
+  buffer.resize(length);
+  return std::filesystem::path(buffer).parent_path();
+#elif defined(__APPLE__)
+  uint32_t size = 0;
+  _NSGetExecutablePath(nullptr, &size);
+  std::string buffer(size, '\0');
+  if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
+    return {};
+  }
+  return std::filesystem::path(buffer).parent_path();
+#elif defined(__linux__)
+  std::array<char, 4096> buffer{};
+  const ssize_t length =
+      readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
+  if (length <= 0) {
+    return {};
+  }
+  buffer[static_cast<size_t>(length)] = '\0';
+  return std::filesystem::path(buffer.data()).parent_path();
+#else
+  return {};
 #endif
 }
 
-std::filesystem::path ResolveAssetsRoot()
-{
-    if (const char* env = std::getenv("AETHERION_ASSETS_DIR"))
-    {
-        std::filesystem::path envPath(env);
-        std::error_code ec;
-        if (!envPath.empty() && std::filesystem::exists(envPath, ec))
-        {
-            return std::filesystem::absolute(envPath, ec);
-        }
-    }
-
+std::filesystem::path ResolveAssetsRoot() {
+  if (const char *env = std::getenv("AETHERION_ASSETS_DIR")) {
+    std::filesystem::path envPath(env);
     std::error_code ec;
-    auto fromCwd = FindAssetsRoot(std::filesystem::current_path(ec));
-    if (!fromCwd.empty())
-    {
-        return fromCwd;
+    if (!envPath.empty() && std::filesystem::exists(envPath, ec)) {
+      return std::filesystem::absolute(envPath, ec);
     }
+  }
 
-    auto fromExe = FindAssetsRoot(GetExecutableDir());
-    if (!fromExe.empty())
-    {
-        return fromExe;
-    }
+  std::error_code ec;
+  auto fromCwd = FindAssetsRoot(std::filesystem::current_path(ec));
+  if (!fromCwd.empty()) {
+    return fromCwd;
+  }
 
-    return std::filesystem::path("assets");
+  auto fromExe = FindAssetsRoot(GetExecutableDir());
+  if (!fromExe.empty()) {
+    return fromExe;
+  }
+
+  return std::filesystem::path("assets");
 }
 
-std::string BoolToOnOff(bool value)
-{
-    return value ? "on" : "off";
+std::string BoolToOnOff(bool value) { return value ? "on" : "off"; }
+
+void Mat4Identity(float out[16]) { Core::Math::Mat4Identity(out); }
+
+void Mat4Mul(float out[16], const float a[16], const float b[16]) {
+  Core::Math::Mat4Mul(out, a, b);
 }
 
-void Mat4Identity(float out[16])
-{
-    Core::Math::Mat4Identity(out);
+void Mat4RotationX(float out[16], float radians) {
+  Core::Math::Mat4RotationX(out, radians);
 }
 
-void Mat4Mul(float out[16], const float a[16], const float b[16])
-{
-    Core::Math::Mat4Mul(out, a, b);
+void Mat4RotationY(float out[16], float radians) {
+  Core::Math::Mat4RotationY(out, radians);
 }
 
-void Mat4RotationX(float out[16], float radians)
-{
-    Core::Math::Mat4RotationX(out, radians);
+void Mat4RotationZ(float out[16], float radians) {
+  Core::Math::Mat4RotationZ(out, radians);
 }
 
-void Mat4RotationY(float out[16], float radians)
-{
-    Core::Math::Mat4RotationY(out, radians);
+void Mat4Translation(float out[16], float x, float y, float z) {
+  Core::Math::Mat4Translation(out, x, y, z);
 }
 
-void Mat4RotationZ(float out[16], float radians)
-{
-    Core::Math::Mat4RotationZ(out, radians);
+void Mat4Scale(float out[16], float x, float y, float z) {
+  Core::Math::Mat4Scale(out, x, y, z);
 }
 
-void Mat4Translation(float out[16], float x, float y, float z)
-{
-    Core::Math::Mat4Translation(out, x, y, z);
+std::array<float, 16>
+BuildLocalMatrix(const Scene::TransformComponent &transform) {
+  float local[16];
+  Core::Math::Mat4Compose(
+      local, transform.GetPositionX(), transform.GetPositionY(),
+      transform.GetPositionZ(),
+      transform.GetRotationXDegrees() * Core::Math::DegToRad,
+      transform.GetRotationYDegrees() * Core::Math::DegToRad,
+      transform.GetRotationZDegrees() * Core::Math::DegToRad,
+      transform.GetScaleX(), transform.GetScaleY(), transform.GetScaleZ());
+
+  std::array<float, 16> out{};
+  std::memcpy(out.data(), local, sizeof(local));
+  return out;
 }
 
-void Mat4Scale(float out[16], float x, float y, float z)
-{
-    Core::Math::Mat4Scale(out, x, y, z);
+std::array<float, 16> GetWorldMatrix(const Scene::Scene &scene,
+                                     Core::EntityId id) {
+  auto entity = scene.FindEntityById(id);
+  if (!entity) {
+    std::array<float, 16> identity{};
+    Mat4Identity(identity.data());
+    return identity;
+  }
+
+  auto transform = entity->GetComponent<Scene::TransformComponent>();
+  if (!transform) {
+    std::array<float, 16> identity{};
+    Mat4Identity(identity.data());
+    return identity;
+  }
+
+  auto local = BuildLocalMatrix(*transform);
+  if (!transform->HasParent()) {
+    return local;
+  }
+
+  auto parent = GetWorldMatrix(scene, transform->GetParentId());
+  float world[16];
+  Mat4Mul(world, parent.data(), local.data());
+  std::array<float, 16> out{};
+  std::memcpy(out.data(), world, sizeof(world));
+  return out;
 }
 
-std::array<float, 16> BuildLocalMatrix(const Scene::TransformComponent& transform)
-{
-    static constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
-    float local[16];
-    Core::Math::Mat4Compose(local,
-        transform.GetPositionX(), transform.GetPositionY(), transform.GetPositionZ(),
-        transform.GetRotationXDegrees() * kDegToRad,
-        transform.GetRotationYDegrees() * kDegToRad,
-        transform.GetRotationZDegrees() * kDegToRad,
-        transform.GetScaleX(), transform.GetScaleY(), transform.GetScaleZ());
-    
-    std::array<float, 16> out{};
-    std::memcpy(out.data(), local, sizeof(local));
-    return out;
+void Vec3Normalize(float v[3]) {
+  const float lenSq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+  if (lenSq <= 0.0f) {
+    return;
+  }
+  const float invLen = 1.0f / std::sqrt(lenSq);
+  v[0] *= invLen;
+  v[1] *= invLen;
+  v[2] *= invLen;
 }
 
-std::array<float, 16> GetWorldMatrix(const Scene::Scene& scene, Core::EntityId id)
-{
-    auto entity = scene.FindEntityById(id);
-    if (!entity)
-    {
-        std::array<float, 16> identity{};
-        Mat4Identity(identity.data());
-        return identity;
-    }
-
-    auto transform = entity->GetComponent<Scene::TransformComponent>();
-    if (!transform)
-    {
-        std::array<float, 16> identity{};
-        Mat4Identity(identity.data());
-        return identity;
-    }
-
-    auto local = BuildLocalMatrix(*transform);
-    if (!transform->HasParent())
-    {
-        return local;
-    }
-
-    auto parent = GetWorldMatrix(scene, transform->GetParentId());
-    float world[16];
-    Mat4Mul(world, parent.data(), local.data());
-    std::array<float, 16> out{};
-    std::memcpy(out.data(), world, sizeof(world));
-    return out;
+bool IsMovingLightName(const std::string &name) {
+  return Core::String::ContainsCaseInsensitive(name, "moving") ||
+         Core::String::ContainsCaseInsensitive(name, "orbit") ||
+         Core::String::ContainsCaseInsensitive(name, "bob");
 }
 
-void Vec3Normalize(float v[3])
-{
-    const float lenSq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-    if (lenSq <= 0.0f)
-    {
-        return;
-    }
-    const float invLen = 1.0f / std::sqrt(lenSq);
-    v[0] *= invLen;
-    v[1] *= invLen;
-    v[2] *= invLen;
-}
-
-bool ContainsTokenCaseInsensitive(const std::string& value, const char* token)
-{
-    if (value.empty() || token == nullptr || token[0] == '\0')
-    {
-        return false;
-    }
-    std::string lowered = value;
-    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    std::string loweredToken(token);
-    std::transform(loweredToken.begin(), loweredToken.end(), loweredToken.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return lowered.find(loweredToken) != std::string::npos;
-}
-
-bool IsMovingLightName(const std::string& name)
-{
-    return ContainsTokenCaseInsensitive(name, "moving") ||
-           ContainsTokenCaseInsensitive(name, "orbit") ||
-           ContainsTokenCaseInsensitive(name, "bob");
-}
-
-class SceneSystemDispatcher final : public IRuntimeSystem
-{
+class PhysicsRuntimeSystem final : public IRuntimeSystem {
 public:
-    explicit SceneSystemDispatcher(std::weak_ptr<Scene::Scene> scene)
-        : m_scene(std::move(scene))
-    {
+  explicit PhysicsRuntimeSystem(std::weak_ptr<Scene::Scene> scene)
+      : m_scene(std::move(scene)) {}
+
+  [[nodiscard]] std::string GetName() const override {
+    return "PhysicsRuntimeSystem";
+  }
+
+  void Initialize(EngineContext &context) override {
+    m_context = &context;
+    EnsurePhysicsSystem();
+    BindScene();
+  }
+
+  void Tick(EngineContext &context, float deltaTime) override {
+    m_context = &context;
+    EnsurePhysicsSystem();
+    BindScene();
+
+    if (!m_physicsSystem) {
+      return;
     }
 
-    [[nodiscard]] std::string GetName() const override { return "SceneSystemDispatcher"; }
-
-    void Initialize(EngineContext& context) override
-    {
-        m_context = &context;
-        ConfigureSceneSystems();
+    if (!context.IsSimulationPlaying()) {
+      return;
     }
 
-    void Tick(EngineContext& context, float deltaTime) override
-    {
-        m_context = &context;
-        ConfigureSceneSystems();
-
-        if (auto scene = m_scene.lock())
-        {
-            for (const auto& system : scene->GetSystems())
-            {
-                if (system)
-                {
-                    system->Update(*scene, deltaTime);
-                }
-            }
-        }
+    if (context.IsSimulationPaused()) {
+      const bool stepRequested = context.ConsumeSimulationStepRequest();
+      if (!stepRequested) {
+        return;
+      }
     }
 
-    void Shutdown(EngineContext& context) override
-    {
-        (void)context;
-        m_context = nullptr;
-        m_scene.reset();
+    m_physicsSystem->Update(deltaTime);
+  }
+
+  void Shutdown(EngineContext &context) override {
+    (void)context;
+    if (m_physicsSystem) {
+      m_physicsSystem->Shutdown();
+      m_physicsSystem.reset();
     }
+    m_boundScene.reset();
+    m_scene.reset();
+    m_context = nullptr;
+  }
 
 private:
-    void ConfigureSceneSystems()
-    {
-        if (m_sceneConfigured || !m_context)
-        {
-            return;
-        }
-
-        if (auto scene = m_scene.lock())
-        {
-            for (const auto& system : scene->GetSystems())
-            {
-                if (system)
-                {
-                    system->Configure(*m_context);
-                }
-            }
-        }
-        m_sceneConfigured = true;
+  void EnsurePhysicsSystem() {
+    if (!m_context) {
+      return;
     }
 
-    EngineContext* m_context{nullptr};
-    bool m_sceneConfigured{false};
-    std::weak_ptr<Scene::Scene> m_scene;
+    auto physicsWorld = m_context->GetPhysicsSystem();
+    if (!physicsWorld) {
+      physicsWorld = std::make_shared<Physics::PhysicsWorld>();
+      m_context->SetPhysicsSystem(physicsWorld);
+    }
+    if (physicsWorld && !physicsWorld->IsInitialized()) {
+      physicsWorld->Initialize();
+    }
+
+    if (!m_physicsSystem && physicsWorld) {
+      m_physicsSystem =
+          std::make_unique<Physics::PhysicsSystem>(physicsWorld);
+      m_physicsSystem->Initialize();
+    }
+  }
+
+  void BindScene() {
+    if (!m_physicsSystem) {
+      return;
+    }
+
+    auto scene = m_scene.lock();
+    if (scene != m_boundScene.lock()) {
+      m_physicsSystem->BindScene(scene.get());
+      m_boundScene = scene;
+    }
+  }
+
+  EngineContext *m_context{nullptr};
+  std::unique_ptr<Physics::PhysicsSystem> m_physicsSystem;
+  std::weak_ptr<Scene::Scene> m_scene;
+  std::weak_ptr<Scene::Scene> m_boundScene;
 };
 
-class RenderViewSystem final : public IRuntimeSystem
-{
+class SceneSystemDispatcher final : public IRuntimeSystem {
 public:
-    explicit RenderViewSystem(std::weak_ptr<Scene::Scene> scene)
-        : m_scene(std::move(scene))
-    {
-    }
+  explicit SceneSystemDispatcher(std::weak_ptr<Scene::Scene> scene)
+      : m_scene(std::move(scene)) {}
 
-    [[nodiscard]] std::string GetName() const override { return "RenderViewSystem"; }
+  [[nodiscard]] std::string GetName() const override {
+    return "SceneSystemDispatcher";
+  }
 
-    void Initialize(EngineContext& context) override
-    {
-        m_context = &context;
-        EnsureRenderView();
-        RebuildRenderView();
-    }
+  void Initialize(EngineContext &context) override {
+    m_context = &context;
+    ConfigureSceneSystems();
+  }
 
-    void Tick(EngineContext& context, float deltaTime) override
-    {
-        m_context = &context;
-        m_timeSeconds += std::max(0.0f, deltaTime);
-        if (m_timeSeconds > 10000.0f)
-        {
-            m_timeSeconds = std::fmod(m_timeSeconds, 10000.0f);
+  void Tick(EngineContext &context, float deltaTime) override {
+    m_context = &context;
+    ConfigureSceneSystems();
+
+    if (auto scene = m_scene.lock()) {
+      for (const auto &system : scene->GetSystems()) {
+        if (system) {
+          system->Update(*scene, deltaTime);
         }
-        RebuildRenderView();
+      }
     }
+  }
 
-    void Shutdown(EngineContext& context) override
-    {
-        (void)context;
-        m_context = nullptr;
-        m_scene.reset();
-    }
+  void Shutdown(EngineContext &context) override {
+    (void)context;
+    m_context = nullptr;
+    m_scene.reset();
+  }
 
 private:
-    void EnsureRenderView()
-    {
-        if (!m_context)
-        {
-            return;
-        }
-
-        if (!m_context->GetRenderView())
-        {
-            m_context->SetRenderView(std::make_shared<Rendering::RenderView>());
-        }
+  void ConfigureSceneSystems() {
+    if (m_sceneConfigured || !m_context) {
+      return;
     }
 
-    void RebuildRenderView()
-    {
-        if (!m_context)
-        {
-            return;
+    if (auto scene = m_scene.lock()) {
+      for (const auto &system : scene->GetSystems()) {
+        if (system) {
+          system->Configure(*m_context);
         }
+      }
+    }
+    m_sceneConfigured = true;
+  }
 
-        auto view = m_context->GetRenderView();
-        if (!view)
-        {
-            view = std::make_shared<Rendering::RenderView>();
-            m_context->SetRenderView(view);
-        }
+  EngineContext *m_context{nullptr};
+  bool m_sceneConfigured{false};
+  std::weak_ptr<Scene::Scene> m_scene;
+};
 
-        auto registry = m_context ? m_context->GetAssetRegistry() : nullptr;
+class RenderViewSystem final : public IRuntimeSystem {
+public:
+  explicit RenderViewSystem(std::weak_ptr<Scene::Scene> scene)
+      : m_scene(std::move(scene)) {}
 
-        view->instances.clear();
-        view->batches.clear();
-        view->transforms.clear();
-        view->meshes.clear();
-        view->directionalLight = Rendering::RenderDirectionalLight{};
-        view->lights.clear();
-        view->camera = Rendering::RenderCamera{};
-        view->cameras.clear();
+  [[nodiscard]] std::string GetName() const override {
+    return "RenderViewSystem";
+  }
 
-        auto scene = m_scene.lock();
-        if (!scene)
-        {
-            return;
-        }
+  void Initialize(EngineContext &context) override {
+    m_context = &context;
+    EnsureRenderView();
+    RebuildRenderView();
+  }
 
-        std::unordered_map<const Scene::MeshRendererComponent*, size_t> batchLookup;
-        const auto& entities = scene->GetEntities();
-        view->instances.reserve(entities.size());
+  void Tick(EngineContext &context, float deltaTime) override {
+    m_context = &context;
+    m_timeSeconds += std::max(0.0f, deltaTime);
+    if (m_timeSeconds > 10000.0f) {
+      m_timeSeconds = std::fmod(m_timeSeconds, 10000.0f);
+    }
+    RebuildRenderView();
+  }
 
-        bool foundDirectional = false;
-        bool foundPrimaryDirectional = false;
-        bool foundCamera = false;
-        bool foundPrimaryCamera = false;
-        std::unordered_set<Core::EntityId> movingLightIds;
-        for (const auto& entity : entities)
-        {
-            if (!entity)
-            {
-                continue;
-            }
+  void Shutdown(EngineContext &context) override {
+    (void)context;
+    m_context = nullptr;
+    m_scene.reset();
+  }
 
-            auto transform = entity->GetComponent<Scene::TransformComponent>();
-            if (transform)
-            {
-                view->transforms.emplace(entity->GetId(), transform.get());
-            }
-
-            auto mesh = entity->GetComponent<Scene::MeshRendererComponent>();
-            if (mesh)
-            {
-                view->meshes.emplace(entity->GetId(), mesh.get());
-            }
-
-            bool hasWorld = false;
-            std::array<float, 16> world{};
-
-            auto light = entity->GetComponent<Scene::LightComponent>();
-            if (light && transform)
-            {
-                if (!hasWorld)
-                {
-                    world = GetWorldMatrix(*scene, entity->GetId());
-                    hasWorld = true;
-                }
-
-                Rendering::RenderLight renderLight{};
-                renderLight.entityId = entity->GetId();
-                renderLight.enabled = light->IsEnabled();
-                const auto lightColor = light->GetColor();
-                renderLight.color[0] = lightColor[0];
-                renderLight.color[1] = lightColor[1];
-                renderLight.color[2] = lightColor[2];
-                renderLight.intensity = light->GetIntensity();
-                renderLight.range = light->GetRange();
-                renderLight.innerConeAngle = light->GetInnerConeAngle();
-                renderLight.outerConeAngle = light->GetOuterConeAngle();
-                renderLight.isPrimary = light->IsPrimary();
-                renderLight.position[0] = world[12];
-                renderLight.position[1] = world[13];
-                renderLight.position[2] = world[14];
-
-                float dir[3] = {-world[8], -world[9], -world[10]};
-                Vec3Normalize(dir);
-                renderLight.direction[0] = dir[0];
-                renderLight.direction[1] = dir[1];
-                renderLight.direction[2] = dir[2];
-
-                switch (light->GetType())
-                {
-                case Scene::LightComponent::LightType::Point:
-                    renderLight.type = Rendering::RenderLightType::Point;
-                    break;
-                case Scene::LightComponent::LightType::Spot:
-                    renderLight.type = Rendering::RenderLightType::Spot;
-                    break;
-                default:
-                    renderLight.type = Rendering::RenderLightType::Directional;
-                    break;
-                }
-
-                const bool moving =
-                    (renderLight.type != Rendering::RenderLightType::Directional) &&
-                    IsMovingLightName(entity->GetName());
-                if (moving)
-                {
-                    movingLightIds.insert(entity->GetId());
-                    auto baseIt = m_movingLightBases.find(entity->GetId());
-                    if (baseIt == m_movingLightBases.end())
-                    {
-                        std::array<float, 3> base = {renderLight.position[0],
-                                                     renderLight.position[1],
-                                                     renderLight.position[2]};
-                        baseIt = m_movingLightBases.emplace(entity->GetId(), base).first;
-                    }
-
-                    const float speed =
-                        0.6f + 0.15f * static_cast<float>(entity->GetId() % 7);
-                    const float radius =
-                        0.7f + 0.2f * static_cast<float>(entity->GetId() % 5);
-                    const float height =
-                        0.25f + 0.1f * static_cast<float>(entity->GetId() % 3);
-                    const float angle = m_timeSeconds * speed;
-
-                    renderLight.position[0] =
-                        baseIt->second[0] + std::cos(angle) * radius;
-                    renderLight.position[2] =
-                        baseIt->second[2] + std::sin(angle) * radius;
-                    renderLight.position[1] =
-                        baseIt->second[1] + std::sin(angle * 1.7f) * height;
-                }
-
-                view->lights.push_back(renderLight);
-
-                if (renderLight.type == Rendering::RenderLightType::Directional && renderLight.enabled)
-                {
-                    const bool choose =
-                        !foundDirectional || (renderLight.isPrimary && !foundPrimaryDirectional);
-                    if (choose)
-                    {
-                        view->directionalLight.enabled = true;
-                        view->directionalLight.direction[0] = renderLight.direction[0];
-                        view->directionalLight.direction[1] = renderLight.direction[1];
-                        view->directionalLight.direction[2] = renderLight.direction[2];
-                        view->directionalLight.position[0] = renderLight.position[0];
-                        view->directionalLight.position[1] = renderLight.position[1];
-                        view->directionalLight.position[2] = renderLight.position[2];
-                        view->directionalLight.entityId = renderLight.entityId;
-                        view->directionalLight.color[0] = renderLight.color[0];
-                        view->directionalLight.color[1] = renderLight.color[1];
-                        view->directionalLight.color[2] = renderLight.color[2];
-                        view->directionalLight.intensity = renderLight.intensity;
-
-                        const auto ambient = light->GetAmbientColor();
-                        view->directionalLight.ambientColor[0] = ambient[0];
-                        view->directionalLight.ambientColor[1] = ambient[1];
-                        view->directionalLight.ambientColor[2] = ambient[2];
-                        foundDirectional = true;
-                        if (renderLight.isPrimary)
-                        {
-                            foundPrimaryDirectional = true;
-                        }
-                    }
-                }
-            }
-
-            auto camera = entity->GetComponent<Scene::CameraComponent>();       
-            if (camera && transform)
-            {
-                if (!hasWorld)
-                {
-                    world = GetWorldMatrix(*scene, entity->GetId());
-                    hasWorld = true;
-                }
-
-                Rendering::RenderCamera candidate{};
-                candidate.enabled = true;
-                candidate.position[0] = world[12];
-                candidate.position[1] = world[13];
-                candidate.position[2] = world[14];
-                candidate.forward[0] = -world[8];
-                candidate.forward[1] = -world[9];
-                candidate.forward[2] = -world[10];
-                Vec3Normalize(candidate.forward);
-                candidate.up[0] = world[4];
-                candidate.up[1] = world[5];
-                candidate.up[2] = world[6];
-                Vec3Normalize(candidate.up);
-
-                float fov = camera->GetVerticalFov();
-                if (fov < 1.0f) fov = 1.0f;
-                if (fov > 179.0f) fov = 179.0f;
-                candidate.verticalFov = fov;
-
-                float nearClip = std::max(0.001f, camera->GetNearClip());
-                float farClip = std::max(nearClip + 0.001f, camera->GetFarClip());
-                candidate.nearClip = nearClip;
-                candidate.farClip = farClip;
-                candidate.orthographicSize = std::max(0.01f, camera->GetOrthographicSize());
-                candidate.projectionType = static_cast<uint32_t>(camera->GetProjectionType());
-                candidate.entityId = entity->GetId();
-                view->cameras.push_back(candidate);
-
-                const bool isPrimary = camera->IsPrimary();
-                if (!foundCamera || (isPrimary && !foundPrimaryCamera))
-                {
-                    view->camera = candidate;
-                    foundCamera = true;
-                    if (isPrimary)
-                    {
-                        foundPrimaryCamera = true;
-                    }
-                }
-            }
-
-            if (!transform || !mesh || !mesh->IsVisible())
-            {
-                continue;
-            }
-
-            Rendering::RenderInstance instance{};
-            instance.entityId = entity->GetId();
-            instance.transform = transform.get();
-            instance.mesh = mesh.get();
-            instance.meshAssetId = mesh->GetMeshAssetId();
-            if (registry && !instance.meshAssetId.empty())
-            {
-                if (const auto* entry = registry->FindEntry(instance.meshAssetId))
-                {
-                    instance.meshAssetId = entry->id;
-                }
-            }
-
-            instance.albedoTextureId = mesh->GetAlbedoTextureId();
-            if (registry && !instance.albedoTextureId.empty())
-            {
-                if (const auto* entry = registry->FindEntry(instance.albedoTextureId))
-                {
-                    instance.albedoTextureId = entry->id;
-                }
-            }
-            if (instance.albedoTextureId.empty() && registry && !instance.meshAssetId.empty())
-            {
-                if (const auto* cachedMesh = registry->GetMesh(instance.meshAssetId))
-                {
-                    for (const auto& materialId : cachedMesh->materialIds)
-                    {
-                        if (const auto* material = registry->GetMaterial(materialId);
-                            material && !material->albedoTextureId.empty())
-                        {
-                            instance.albedoTextureId = material->albedoTextureId;
-                            break;
-                        }
-                    }
-                    if (instance.albedoTextureId.empty() && !cachedMesh->textureIds.empty())
-                    {
-                        instance.albedoTextureId = cachedMesh->textureIds.front();
-                    }
-                }
-            }
-            instance.hasModel = false;
-            view->instances.push_back(instance);
-
-            size_t batchIndex = 0;
-            auto found = batchLookup.find(instance.mesh);
-            if (found == batchLookup.end())
-            {
-                batchIndex = view->batches.size();
-                batchLookup.emplace(instance.mesh, batchIndex);
-                view->batches.emplace_back();
-            }
-            else
-            {
-                batchIndex = found->second;
-            }
-
-            view->batches[batchIndex].instances.push_back(instance);
-        }
-
-        if (movingLightIds.empty())
-        {
-            m_movingLightBases.clear();
-        }
-        else
-        {
-            for (auto it = m_movingLightBases.begin(); it != m_movingLightBases.end();)
-            {
-                if (movingLightIds.find(it->first) == movingLightIds.end())
-                {
-                    it = m_movingLightBases.erase(it);
-                }
-                else
-                {
-                    ++it;
-                }
-            }
-        }
+private:
+  void EnsureRenderView() {
+    if (!m_context) {
+      return;
     }
 
-    EngineContext* m_context{nullptr};
-    std::weak_ptr<Scene::Scene> m_scene;
-    float m_timeSeconds{0.0f};
-    std::unordered_map<Core::EntityId, std::array<float, 3>> m_movingLightBases;
+    if (!m_context->GetRenderView()) {
+      m_context->SetRenderView(std::make_shared<Rendering::RenderView>());
+    }
+  }
+
+  void RebuildRenderView() {
+    if (!m_context) {
+      return;
+    }
+
+    auto view = m_context->GetRenderView();
+    if (!view) {
+      view = std::make_shared<Rendering::RenderView>();
+      m_context->SetRenderView(view);
+    }
+
+    auto registry = m_context ? m_context->GetAssetRegistry() : nullptr;
+
+    view->instances.clear();
+    view->batches.clear();
+    view->transforms.clear();
+    view->meshes.clear();
+    view->directionalLight = Rendering::RenderDirectionalLight{};
+    view->lights.clear();
+    view->camera = Rendering::RenderCamera{};
+    view->cameras.clear();
+    view->colliders.clear();
+
+    auto scene = m_scene.lock();
+    if (!scene) {
+      return;
+    }
+
+    std::unordered_map<const Scene::MeshRendererComponent *, size_t>
+        batchLookup;
+    const auto &entities = scene->GetEntities();
+    view->instances.reserve(entities.size());
+
+    bool foundDirectional = false;
+    bool foundPrimaryDirectional = false;
+    bool foundCamera = false;
+    bool foundPrimaryCamera = false;
+    std::unordered_set<Core::EntityId> movingLightIds;
+    for (const auto &entity : entities) {
+      if (!entity) {
+        continue;
+      }
+
+      auto transform = entity->GetComponent<Scene::TransformComponent>();
+      if (transform) {
+        view->transforms.emplace(entity->GetId(), transform.get());
+      }
+
+      auto mesh = entity->GetComponent<Scene::MeshRendererComponent>();
+      if (mesh) {
+        view->meshes.emplace(entity->GetId(), mesh.get());
+      }
+
+      bool hasWorld = false;
+      std::array<float, 16> world{};
+
+      auto light = entity->GetComponent<Scene::LightComponent>();
+      if (light && transform) {
+        if (!hasWorld) {
+          world = GetWorldMatrix(*scene, entity->GetId());
+          hasWorld = true;
+        }
+
+        Rendering::RenderLight renderLight{};
+        renderLight.entityId = entity->GetId();
+        renderLight.enabled = light->IsEnabled();
+        const auto lightColor = light->GetColor();
+        renderLight.color[0] = lightColor[0];
+        renderLight.color[1] = lightColor[1];
+        renderLight.color[2] = lightColor[2];
+        renderLight.intensity = light->GetIntensity();
+        renderLight.range = light->GetRange();
+        renderLight.innerConeAngle = light->GetInnerConeAngle();
+        renderLight.outerConeAngle = light->GetOuterConeAngle();
+        renderLight.isPrimary = light->IsPrimary();
+        renderLight.position[0] = world[12];
+        renderLight.position[1] = world[13];
+        renderLight.position[2] = world[14];
+
+        float dir[3] = {-world[8], -world[9], -world[10]};
+        Vec3Normalize(dir);
+        renderLight.direction[0] = dir[0];
+        renderLight.direction[1] = dir[1];
+        renderLight.direction[2] = dir[2];
+
+        switch (light->GetType()) {
+        case Scene::LightComponent::LightType::Point:
+          renderLight.type = Rendering::RenderLightType::Point;
+          break;
+        case Scene::LightComponent::LightType::Spot:
+          renderLight.type = Rendering::RenderLightType::Spot;
+          break;
+        default:
+          renderLight.type = Rendering::RenderLightType::Directional;
+          break;
+        }
+
+        const bool moving =
+            (renderLight.type != Rendering::RenderLightType::Directional) &&
+            IsMovingLightName(entity->GetName());
+        if (moving) {
+          movingLightIds.insert(entity->GetId());
+          auto baseIt = m_movingLightBases.find(entity->GetId());
+          if (baseIt == m_movingLightBases.end()) {
+            std::array<float, 3> base = {renderLight.position[0],
+                                         renderLight.position[1],
+                                         renderLight.position[2]};
+            baseIt = m_movingLightBases.emplace(entity->GetId(), base).first;
+          }
+
+          const float speed =
+              0.6f + 0.15f * static_cast<float>(entity->GetId() % 7);
+          const float radius =
+              0.7f + 0.2f * static_cast<float>(entity->GetId() % 5);
+          const float height =
+              0.25f + 0.1f * static_cast<float>(entity->GetId() % 3);
+          const float angle = m_timeSeconds * speed;
+
+          renderLight.position[0] =
+              baseIt->second[0] + std::cos(angle) * radius;
+          renderLight.position[2] =
+              baseIt->second[2] + std::sin(angle) * radius;
+          renderLight.position[1] =
+              baseIt->second[1] + std::sin(angle * 1.7f) * height;
+        }
+
+        view->lights.push_back(renderLight);
+
+        if (renderLight.type == Rendering::RenderLightType::Directional &&
+            renderLight.enabled) {
+          const bool choose = !foundDirectional || (renderLight.isPrimary &&
+                                                    !foundPrimaryDirectional);
+          if (choose) {
+            view->directionalLight.enabled = true;
+            view->directionalLight.direction[0] = renderLight.direction[0];
+            view->directionalLight.direction[1] = renderLight.direction[1];
+            view->directionalLight.direction[2] = renderLight.direction[2];
+            view->directionalLight.position[0] = renderLight.position[0];
+            view->directionalLight.position[1] = renderLight.position[1];
+            view->directionalLight.position[2] = renderLight.position[2];
+            view->directionalLight.entityId = renderLight.entityId;
+            view->directionalLight.color[0] = renderLight.color[0];
+            view->directionalLight.color[1] = renderLight.color[1];
+            view->directionalLight.color[2] = renderLight.color[2];
+            view->directionalLight.intensity = renderLight.intensity;
+
+            const auto ambient = light->GetAmbientColor();
+            view->directionalLight.ambientColor[0] = ambient[0];
+            view->directionalLight.ambientColor[1] = ambient[1];
+            view->directionalLight.ambientColor[2] = ambient[2];
+            foundDirectional = true;
+            if (renderLight.isPrimary) {
+              foundPrimaryDirectional = true;
+            }
+          }
+        }
+      }
+
+      auto camera = entity->GetComponent<Scene::CameraComponent>();
+      if (camera && transform) {
+        if (!hasWorld) {
+          world = GetWorldMatrix(*scene, entity->GetId());
+          hasWorld = true;
+        }
+
+        Rendering::RenderCamera candidate{};
+        candidate.enabled = true;
+        candidate.position[0] = world[12];
+        candidate.position[1] = world[13];
+        candidate.position[2] = world[14];
+        candidate.forward[0] = -world[8];
+        candidate.forward[1] = -world[9];
+        candidate.forward[2] = -world[10];
+        Vec3Normalize(candidate.forward);
+        candidate.up[0] = world[4];
+        candidate.up[1] = world[5];
+        candidate.up[2] = world[6];
+        Vec3Normalize(candidate.up);
+
+        float fov = camera->GetVerticalFov();
+        if (fov < 1.0f)
+          fov = 1.0f;
+        if (fov > 179.0f)
+          fov = 179.0f;
+        candidate.verticalFov = fov;
+
+        float nearClip = std::max(0.001f, camera->GetNearClip());
+        float farClip = std::max(nearClip + 0.001f, camera->GetFarClip());
+        candidate.nearClip = nearClip;
+        candidate.farClip = farClip;
+        candidate.orthographicSize =
+            std::max(0.01f, camera->GetOrthographicSize());
+        candidate.projectionType =
+            static_cast<uint32_t>(camera->GetProjectionType());
+        candidate.entityId = entity->GetId();
+        view->cameras.push_back(candidate);
+
+        const bool isPrimary = camera->IsPrimary();
+        if (!foundCamera || (isPrimary && !foundPrimaryCamera)) {
+          view->camera = candidate;
+          foundCamera = true;
+          if (isPrimary) {
+            foundPrimaryCamera = true;
+          }
+        }
+      }
+
+      // Collect colliders for debug visualization
+      auto collider = entity->GetComponent<Scene::ColliderComponent>();
+      if (collider && transform) {
+        if (!hasWorld) {
+          world = GetWorldMatrix(*scene, entity->GetId());
+          hasWorld = true;
+        }
+
+        Rendering::RenderCollider renderCollider{};
+        renderCollider.entityId = entity->GetId();
+        renderCollider.shapeType =
+            static_cast<uint32_t>(collider->GetShapeType());
+
+        auto halfExt = collider->GetHalfExtents();
+        renderCollider.halfExtents[0] = halfExt[0];
+        renderCollider.halfExtents[1] = halfExt[1];
+        renderCollider.halfExtents[2] = halfExt[2];
+
+        renderCollider.radius = collider->GetRadius();
+        renderCollider.height = collider->GetHeight();
+
+        auto offset = collider->GetOffset();
+        renderCollider.offset[0] = offset[0];
+        renderCollider.offset[1] = offset[1];
+        renderCollider.offset[2] = offset[2];
+
+        std::memcpy(renderCollider.worldMatrix, world.data(),
+                    sizeof(float) * 16);
+        renderCollider.isTrigger = collider->IsTrigger();
+
+        // Check if static via rigidbody component
+        auto rigidbody = entity->GetComponent<Scene::RigidbodyComponent>();
+        renderCollider.isStatic =
+            !rigidbody || rigidbody->GetMotionType() ==
+                              Scene::RigidbodyComponent::MotionType::Static;
+
+        view->colliders.push_back(renderCollider);
+      }
+
+      if (!transform || !mesh || !mesh->IsVisible()) {
+        continue;
+      }
+
+      Rendering::RenderInstance instance{};
+      instance.entityId = entity->GetId();
+      instance.transform = transform.get();
+      instance.mesh = mesh.get();
+      instance.meshAssetId = mesh->GetMeshAssetId();
+      if (registry && !instance.meshAssetId.empty()) {
+        if (const auto *entry = registry->FindEntry(instance.meshAssetId)) {
+          instance.meshAssetId = entry->id;
+        }
+      }
+
+      instance.albedoTextureId = mesh->GetAlbedoTextureId();
+      if (registry && !instance.albedoTextureId.empty()) {
+        if (const auto *entry = registry->FindEntry(instance.albedoTextureId)) {
+          instance.albedoTextureId = entry->id;
+        }
+      }
+      if (instance.albedoTextureId.empty() && registry &&
+          !instance.meshAssetId.empty()) {
+        if (const auto *cachedMesh = registry->GetMesh(instance.meshAssetId)) {
+          for (const auto &materialId : cachedMesh->materialIds) {
+            if (const auto *material = registry->GetMaterial(materialId);
+                material && !material->albedoTextureId.empty()) {
+              instance.albedoTextureId = material->albedoTextureId;
+              break;
+            }
+          }
+          if (instance.albedoTextureId.empty() &&
+              !cachedMesh->textureIds.empty()) {
+            instance.albedoTextureId = cachedMesh->textureIds.front();
+          }
+        }
+      }
+      instance.hasModel = false;
+      view->instances.push_back(instance);
+
+      size_t batchIndex = 0;
+      auto found = batchLookup.find(instance.mesh);
+      if (found == batchLookup.end()) {
+        batchIndex = view->batches.size();
+        batchLookup.emplace(instance.mesh, batchIndex);
+        view->batches.emplace_back();
+      } else {
+        batchIndex = found->second;
+      }
+
+      view->batches[batchIndex].instances.push_back(instance);
+    }
+
+    if (movingLightIds.empty()) {
+      m_movingLightBases.clear();
+    } else {
+      for (auto it = m_movingLightBases.begin();
+           it != m_movingLightBases.end();) {
+        if (movingLightIds.find(it->first) == movingLightIds.end()) {
+          it = m_movingLightBases.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    }
+  }
+
+  EngineContext *m_context{nullptr};
+  std::weak_ptr<Scene::Scene> m_scene;
+  float m_timeSeconds{0.0f};
+  std::unordered_map<Core::EntityId, std::array<float, 3>> m_movingLightBases;
 };
 } // namespace
 
 EngineApplication::EngineApplication()
-    : m_context(std::make_shared<EngineContext>())
-{
-    // TODO: Load project metadata and configure context.
+    : m_context(std::make_shared<EngineContext>()) {
+  // TODO: Load project metadata and configure context.
 }
 
 EngineApplication::~EngineApplication() = default;
 
-void EngineApplication::Initialize(bool enableValidationLayers, bool enableVerboseLogging)
-{
-    if (m_initialized)
-    {
-        DebugPrint("Engine already initialized. Restarting...");
-        Shutdown();
-    }
+void EngineApplication::Initialize(bool enableValidationLayers,
+                                   bool enableVerboseLogging) {
+  if (m_initialized) {
+    DebugPrint("Engine already initialized. Restarting...");
+    Shutdown();
+  }
 
-    if (!m_context)
-    {
-        m_context = std::make_shared<EngineContext>();
-    }
+  if (!m_context) {
+    m_context = std::make_shared<EngineContext>();
+  }
+  m_context->SetSimulationState(false, false);
 
-    m_enableValidationLayers = enableValidationLayers;
-    m_enableVerboseLogging = enableVerboseLogging;
-    DebugPrint("Initializing engine (validation=" + BoolToOnOff(m_enableValidationLayers) +
-                   ", verbose logging=" + BoolToOnOff(m_enableVerboseLogging) + ")");
+  m_enableValidationLayers = enableValidationLayers;
+  m_enableVerboseLogging = enableVerboseLogging;
+  DebugPrint("Initializing engine (validation=" +
+             BoolToOnOff(m_enableValidationLayers) +
+             ", verbose logging=" + BoolToOnOff(m_enableVerboseLogging) + ")");
 
-    auto vulkanContext = std::make_shared<Rendering::VulkanContext>();
-    try
-    {
-        vulkanContext->Initialize(m_enableValidationLayers, m_enableVerboseLogging);
-    }
-    catch (const std::exception& ex)
-    {
-        DebugPrint(std::string("Vulkan initialization failed: ") + ex.what(), true);
-        throw std::runtime_error(std::string("Failed to initialize Vulkan: ") + ex.what());
-    }
-    DebugPrint("Vulkan context initialized.");
+  auto vulkanContext = std::make_shared<Rendering::VulkanContext>();
+  try {
+    vulkanContext->Initialize(m_enableValidationLayers, m_enableVerboseLogging);
+  } catch (const std::exception &ex) {
+    DebugPrint(std::string("Vulkan initialization failed: ") + ex.what(), true);
+    throw std::runtime_error(std::string("Failed to initialize Vulkan: ") +
+                             ex.what());
+  }
+  DebugPrint("Vulkan context initialized.");
 
-    m_context->SetVulkanContext(vulkanContext);
-    m_context->SetRenderView(std::make_shared<Rendering::RenderView>());
-    m_context->SetAssetRegistry(std::make_shared<Assets::AssetRegistry>());
-    m_context->SetPhysicsSystem(std::make_shared<Physics::PhysicsWorld>());
-    m_context->SetAudioSystem(std::make_shared<Audio::AudioEngineStub>());
-    m_context->SetScriptingRuntime(std::make_shared<Scripting::ScriptingRuntimeStub>());
-    m_context->SetProjectName("Aetherion");
+  m_context->SetVulkanContext(vulkanContext);
+  m_context->SetRenderView(std::make_shared<Rendering::RenderView>());
+  m_context->SetAssetRegistry(std::make_shared<Assets::AssetRegistry>());
+  m_context->SetPhysicsSystem(std::make_shared<Physics::PhysicsWorld>());
+  m_context->SetAudioSystem(std::make_shared<Audio::AudioEngineStub>());
+  m_context->SetScriptingRuntime(
+      std::make_shared<Scripting::ScriptingRuntimeStub>());
+  m_context->SetProjectName("Aetherion");
 
-    const std::filesystem::path assetsRoot = ResolveAssetsRoot();
-    DebugPrint("Resolved assets root: " + assetsRoot.string());
-    if (const auto assets = m_context->GetAssetRegistry())
-    {
-        assets->Scan(assetsRoot.string());
-        DebugPrint("Asset scan complete: " + assets->GetRootPath().string() + " (" +
-                       std::to_string(assets->GetEntries().size()) + " assets)");
-    }
-    if (const auto physics = m_context->GetPhysicsSystem())
-    {
-        physics->Initialize();
-        DebugPrint("Physics placeholder initialized.");
-    }
-    if (const auto audio = m_context->GetAudioSystem())
-    {
-        audio->Initialize();
-        DebugPrint("Audio placeholder initialized.");
-    }
-    if (const auto scripting = m_context->GetScriptingRuntime())
-    {
-        scripting->Initialize();
-        DebugPrint("Scripting placeholder initialized.");
-    }
+  const std::filesystem::path assetsRoot = ResolveAssetsRoot();
+  DebugPrint("Resolved assets root: " + assetsRoot.string());
+  if (const auto assets = m_context->GetAssetRegistry()) {
+    assets->Scan(assetsRoot.string());
+    DebugPrint("Asset scan complete: " + assets->GetRootPath().string() + " (" +
+               std::to_string(assets->GetEntries().size()) + " assets)");
+  }
+  if (const auto physics = m_context->GetPhysicsSystem()) {
+    physics->Initialize();
+    DebugPrint("Physics placeholder initialized.");
+  }
+  if (const auto audio = m_context->GetAudioSystem()) {
+    audio->Initialize();
+    DebugPrint("Audio placeholder initialized.");
+  }
+  if (const auto scripting = m_context->GetScriptingRuntime()) {
+    scripting->Initialize();
+    DebugPrint("Scripting placeholder initialized.");
+  }
 
-    Scene::SceneSerializer serializer(*m_context);
-    const auto scenePath = assetsRoot / "scenes" / "bootstrap_scene.json";
-    DebugPrint("Loading bootstrap scene: " + scenePath.string());
-    m_activeScene = serializer.Load(scenePath);
-    if (!m_activeScene)
-    {
-        DebugPrint("Bootstrap scene missing. Creating default scene...");
-        m_activeScene = serializer.CreateDefaultScene();
-        serializer.Save(*m_activeScene, scenePath);
-        DebugPrint("Default scene saved to: " + scenePath.string());
-    }
-    else
-    {
-        DebugPrint("Bootstrap scene loaded successfully.");
-    }
+  Scene::SceneSerializer serializer(*m_context);
+  const auto scenePath = assetsRoot / "scenes" / "bootstrap_scene.json";
+  DebugPrint("Loading bootstrap scene: " + scenePath.string());
+  m_activeScene = serializer.Load(scenePath);
+  if (!m_activeScene) {
+    DebugPrint("Bootstrap scene missing. Creating default scene...");
+    m_activeScene = serializer.CreateDefaultScene();
+    serializer.Save(*m_activeScene, scenePath);
+    DebugPrint("Default scene saved to: " + scenePath.string());
+  } else {
+    DebugPrint("Bootstrap scene loaded successfully.");
+  }
 
-    m_sceneSystemsConfigured = false;
-    RegisterPlaceholderSystems();
+  m_sceneSystemsConfigured = false;
+  RegisterPlaceholderSystems();
 
-    m_running = true;
-    m_lastFrameTime = std::chrono::steady_clock::now();
-    m_initialized = true;
-    DebugPrint("Engine initialized. Entering main loop.");
+  m_running = true;
+  m_lastFrameTime = std::chrono::steady_clock::now();
+  m_initialized = true;
+  DebugPrint("Engine initialized. Entering main loop.");
 }
 
-void EngineApplication::Shutdown()
-{
-    DebugPrint("Shutting down engine...");
-    m_running = false;
+void EngineApplication::Shutdown() {
+  DebugPrint("Shutting down engine...");
+  m_running = false;
+  if (m_context) {
+    m_context->SetSimulationState(false, false);
+  }
 
-    if (auto ctx = m_context ? m_context->GetVulkanContext() : nullptr)
-    {
-        ctx->Shutdown();
-        m_context->SetVulkanContext(nullptr);
-        DebugPrint("Vulkan context shut down.");
+  if (auto ctx = m_context ? m_context->GetVulkanContext() : nullptr) {
+    ctx->Shutdown();
+    m_context->SetVulkanContext(nullptr);
+    DebugPrint("Vulkan context shut down.");
+  }
+
+  for (const auto &system : m_runtimeSystems) {
+    if (system && m_context) {
+      system->Shutdown(*m_context);
     }
+  }
+  m_runtimeSystems.clear();
+  DebugPrint("Runtime systems cleared.");
 
-    for (const auto& system : m_runtimeSystems)
-    {
-        if (system && m_context)
-        {
-            system->Shutdown(*m_context);
-        }
+  if (m_context) {
+    if (const auto scripting = m_context->GetScriptingRuntime()) {
+      scripting->Shutdown();
+      DebugPrint("Scripting placeholder shut down.");
     }
-    m_runtimeSystems.clear();
-    DebugPrint("Runtime systems cleared.");
-
-    if (m_context)
-    {
-        if (const auto scripting = m_context->GetScriptingRuntime())
-        {
-            scripting->Shutdown();
-            DebugPrint("Scripting placeholder shut down.");
-        }
-        if (const auto audio = m_context->GetAudioSystem())
-        {
-            audio->Shutdown();
-            DebugPrint("Audio placeholder shut down.");
-        }
-        if (const auto physics = m_context->GetPhysicsSystem())
-        {
-            physics->Shutdown();
-            DebugPrint("Physics placeholder shut down.");
-        }
-        m_context->SetAssetRegistry(nullptr);
-        m_context->SetPhysicsSystem(nullptr);
-        m_context->SetAudioSystem(nullptr);
-        m_context->SetScriptingRuntime(nullptr);
-        m_context->SetRenderView(nullptr);
+    if (const auto audio = m_context->GetAudioSystem()) {
+      audio->Shutdown();
+      DebugPrint("Audio placeholder shut down.");
     }
+    if (const auto physics = m_context->GetPhysicsSystem()) {
+      physics->Shutdown();
+      DebugPrint("Physics placeholder shut down.");
+    }
+    m_context->SetAssetRegistry(nullptr);
+    m_context->SetPhysicsSystem(nullptr);
+    m_context->SetAudioSystem(nullptr);
+    m_context->SetScriptingRuntime(nullptr);
+    m_context->SetRenderView(nullptr);
+  }
 
-    m_activeScene.reset();
-    m_context.reset();
-    m_lastFrameTime = {};
-    m_sceneSystemsConfigured = false;
-    m_initialized = false;
+  m_activeScene.reset();
+  m_context.reset();
+  m_lastFrameTime = {};
+  m_sceneSystemsConfigured = false;
+  m_initialized = false;
 }
 
-void EngineApplication::Run()
-{
-    while (m_running)
-    {
-        Tick();
-        std::this_thread::yield();
-    }
+void EngineApplication::Run() {
+  while (m_running) {
+    Tick();
+    std::this_thread::yield();
+  }
 }
 
-void EngineApplication::Tick()
-{
-    if (!m_running || !m_context)
-    {
-        return;
-    }
+void EngineApplication::Tick() {
+  if (!m_running || !m_context) {
+    return;
+  }
 
-    static bool s_loggedFirstTick = false;
-    if (!s_loggedFirstTick)
-    {
-        const size_t systemsCount = m_runtimeSystems.size();
-        DebugPrint("Main loop started. Registered runtime systems: " + std::to_string(systemsCount) +
-                       (m_activeScene ? " (scene bound)" : " (no active scene)"));
-        s_loggedFirstTick = true;
-    }
+  static bool s_loggedFirstTick = false;
+  if (!s_loggedFirstTick) {
+    const size_t systemsCount = m_runtimeSystems.size();
+    DebugPrint("Main loop started. Registered runtime systems: " +
+               std::to_string(systemsCount) +
+               (m_activeScene ? " (scene bound)" : " (no active scene)"));
+    s_loggedFirstTick = true;
+  }
 
-    const auto now = std::chrono::steady_clock::now();
-    const float deltaTime = std::chrono::duration<float>(now - m_lastFrameTime).count();
-    m_lastFrameTime = now;
+  const auto now = std::chrono::steady_clock::now();
+  const float deltaTime =
+      std::chrono::duration<float>(now - m_lastFrameTime).count();
+  m_lastFrameTime = now;
 
-    ProcessInput();
-    PumpEvents();
+  ProcessInput();
+  PumpEvents();
 
-    UpdateRuntimeSystems(deltaTime);
-    if (m_runtimeSystems.empty())
-    {
-        UpdateSceneSystems(deltaTime);
-    }
+  UpdateRuntimeSystems(deltaTime);
+  if (m_runtimeSystems.empty()) {
+    UpdateSceneSystems(deltaTime);
+  }
 }
 
-void EngineApplication::RegisterSystem(std::shared_ptr<IRuntimeSystem> system)  
-{
-    if (!system)
-    {
-        return;
-    }
+void EngineApplication::RegisterSystem(std::shared_ptr<IRuntimeSystem> system) {
+  if (!system) {
+    return;
+  }
 
-    m_runtimeSystems.push_back(std::move(system));
-    const std::string name = m_runtimeSystems.back() ? m_runtimeSystems.back()->GetName() : "UnknownSystem";
-    DebugPrint("Registering runtime system: " + name);
-    if (m_context)
-    {
-        m_runtimeSystems.back()->Initialize(*m_context);
-        DebugPrint("Runtime system initialized: " + name);
-    }
+  m_runtimeSystems.push_back(std::move(system));
+  const std::string name = m_runtimeSystems.back()
+                               ? m_runtimeSystems.back()->GetName()
+                               : "UnknownSystem";
+  DebugPrint("Registering runtime system: " + name);
+  if (m_context) {
+    m_runtimeSystems.back()->Initialize(*m_context);
+    DebugPrint("Runtime system initialized: " + name);
+  }
 }
 
-std::shared_ptr<EngineContext> EngineApplication::GetContext() const noexcept
-{
-    return m_context;
+void EngineApplication::SetSimulationPlaying(bool playing) {
+  m_simulationPlaying = playing;
+  if (!m_simulationPlaying) {
+    m_simulationPaused = false;
+  }
+  if (m_context) {
+    m_context->SetSimulationState(m_simulationPlaying, m_simulationPaused);
+    if (!m_simulationPlaying) {
+      (void)m_context->ConsumeSimulationStepRequest();
+    }
+  }
 }
 
-std::shared_ptr<Scene::Scene> EngineApplication::GetActiveScene() const noexcept
-{
-    return m_activeScene;
+void EngineApplication::SetSimulationPaused(bool paused) {
+  m_simulationPaused = paused && m_simulationPlaying;
+  if (m_context) {
+    m_context->SetSimulationState(m_simulationPlaying, m_simulationPaused);
+  }
 }
 
-void EngineApplication::SetActiveScene(std::shared_ptr<Scene::Scene> scene)
-{
-    m_activeScene = std::move(scene);
-    m_sceneSystemsConfigured = false;
-
-    if (m_activeScene && m_context)
-    {
-        m_activeScene->BindContext(*m_context);
-    }
-
-    if (!m_context)
-    {
-        return;
-    }
-
-    for (const auto& system : m_runtimeSystems)
-    {
-        if (system)
-        {
-            system->Shutdown(*m_context);
-        }
-    }
-    m_runtimeSystems.clear();
-    RegisterPlaceholderSystems();
+void EngineApplication::StepSimulationOnce() {
+  if (!m_simulationPlaying || !m_simulationPaused) {
+    return;
+  }
+  if (m_context) {
+    m_context->RequestSimulationStep();
+  }
 }
 
-void EngineApplication::RegisterPlaceholderSystems()
-{
-    RegisterSystem(std::make_shared<SceneSystemDispatcher>(m_activeScene));     
-    RegisterSystem(std::make_shared<RenderViewSystem>(m_activeScene));
-    DebugPrint("Placeholder systems registered.");
-    // TODO: Register systems with the engine once rendering/physics/audio exist.
+std::shared_ptr<EngineContext> EngineApplication::GetContext() const noexcept {
+  return m_context;
 }
 
-void EngineApplication::UpdateRuntimeSystems(float deltaTime)
-{
-    for (const auto& system : m_runtimeSystems)
-    {
-        if (system)
-        {
-            system->Tick(*m_context, deltaTime);
-        }
-    }
+std::shared_ptr<Scene::Scene>
+EngineApplication::GetActiveScene() const noexcept {
+  return m_activeScene;
 }
 
-void EngineApplication::UpdateSceneSystems(float deltaTime)
-{
-    if (!m_activeScene)
-    {
-        return;
-    }
+void EngineApplication::SetActiveScene(std::shared_ptr<Scene::Scene> scene) {
+  m_activeScene = std::move(scene);
+  m_sceneSystemsConfigured = false;
 
-    if (!m_sceneSystemsConfigured && m_context)
-    {
-        for (const auto& system : m_activeScene->GetSystems())
-        {
-            if (system)
-            {
-                system->Configure(*m_context);
-            }
-        }
-        m_sceneSystemsConfigured = true;
-    }
+  if (m_activeScene && m_context) {
+    m_activeScene->BindContext(*m_context);
+  }
 
-    for (const auto& system : m_activeScene->GetSystems())
-    {
-        if (system)
-        {
-            system->Update(*m_activeScene, deltaTime);
-        }
+  if (!m_context) {
+    return;
+  }
+
+  for (const auto &system : m_runtimeSystems) {
+    if (system) {
+      system->Shutdown(*m_context);
     }
+  }
+  m_runtimeSystems.clear();
+  RegisterPlaceholderSystems();
 }
 
-void EngineApplication::ProcessInput()
-{
-    // TODO: Bridge platform input, window events, and editor commands.
+void EngineApplication::RegisterPlaceholderSystems() {
+  RegisterSystem(std::make_shared<PhysicsRuntimeSystem>(m_activeScene));
+  RegisterSystem(std::make_shared<SceneSystemDispatcher>(m_activeScene));   
+  RegisterSystem(std::make_shared<RenderViewSystem>(m_activeScene));        
+  DebugPrint("Placeholder systems registered.");
+  // TODO: Register systems with the engine once rendering/physics/audio exist.
 }
 
-void EngineApplication::PumpEvents()
-{
-    // TODO: Connect to platform message pump for windowing/input.
+void EngineApplication::UpdateRuntimeSystems(float deltaTime) {
+  for (const auto &system : m_runtimeSystems) {
+    if (system) {
+      system->Tick(*m_context, deltaTime);
+    }
+  }
 }
 
-void EngineApplication::DebugPrint(const std::string& message, bool isError) const
-{
-    if (isError)
-    {
-        Core::Log::Error(message);
+void EngineApplication::UpdateSceneSystems(float deltaTime) {
+  if (!m_activeScene) {
+    return;
+  }
+
+  if (!m_sceneSystemsConfigured && m_context) {
+    for (const auto &system : m_activeScene->GetSystems()) {
+      if (system) {
+        system->Configure(*m_context);
+      }
     }
-    else
-    {
-        Core::Log::Info(message);
+    m_sceneSystemsConfigured = true;
+  }
+
+  for (const auto &system : m_activeScene->GetSystems()) {
+    if (system) {
+      system->Update(*m_activeScene, deltaTime);
     }
+  }
+}
+
+void EngineApplication::ProcessInput() {
+  // TODO: Bridge platform input, window events, and editor commands.
+}
+
+void EngineApplication::PumpEvents() {
+  // TODO: Connect to platform message pump for windowing/input.
+}
+
+void EngineApplication::DebugPrint(const std::string &message,
+                                   bool isError) const {
+  if (isError) {
+    Core::Log::Error(message);
+  } else {
+    Core::Log::Info(message);
+  }
 }
 } // namespace Aetherion::Runtime
