@@ -508,7 +508,7 @@ void PhysicsWorld::ApplyImpulse(BodyHandle handle,
 
 void PhysicsWorld::SetLinearVelocity(BodyHandle handle,
                                      const std::array<float, 3> &velocity) {
-  if (!m_initialized || !m_physicsSystem || handle.index >= m_bodies.size()) {
+  if (!m_initialized || !m_physicsSystem || handle.index >= m_bodies.size()) {  
     return;
   }
 
@@ -519,6 +519,22 @@ void PhysicsWorld::SetLinearVelocity(BodyHandle handle,
 
   auto &bodyInterface = m_physicsSystem->GetBodyInterface();
   bodyInterface.SetLinearVelocity(
+      *entry.bodyId, JPH::Vec3(velocity[0], velocity[1], velocity[2]));
+}
+
+void PhysicsWorld::SetAngularVelocity(BodyHandle handle,
+                                      const std::array<float, 3> &velocity) {
+  if (!m_initialized || !m_physicsSystem || handle.index >= m_bodies.size()) {
+    return;
+  }
+
+  const auto &entry = m_bodies[handle.index];
+  if (!entry.inUse || entry.generation != handle.generation || !entry.bodyId) {
+    return;
+  }
+
+  auto &bodyInterface = m_physicsSystem->GetBodyInterface();
+  bodyInterface.SetAngularVelocity(
       *entry.bodyId, JPH::Vec3(velocity[0], velocity[1], velocity[2]));
 }
 

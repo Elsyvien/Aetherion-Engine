@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "e8a9b2c3-d4e5-4f6a-8b9c-0d1e2f3a4b5c",
+  "type": "Mesh",
+  "source": "meshes/sphere.obj",
+  "import": {
+    "scale": 1.0,
+    "centerMesh": true,
+    "generateNormals": true,
+    "generateTangents": true,
+    "flipUVs": false,
+    "flipWinding": false,
+    "optimize": true
+  }
+}

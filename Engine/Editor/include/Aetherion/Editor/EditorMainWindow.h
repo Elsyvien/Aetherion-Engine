@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 #include <cstdint>
+#include <unordered_map>
 
 #include <QByteArray>
 #include <QElapsedTimer>
@@ -104,6 +105,8 @@ private:
     int m_headlessSleepMs{50};
     bool m_isPlaying{false};
     bool m_isPaused{false};
+    bool m_playSessionSnapshotValid{false};
+    std::unordered_map<Core::EntityId, TransformData> m_playSessionSnapshot;
 
     std::unique_ptr<Rendering::VulkanViewport> m_vulkanViewport;
     WId m_surfaceHandle{0};
@@ -126,6 +129,7 @@ private:
     QAction* m_playAction = nullptr;
     QAction* m_pauseAction = nullptr;
     QAction* m_stepAction = nullptr;
+    QAction* m_resetAction = nullptr;
 
     EditorViewport* m_viewport = nullptr;
     EditorHierarchyPanel* m_hierarchyPanel = nullptr;
@@ -206,6 +210,9 @@ private:
     void StartOrStopPlaySession();
     void TogglePauseSession();
     void StepSimulationOnce();
+    void ResetPlaySession();
+    void CapturePlaySessionSnapshot();
+    void ClearPlaySessionSnapshot();
     void ActivateModeTab(int index);
     void ApplyTranslationDelta(float dx, float dy, float dz);
     void ApplyRotationDelta(float deltaDeg);

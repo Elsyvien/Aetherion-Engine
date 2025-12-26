@@ -1,0 +1,424 @@
+{
+    "name": "Physics Playground",
+    "entities": [
+        {
+            "id": 1,
+            "name": "Ground Plane",
+            "components": {
+                "Transform": {
+                    "position": [0.0, -0.5, 0.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [100.0, 1.0, 100.0],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [0.2, 0.25, 0.3],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 0,
+                    "mass": 1.0,
+                    "linearDamping": 0.0,
+                    "angularDamping": 0.0,
+                    "useGravity": false,
+                    "friction": 0.7,
+                    "restitution": 0.2
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [50.0, 0.5, 50.0],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        },
+        {
+            "id": 2,
+            "name": "Sun",
+            "components": {
+                "Transform": {
+                    "position": [0.0, 20.0, 0.0],
+                    "rotation": [-45.0, 45.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0],
+                    "parent": 0
+                },
+                "Light": {
+                    "lightEnabled": true,
+                    "lightType": 0,
+                    "lightColor": [1.0, 0.95, 0.8],
+                    "lightIntensity": 1.5,
+                    "lightRange": 100.0,
+                    "innerConeAngle": 15.0,
+                    "outerConeAngle": 30.0,
+                    "lightPrimary": true,
+                    "ambientColor": [0.2, 0.22, 0.3]
+                }
+            }
+        },
+        {
+            "id": 10,
+            "name": "Big Ramp",
+            "components": {
+                "Transform": {
+                    "position": [0.0, 0.0, -15.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [10.0, 5.0, 20.0],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [0.5, 0.5, 0.5],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/wedge.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 0,
+                    "mass": 1.0,
+                    "linearDamping": 0.0,
+                    "angularDamping": 0.0,
+                    "useGravity": false,
+                    "friction": 0.3,
+                    "restitution": 0.1
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [5.0, 2.5, 10.0],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        },
+        {
+            "id": 20,
+            "name": "Heavy Crate",
+            "components": {
+                "Transform": {
+                    "position": [0.0, 10.0, -20.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [2.0, 2.0, 2.0],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [0.6, 0.4, 0.2],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 10.0,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.5,
+                    "restitution": 0.1
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [1.0, 1.0, 1.0],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        },
+        {
+            "id": 21,
+            "name": "Stack Cube 1",
+            "components": {
+                "Transform": {
+                    "position": [5.0, 0.5, 0.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [1.0, 0.2, 0.2],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 1.0,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.6,
+                    "restitution": 0.2
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [0.5, 0.5, 0.5],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        },
+        {
+            "id": 22,
+            "name": "Stack Cube 2",
+            "components": {
+                "Transform": {
+                    "position": [5.0, 1.5, 0.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [1.0, 0.5, 0.2],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 1.0,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.6,
+                    "restitution": 0.2
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [0.5, 0.5, 0.5],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        },
+        {
+            "id": 23,
+            "name": "Stack Cube 3",
+            "components": {
+                "Transform": {
+                    "position": [5.0, 2.5, 0.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [1.0, 1.0, 0.2],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cube.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 1.0,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.6,
+                    "restitution": 0.2
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [0.5, 0.5, 0.5],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        },
+        {
+            "id": 30,
+            "name": "Static Pillar Left",
+            "components": {
+                "Transform": {
+                    "position": [-5.0, 2.0, 5.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 4.0, 1.0],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [0.4, 0.4, 0.4],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cylinder.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 0,
+                    "mass": 1.0,
+                    "linearDamping": 0.0,
+                    "angularDamping": 0.0,
+                    "useGravity": false,
+                    "friction": 0.5,
+                    "restitution": 0.2
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [0.5, 2.0, 0.5],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        },
+        {
+            "id": 31,
+            "name": "Static Pillar Right",
+            "components": {
+                "Transform": {
+                    "position": [5.0, 2.0, 5.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 4.0, 1.0],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [0.4, 0.4, 0.4],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/cylinder.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 0,
+                    "mass": 1.0,
+                    "linearDamping": 0.0,
+                    "angularDamping": 0.0,
+                    "useGravity": false,
+                    "friction": 0.5,
+                    "restitution": 0.2
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [0.5, 2.0, 0.5],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        },
+        {
+            "id": 40,
+            "name": "Falling Pyramid",
+            "components": {
+                "Transform": {
+                    "position": [-2.0, 15.0, 0.0],
+                    "rotation": [45.0, 0.0, 45.0],
+                    "scale": [1.5, 1.5, 1.5],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [0.2, 0.8, 0.4],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/pyramid.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 1.5,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.4,
+                    "restitution": 0.5
+                },
+                "Collider": {
+                    "shapeType": 0,
+                    "halfExtents": [0.75, 0.75, 0.75],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        },
+        {
+            "id": 41,
+            "name": "Falling Sphere",
+            "components": {
+                "Transform": {
+                    "position": [2.0, 18.0, 2.0],
+                    "rotation": [0.0, 45.0, 0.0],
+                    "scale": [1.2, 1.2, 1.2],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [0.2, 0.4, 0.9],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/sphere.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 1.2,
+                    "linearDamping": 0.05,
+                    "angularDamping": 0.05,
+                    "useGravity": true,
+                    "friction": 0.4,
+                    "restitution": 0.4
+                },
+                "Collider": {
+                    "shapeType": 1,
+                    "halfExtents": [0.5, 0.5, 0.5],
+                    "radius": 0.6,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        },
+        {
+            "id": 50,
+            "name": "Bouncy Sphere",
+            "components": {
+                "Transform": {
+                    "position": [0.0, 25.0, 5.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0],
+                    "parent": 0
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "color": [0.9, 0.2, 0.8],
+                    "rotationSpeed": 0.0,
+                    "albedoTexture": "",
+                    "meshId": "meshes/sphere.obj"
+                },
+                "Rigidbody": {
+                    "motionType": 2,
+                    "mass": 0.8,
+                    "linearDamping": 0.02,
+                    "angularDamping": 0.01,
+                    "useGravity": true,
+                    "friction": 0.2,
+                    "restitution": 0.9
+                },
+                "Collider": {
+                    "shapeType": 1,
+                    "halfExtents": [0.5, 0.5, 0.5],
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "isTrigger": false,
+                    "offset": [0.0, 0.0, 0.0]
+                }
+            }
+        }
+    ]
+}

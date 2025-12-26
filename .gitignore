@@ -25,3 +25,4 @@ compile_commands.json
 agent.md
 build_log_design.txt
 build_log_ui.txt
+Engine/ThirdParty/JoltPhysics/

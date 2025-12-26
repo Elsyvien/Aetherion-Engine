@@ -128,6 +128,9 @@ public:
   /// @brief Set linear velocity of a body
   void SetLinearVelocity(BodyHandle handle,
                          const std::array<float, 3> &velocity);
+  /// @brief Set angular velocity of a body
+  void SetAngularVelocity(BodyHandle handle,
+                          const std::array<float, 3> &velocity);
 
   /// @brief Get linear velocity of a body
   [[nodiscard]] std::array<float, 3> GetLinearVelocity(BodyHandle handle) const;

@@ -53,6 +53,7 @@
 #include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
+#include "Aetherion/Scene/RigidbodyComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/SceneSerializer.h"
 #include "Aetherion/Scene/TransformComponent.h"
@@ -295,6 +296,26 @@ void Mat4Scale(float out[16], float x, float y, float z)
     out[0] = x;
     out[5] = y;
     out[10] = z;
+}
+
+std::array<float, 4> EulerDegreesToQuaternion(const std::array<float, 3>& euler)
+{
+    constexpr float degToRad = 3.14159265358979323846f / 180.0f;
+    const float x = euler[0] * degToRad * 0.5f;
+    const float y = euler[1] * degToRad * 0.5f;
+    const float z = euler[2] * degToRad * 0.5f;
+
+    const float cx = std::cos(x);
+    const float sx = std::sin(x);
+    const float cy = std::cos(y);
+    const float sy = std::sin(y);
+    const float cz = std::cos(z);
+    const float sz = std::sin(z);
+
+    return {sx * cy * cz - cx * sy * sz,
+            cx * sy * cz + sx * cy * sz,
+            cx * cy * sz - sx * sy * cz,
+            cx * cy * cz + sx * sy * sz};
 }
 
 std::array<float, 16> BuildLocalMatrix(const Scene::TransformComponent& transform)
@@ -1316,6 +1337,7 @@ void EditorMainWindow::CreateToolBarContent()
     m_playAction = toolBar->addAction(tr("Play"));
     m_pauseAction = toolBar->addAction(tr("Pause"));
     m_stepAction = toolBar->addAction(tr("Step"));
+    m_resetAction = toolBar->addAction(tr("Reset"));
 
     m_playAction->setCheckable(true);
     m_pauseAction->setCheckable(true);
@@ -1323,6 +1345,7 @@ void EditorMainWindow::CreateToolBarContent()
     connect(m_playAction, &QAction::triggered, this, [this] { StartOrStopPlaySession(); });
     connect(m_pauseAction, &QAction::triggered, this, [this] { TogglePauseSession(); });
     connect(m_stepAction, &QAction::triggered, this, [this] { StepSimulationOnce(); });
+    connect(m_resetAction, &QAction::triggered, this, [this] { ResetPlaySession(); });
 
     toolBar->addSeparator();
 
@@ -2565,6 +2588,7 @@ bool EditorMainWindow::LoadSceneFromPath(const std::filesystem::path& path)
 
     m_scenePath = target;
     m_scene = loaded;
+    ClearPlaySessionSnapshot();
     if (m_runtimeApp)
     {
         m_runtimeApp->SetActiveScene(m_scene);
@@ -2641,6 +2665,7 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation)
     }
 
     m_scene = m_runtimeApp->GetActiveScene();
+    ClearPlaySessionSnapshot();
     if (m_selection)
     {
         m_selection->SetActiveScene(m_scene);
@@ -3028,6 +3053,11 @@ void EditorMainWindow::UpdateRuntimeControlStates()
     {
         m_stepAction->setEnabled(m_isPlaying && m_isPaused);
     }
+
+    if (m_resetAction)
+    {
+        m_resetAction->setEnabled(m_isPlaying && m_playSessionSnapshotValid);
+    }
 }
 
 void EditorMainWindow::StartOrStopPlaySession()
@@ -3040,12 +3070,14 @@ void EditorMainWindow::StartOrStopPlaySession()
         {
             m_runtimeApp->SetSimulationPlaying(false);
         }
+        ClearPlaySessionSnapshot();
         AppendConsole(m_console, tr("Stopped play session"), ConsoleSeverity::Info);
         statusBar()->showMessage(tr("Stopped play session"), 2000);
         UpdateRuntimeControlStates();
         return;
     }
 
+    CapturePlaySessionSnapshot();
     m_isPlaying = true;
     m_isPaused = false;
     if (m_runtimeApp)
@@ -3090,6 +3122,118 @@ void EditorMainWindow::StepSimulationOnce()
     }
     AppendConsole(m_console, tr("Stepped simulation once"), ConsoleSeverity::Info);
     statusBar()->showMessage(tr("Stepped simulation"), 2000);
+}
+
+void EditorMainWindow::ResetPlaySession()
+{
+    if (!m_isPlaying)
+    {
+        statusBar()->showMessage(tr("No active play session"), 2000);
+        return;
+    }
+
+    if (!m_scene || !m_playSessionSnapshotValid)
+    {
+        statusBar()->showMessage(tr("No reset snapshot available"), 2000);
+        return;
+    }
+
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    auto physicsWorld = ctx ? ctx->GetPhysicsSystem() : nullptr;
+
+    const auto& entities = m_scene->GetEntities();
+    for (const auto& entity : entities)
+    {
+        if (!entity)
+        {
+            continue;
+        }
+
+        auto transform = entity->GetComponent<Scene::TransformComponent>();
+        if (!transform)
+        {
+            continue;
+        }
+
+        const auto it = m_playSessionSnapshot.find(entity->GetId());
+        if (it == m_playSessionSnapshot.end())
+        {
+            continue;
+        }
+
+        const TransformData& data = it->second;
+        transform->SetPosition(data.position[0], data.position[1], data.position[2]);
+        transform->SetRotationDegrees(data.rotation[0], data.rotation[1], data.rotation[2]);
+        transform->SetScale(data.scale[0], data.scale[1], data.scale[2]);
+
+        if (physicsWorld)
+        {
+            auto rigidbody = entity->GetComponent<Scene::RigidbodyComponent>();
+            if (rigidbody)
+            {
+                const auto handle = rigidbody->GetBodyHandle();
+                if (handle.IsValid())
+                {
+                    Physics::BodyTransform bodyTransform{};
+                    bodyTransform.position = data.position;
+                    bodyTransform.rotation = EulerDegreesToQuaternion(data.rotation);
+                    physicsWorld->SetBodyTransform(handle, bodyTransform);
+
+                    if (rigidbody->GetMotionType() == Scene::RigidbodyComponent::MotionType::Dynamic)
+                    {
+                        physicsWorld->SetLinearVelocity(handle, {0.0f, 0.0f, 0.0f});
+                        physicsWorld->SetAngularVelocity(handle, {0.0f, 0.0f, 0.0f});
+                    }
+                }
+            }
+        }
+    }
+
+    RefreshSelectedEntityUi();
+    AppendConsole(m_console, tr("Reset play session"), ConsoleSeverity::Info);
+    statusBar()->showMessage(tr("Scene reset to play start"), 2000);
+}
+
+void EditorMainWindow::CapturePlaySessionSnapshot()
+{
+    m_playSessionSnapshot.clear();
+    m_playSessionSnapshotValid = false;
+
+    if (!m_scene)
+    {
+        return;
+    }
+
+    const auto& entities = m_scene->GetEntities();
+    for (const auto& entity : entities)
+    {
+        if (!entity)
+        {
+            continue;
+        }
+
+        auto transform = entity->GetComponent<Scene::TransformComponent>();
+        if (!transform)
+        {
+            continue;
+        }
+
+        TransformData data{};
+        data.position = transform->GetPosition();
+        data.rotation = transform->GetRotationDegrees();
+        data.scale = transform->GetScale();
+        m_playSessionSnapshot[entity->GetId()] = data;
+    }
+
+    m_playSessionSnapshotValid = !m_playSessionSnapshot.empty();
+    UpdateRuntimeControlStates();
+}
+
+void EditorMainWindow::ClearPlaySessionSnapshot()
+{
+    m_playSessionSnapshot.clear();
+    m_playSessionSnapshotValid = false;
+    UpdateRuntimeControlStates();
 }
 
 void EditorMainWindow::ActivateModeTab(int index)
