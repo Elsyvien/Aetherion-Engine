@@ -11,7 +11,7 @@
 // Forward declarations for Jolt types to avoid header pollution
 namespace JPH {
 class PhysicsSystem;
-class TempAllocatorImpl;
+class TempAllocator;
 class JobSystemThreadPool;
 class BroadPhaseLayerInterface;
 class ObjectVsBroadPhaseLayerFilter;
@@ -154,7 +154,7 @@ private:
   std::array<float, 3> m_gravity{0.0f, -9.81f, 0.0f};
 
   // Jolt Physics resources
-  std::unique_ptr<JPH::TempAllocatorImpl> m_tempAllocator;
+  std::unique_ptr<JPH::TempAllocator> m_tempAllocator;
   std::unique_ptr<JPH::JobSystemThreadPool> m_jobSystem;
   std::unique_ptr<JPH::BroadPhaseLayerInterface> m_broadPhaseLayerInterface;
   std::unique_ptr<JPH::ObjectVsBroadPhaseLayerFilter>

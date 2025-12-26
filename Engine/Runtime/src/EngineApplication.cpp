@@ -267,6 +267,7 @@ public:
       m_physicsSystem.reset();
     }
     m_boundScene.reset();
+    m_boundScenePtr = nullptr;
     m_scene.reset();
     m_context = nullptr;
   }
@@ -299,8 +300,10 @@ private:
     }
 
     auto scene = m_scene.lock();
-    if (scene != m_boundScene.lock()) {
-      m_physicsSystem->BindScene(scene.get());
+    Scene::Scene *scenePtr = scene.get();
+    if (scenePtr != m_boundScenePtr) {
+      m_physicsSystem->BindScene(scenePtr);
+      m_boundScenePtr = scenePtr;
       m_boundScene = scene;
     }
   }
@@ -309,6 +312,7 @@ private:
   std::unique_ptr<Physics::PhysicsSystem> m_physicsSystem;
   std::weak_ptr<Scene::Scene> m_scene;
   std::weak_ptr<Scene::Scene> m_boundScene;
+  Scene::Scene *m_boundScenePtr{nullptr};
 };
 
 class SceneSystemDispatcher final : public IRuntimeSystem {

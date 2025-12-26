@@ -1,7 +1,10 @@
 #include "Aetherion/Physics/PhysicsWorld.h"
 
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
 #include <cmath>
+#include <string>
 #include <thread>
 
 // Jolt headers - must be included in specific order
@@ -9,6 +12,7 @@
 
 // Jolt includes
 #include <Jolt/Core/Factory.h>
+#include <Jolt/Core/IssueReporting.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
@@ -25,6 +29,46 @@
 JPH_SUPPRESS_WARNINGS
 
 namespace {
+void JoltTraceImpl(const char *fmt, ...) {
+  char buffer[1024];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(buffer, sizeof(buffer), fmt, args);
+  va_end(args);
+  Aetherion::Core::Log::Info(std::string("[Jolt] ") + buffer);
+}
+
+#ifdef JPH_ENABLE_ASSERTS
+bool JoltAssertFailedImpl(const char *expression, const char *message,
+                          const char *file, JPH::uint line) {
+  std::string text = "Jolt assert failed: ";
+  text += expression ? expression : "<unknown>";
+  if (message) {
+    text += " | ";
+    text += message;
+  }
+  if (file) {
+    text += " (";
+    text += file;
+    text += ":";
+    text += std::to_string(line);
+    text += ")";
+  }
+  Aetherion::Core::Log::Error(text);
+  return false; // Don't break into the debugger by default.
+}
+#endif
+
+void InstallJoltHandlersOnce() {
+  static bool installed = false;
+  if (installed) {
+    return;
+  }
+  JPH::Trace = JoltTraceImpl;
+  JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = JoltAssertFailedImpl;)
+  installed = true;
+}
+
 // Layer definitions
 namespace Layers {
 static constexpr JPH::ObjectLayer NON_MOVING = 0;
@@ -139,6 +183,8 @@ bool PhysicsWorld::Initialize() {
     return true;
   }
 
+  InstallJoltHandlersOnce();
+
   // Register Jolt allocators and types
   JPH::RegisterDefaultAllocator();
 
@@ -148,8 +194,11 @@ bool PhysicsWorld::Initialize() {
   // Register physics types
   JPH::RegisterTypes();
 
-  // Create temp allocator (10 MB)
-  m_tempAllocator = std::make_unique<JPH::TempAllocatorImpl>(10 * 1024 * 1024);
+  // Create temp allocator with fallback to avoid aborting on larger frames.
+  constexpr JPH::uint tempAllocatorSize = 64 * 1024 * 1024;
+  m_tempAllocator =
+      std::make_unique<JPH::TempAllocatorImplWithMallocFallback>(
+          tempAllocatorSize);
 
   // Create job system with number of available threads
   const int numThreads =
@@ -223,14 +272,22 @@ void PhysicsWorld::Shutdown() {
 }
 
 void PhysicsWorld::Step(float deltaTime) {
-  if (!m_initialized || !m_physicsSystem) {
+  if (!m_initialized || !m_physicsSystem || !m_tempAllocator || !m_jobSystem) {
     return;
   }
 
-  // Jolt recommends fixed timestep with multiple collision steps if needed
+  if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
+    return;
+  }
+
+  // Jolt recommends fixed timestep with multiple collision steps if needed     
   constexpr int collisionSteps = 1;
-  m_physicsSystem->Update(deltaTime, collisionSteps, m_tempAllocator.get(),
-                          m_jobSystem.get());
+  const auto error =
+      m_physicsSystem->Update(deltaTime, collisionSteps, m_tempAllocator.get(),
+                              m_jobSystem.get());
+  if (error != JPH::EPhysicsUpdateError::None) {
+    Aetherion::Core::Log::Error("Jolt physics update failed.");
+  }
 }
 
 BodyHandle
