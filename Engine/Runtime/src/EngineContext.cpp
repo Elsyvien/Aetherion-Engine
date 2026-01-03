@@ -1,7 +1,7 @@
 #include "Aetherion/Runtime/EngineContext.h"
 
 #include "Aetherion/Assets/AssetRegistry.h"
-#include "Aetherion/Audio/AudioPlaceholder.h"
+#include "Aetherion/Audio/AudioEngine.h"
 #include "Aetherion/Physics/PhysicsWorld.h"
 #include "Aetherion/Rendering/RenderView.h"
 #include "Aetherion/Rendering/VulkanContext.h"
@@ -60,12 +60,11 @@ EngineContext::GetPhysicsSystem() const noexcept {
   return m_physicsSystem;
 }
 
-void EngineContext::SetAudioSystem(
-    std::shared_ptr<Audio::AudioEngineStub> audio) {
+void EngineContext::SetAudioSystem(std::shared_ptr<Audio::AudioEngine> audio) {
   m_audioSystem = std::move(audio);
 }
 
-std::shared_ptr<Audio::AudioEngineStub>
+std::shared_ptr<Audio::AudioEngine>
 EngineContext::GetAudioSystem() const noexcept {
   return m_audioSystem;
 }

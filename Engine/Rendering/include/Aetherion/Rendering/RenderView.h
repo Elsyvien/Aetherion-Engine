@@ -15,12 +15,25 @@ class MeshRendererComponent;
 namespace Aetherion::Rendering {
 enum class RenderLightType : uint32_t { Directional = 0, Point = 1, Spot = 2 };
 
+struct RenderMaterial {
+  std::string id;
+  float baseColor[4]{1.0f, 1.0f, 1.0f, 1.0f};
+  float metallic{0.0f};
+  float roughness{1.0f};
+  float emissive[3]{0.0f, 0.0f, 0.0f};
+  std::string albedoTextureId;
+  std::string normalTextureId;
+  std::string metallicRoughnessTextureId;
+  std::string emissiveTextureId;
+  std::string occlusionTextureId;
+};
+
 struct RenderInstance {
   Core::EntityId entityId{0};
   const Scene::TransformComponent *transform{nullptr};
   const Scene::MeshRendererComponent *mesh{nullptr};
   std::string meshAssetId;
-  std::string albedoTextureId;
+  std::string materialId;
   float model[16]{};
   bool hasModel{false};
 };
@@ -92,6 +105,7 @@ struct RenderView {
   RenderCamera camera{};
   std::vector<RenderCamera> cameras;
   std::vector<RenderCollider> colliders;
+  std::vector<RenderMaterial> materials;
   bool showEditorIcons{false};
   bool showColliders{true};
 };

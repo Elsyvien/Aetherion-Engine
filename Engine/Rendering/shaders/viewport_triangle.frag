@@ -29,7 +29,17 @@ layout(set = 0, binding = 0) uniform FrameUBO
     LightUniform uLights[kMaxLights];
 } ubo;
 
-layout(set = 1, binding = 0) uniform sampler2D uAlbedo;
+layout(set = 1, binding = 0) uniform sampler2D uAlbedoMap;
+layout(set = 1, binding = 1) uniform sampler2D uNormalMap;
+layout(set = 1, binding = 2) uniform sampler2D uMetallicRoughnessMap;
+layout(set = 1, binding = 3) uniform sampler2D uEmissiveMap;
+layout(set = 1, binding = 4) uniform sampler2D uOcclusionMap;
+layout(set = 1, binding = 5) uniform MaterialUBO {
+    vec4 baseColor;
+    vec4 emissiveFactor;
+    float metallicFactor;
+    float roughnessFactor;
+} material;
 
 layout(push_constant) uniform InstancePC
 {
@@ -127,29 +137,55 @@ vec3 ApplyLight(vec3 l,
 
 void main()
 {
-    vec3 albedo = texture(uAlbedo, vUv).rgb * vColor;
+    vec4 baseColor = texture(uAlbedoMap, vUv) * material.baseColor * vec4(vColor, 1.0);
+    vec3 albedo = baseColor.rgb;
+    
+    // Normal Mapping
+    vec3 normalMap = texture(uNormalMap, vUv).rgb;
+    vec3 N = normalize(vNormal);
+    // Simple tangent reconstruction if tangents aren't passed
+    vec3 Q1  = dFdx(vWorldPos);
+    vec3 Q2  = dFdy(vWorldPos);
+    vec2 st1 = dFdx(vUv);
+    vec2 st2 = dFdy(vUv);
+    vec3 T  = normalize(Q1*st2.t - Q2*st1.t);
+    vec3 B  = -normalize(cross(N, T));
+    mat3 TBN = mat3(T, B, N);
+    
+    // If normal map is present (default blue), use it. 
+    // We assume default texture is (0.5, 0.5, 1.0) for normals.
+    vec3 tangentNormal = normalMap * 2.0 - 1.0;
+    vec3 n = normalize(TBN * tangentNormal);
+
+    // MRAO
+    vec4 mrSample = texture(uMetallicRoughnessMap, vUv);
+    float metallicSample = mrSample.b;
+    float roughnessSample = mrSample.g;
+    float metallic = clamp(metallicSample * material.metallicFactor, 0.0, 1.0);
+    float roughness = clamp(roughnessSample * material.roughnessFactor, 0.04, 1.0);
+    
+    float occlusion = texture(uOcclusionMap, vUv).r;
+    vec3 emissive = texture(uEmissiveMap, vUv).rgb * material.emissiveFactor.rgb;
+
     if ((pc.uFlags & 1u) != 0u)
     {
-        outColor = vec4(albedo, 1.0);
+        outColor = vec4(albedo, baseColor.a);
         return;
     }
 
     uint debugMode = uint(ubo.uFrameParams.x + 0.5);
     if (debugMode == kDebugNormals)
     {
-        vec3 n = normalize(vNormal);
         outColor = vec4(n * 0.5 + 0.5, 1.0);
         return;
     }
     if (debugMode == kDebugRoughness)
     {
-        float roughness = clamp(ubo.uMaterialParams.y, 0.0, 1.0);
         outColor = vec4(vec3(roughness), 1.0);
         return;
     }
     if (debugMode == kDebugMetallic)
     {
-        float metallic = clamp(ubo.uMaterialParams.x, 0.0, 1.0);
         outColor = vec4(vec3(metallic), 1.0);
         return;
     }
@@ -169,11 +205,8 @@ void main()
         return;
     }
 
-    vec3 n = normalize(vNormal);
     vec3 v = normalize(ubo.uCameraPos.xyz - vWorldPos);
 
-    float metallic = clamp(ubo.uMaterialParams.x, 0.0, 1.0);
-    float roughness = clamp(ubo.uMaterialParams.y, 0.04, 1.0);
     float nDotV = max(dot(n, v), 0.0);
     vec3 f0 = mix(vec3(0.04), albedo, metallic);
 
@@ -263,6 +296,6 @@ void main()
         }
     }
 
-    vec3 ambient = ubo.uAmbientColor.rgb * albedo;
-    outColor = vec4(ambient + lighting, 1.0);
+    vec3 ambient = ubo.uAmbientColor.rgb * albedo * occlusion;
+    outColor = vec4(ambient + lighting + emissive, baseColor.a);
 }

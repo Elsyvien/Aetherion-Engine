@@ -101,7 +101,10 @@ set(RUNTIME_SOURCES
     Engine/Physics/src/PhysicsContactListener.cpp
     Engine/Scene/src/RigidbodyComponent.cpp
     Engine/Scene/src/ColliderComponent.cpp
-    Engine/Audio/src/AudioPlaceholder.cpp
+    Engine/Scene/src/AudioSourceComponent.cpp
+    Engine/Scene/src/AudioListenerComponent.cpp
+    Engine/Audio/src/AudioEngine.cpp
+    Engine/Audio/src/AudioSystem.cpp
     Engine/Scripting/src/ScriptingPlaceholder.cpp
 )
 
@@ -159,6 +162,7 @@ target_include_directories(AetherionRuntime
         Engine/Audio/include
         Engine/Scripting/include
         Engine/ThirdParty
+        Engine/ThirdParty/miniaudio
 )
 target_compile_features(AetherionRuntime PRIVATE cxx_std_20)
 target_link_libraries(AetherionRuntime
@@ -179,6 +183,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorConsole.cpp
     Engine/Editor/src/EditorCameraPreview.cpp
     Engine/Editor/src/EditorMeshPreview.cpp
+    Engine/Editor/src/AICopilotPanel.cpp
     Engine/Editor/src/EditorSettings.cpp
     Engine/Editor/src/EditorSettingsDialog.cpp
     Engine/Editor/resources/AetherionEditor.qrc
@@ -197,6 +202,7 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/EditorConsole.h
         Engine/Editor/include/Aetherion/Editor/EditorCameraPreview.h
         Engine/Editor/include/Aetherion/Editor/EditorMeshPreview.h
+        Engine/Editor/include/Aetherion/Editor/AICopilotPanel.h
         Engine/Editor/include/Aetherion/Editor/EditorSettings.h
         Engine/Editor/include/Aetherion/Editor/EditorSettingsDialog.h
 )

@@ -15,11 +15,86 @@
 #include <QListWidgetItem>
 #include <QMenu>
 #include <QMimeData>
+#include <QSet>
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 
 #include <iostream>
+
+namespace {
+QString EnsureTrailingSlash(QString path)
+{
+    if (path.isEmpty())
+    {
+        return path;
+    }
+    path.replace('\\', '/');
+    if (!path.endsWith('/'))
+    {
+        path.append('/');
+    }
+    return path;
+}
+
+struct BrowserPath
+{
+    QString category;
+    QString subpath;
+};
+
+BrowserPath SplitBrowserPath(const QString& path)
+{
+    BrowserPath out{};
+    const QString normalized = EnsureTrailingSlash(path);
+    if (normalized.isEmpty())
+    {
+        return out;
+    }
+
+    const QStringList parts = normalized.split('/', Qt::SkipEmptyParts);
+    if (parts.isEmpty())
+    {
+        return out;
+    }
+
+    out.category = parts.front() + '/';
+    if (parts.size() > 1)
+    {
+        out.subpath = parts.mid(1).join('/');
+        if (!out.subpath.isEmpty())
+        {
+            out.subpath.append('/');
+        }
+    }
+    return out;
+}
+
+QString StripCategoryPrefix(const QString& relativePath, const QString& category)
+{
+    if (relativePath.isEmpty())
+    {
+        return relativePath;
+    }
+
+    QString categoryPrefix = category;
+    if (categoryPrefix.endsWith('/'))
+    {
+        categoryPrefix.chop(1);
+    }
+    if (categoryPrefix.isEmpty())
+    {
+        return relativePath;
+    }
+
+    const QString withSlash = categoryPrefix + '/';
+    if (relativePath.startsWith(withSlash, Qt::CaseInsensitive))
+    {
+        return relativePath.mid(withSlash.size());
+    }
+    return relativePath;
+}
+} // namespace
 
 namespace Aetherion::Editor
 {
@@ -113,17 +188,10 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
                 id = item->text();
             }
             
-            if (id.endsWith('/')) {
+            if (id.endsWith('/'))
+            {
                 // Navigate into folder
-                 if (!m_currentPath.isEmpty()) {
-                    m_backStack.push_back(m_currentPath);
-                }
-                m_currentPath = id;
-                m_forwardStack.clear();
-                updateNavigationButtons();
-                // Logic to actually change view would go here, 
-                // but currently we just filter visible items or assume flat list for now.
-                // For a proper folder structure, we would filter m_allItems based on m_currentPath.
+                NavigateToPath(id, true);
             }
             else if (!id.trimmed().isEmpty())
             {
@@ -142,7 +210,27 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
 void EditorAssetBrowser::updateNavigationButtons()
 {
     if (m_backButton) m_backButton->setEnabled(!m_backStack.empty());
-    if (m_forwardButton) m_forwardButton->setEnabled(!m_forwardStack.empty());
+    if (m_forwardButton) m_forwardButton->setEnabled(!m_forwardStack.empty());  
+}
+
+void EditorAssetBrowser::NavigateToPath(const QString& path, bool pushHistory)
+{
+    const QString normalized = EnsureTrailingSlash(path);
+    if (normalized == m_currentPath)
+    {
+        return;
+    }
+
+    if (pushHistory)
+    {
+        m_backStack.push_back(m_currentPath);
+        m_forwardStack.clear();
+    }
+
+    m_currentPath = normalized;
+    updateNavigationButtons();
+    updateVisibleItems();
+    emit NavigateToPathRequested(m_currentPath);
 }
 
 void EditorAssetBrowser::NavigateBack()
@@ -152,7 +240,8 @@ void EditorAssetBrowser::NavigateBack()
     m_currentPath = m_backStack.back();
     m_backStack.pop_back();
     updateNavigationButtons();
-    // emit NavigateToPathRequested(m_currentPath); // If we had folder logic
+    updateVisibleItems();
+    emit NavigateToPathRequested(m_currentPath);
 }
 
 void EditorAssetBrowser::NavigateForward()
@@ -162,7 +251,8 @@ void EditorAssetBrowser::NavigateForward()
     m_currentPath = m_forwardStack.back();
     m_forwardStack.pop_back();
     updateNavigationButtons();
-    // emit NavigateToPathRequested(m_currentPath); // If we had folder logic
+    updateVisibleItems();
+    emit NavigateToPathRequested(m_currentPath);
 }
 
 void EditorAssetBrowser::onFilterTextChanged(const QString& text)
@@ -210,74 +300,218 @@ void EditorAssetBrowser::updateVisibleItems()
         listItem->setFlags(listItem->flags() & ~(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsDragEnabled));
     };
 
-    Item pendingHeader;
-    bool hasPendingHeader = false;
-    bool headerAddedForCategory = false;
-
-    for (const auto& item : m_allItems)
+    if (m_currentPath.isEmpty())
     {
-        if (item.isHeader)
-        {
-            const bool isCategoryHeader = item.label.endsWith('/');
-            pendingHeader = item;
-            hasPendingHeader = isCategoryHeader;
-            headerAddedForCategory = false;
+        Item pendingHeader;
+        bool hasPendingHeader = false;
+        bool headerAddedForCategory = false;
 
-            if (m_filterText.isEmpty() || !isCategoryHeader)
+        for (const auto& item : m_allItems)
+        {
+            if (item.isHeader)
             {
-                addHeaderItem(item);
+                const bool isCategoryHeader = item.label.endsWith('/');
+                pendingHeader = item;
+                hasPendingHeader = isCategoryHeader;
+                headerAddedForCategory = false;
+
+                if (m_filterText.isEmpty() || !isCategoryHeader)
+                {
+                    addHeaderItem(item);
+                    headerAddedForCategory = true;
+                }
+                continue;
+            }
+
+            // Check if item matches filter
+            bool matchesFilter = true;
+            if (!m_filterText.isEmpty())
+            {
+                const QString labelLower = item.label.toLower();
+                const QString idLower = item.id.toLower();
+                const QString pathLower = item.assetPath.toLower();
+                const QString relLower = item.relativePath.toLower();
+                matchesFilter = labelLower.contains(m_filterText) ||
+                    idLower.contains(m_filterText) ||
+                    pathLower.contains(m_filterText) ||
+                    relLower.contains(m_filterText);
+            }
+
+            if (!matchesFilter)
+            {
+                continue;
+            }
+
+            if (!m_filterText.isEmpty() && hasPendingHeader && !headerAddedForCategory)
+            {
+                addHeaderItem(pendingHeader);
                 headerAddedForCategory = true;
             }
-            continue;
-        }
 
-        // Check if item matches filter
-        bool matchesFilter = true;
-        if (!m_filterText.isEmpty())
-        {
-            const QString labelLower = item.label.toLower();
-            const QString idLower = item.id.toLower();
-            const QString pathLower = item.assetPath.toLower();
-            matchesFilter = labelLower.contains(m_filterText) ||
-                idLower.contains(m_filterText) ||
-                pathLower.contains(m_filterText);
-        }
-
-        if (!matchesFilter)
-        {
-            continue;
-        }
-
-        if (!m_filterText.isEmpty() && hasPendingHeader && !headerAddedForCategory)
-        {
-            addHeaderItem(pendingHeader);
-            headerAddedForCategory = true;
-        }
-
-        auto* listItem = new QListWidgetItem(item.label, m_list);
-        listItem->setData(Qt::UserRole, item.id);
-        listItem->setData(Qt::UserRole + 1, item.assetPath);
-        if (!item.id.isEmpty())
-        {
-            QString tooltip = item.id;
-            if (!item.assetPath.isEmpty())
+            auto* listItem = new QListWidgetItem(item.label, m_list);
+            listItem->setData(Qt::UserRole, item.id);
+            listItem->setData(Qt::UserRole + 1, item.assetPath);
+            if (!item.id.isEmpty())
             {
-                tooltip += "\n" + item.assetPath;
+                QString tooltip = item.id;
+                if (!item.assetPath.isEmpty())
+                {
+                    tooltip += "\n" + item.assetPath;
+                }
+                listItem->setToolTip(tooltip);
             }
-            listItem->setToolTip(tooltip);
+
+            if (!item.iconPath.isEmpty())
+            {
+                listItem->setIcon(QIcon(item.iconPath));
+            }
+            else
+            {
+                listItem->setIcon(QIcon(":/aetherion/icons/file.svg"));
+            }
+
+            // Set drag data for the item
+            listItem->setFlags(listItem->flags() | Qt::ItemIsDragEnabled);
+        }
+    }
+    else
+    {
+        const BrowserPath pathView = SplitBrowserPath(m_currentPath);
+        QString currentCategory;
+        bool headerAdded = false;
+        QSet<QString> folderNames;
+
+        struct FileEntry
+        {
+            const Item* item = nullptr;
+            QString label;
+        };
+        std::vector<FileEntry> files;
+
+        for (const auto& item : m_allItems)
+        {
+            if (item.isHeader)
+            {
+                currentCategory = EnsureTrailingSlash(item.label.trimmed());
+                if (!headerAdded && currentCategory == pathView.category)
+                {
+                    addHeaderItem(item);
+                    headerAdded = true;
+                }
+                continue;
+            }
+
+            if (currentCategory != pathView.category)
+            {
+                continue;
+            }
+
+            QString relativePath = item.relativePath;
+            if (relativePath.isEmpty())
+            {
+                relativePath = item.label.trimmed();
+            }
+            QString pathWithinCategory = StripCategoryPrefix(relativePath, currentCategory);
+            if (pathWithinCategory.isEmpty())
+            {
+                continue;
+            }
+
+            if (!pathView.subpath.isEmpty())
+            {
+                if (!pathWithinCategory.startsWith(pathView.subpath, Qt::CaseInsensitive))
+                {
+                    continue;
+                }
+                pathWithinCategory = pathWithinCategory.mid(pathView.subpath.size());
+            }
+
+            if (pathWithinCategory.isEmpty())
+            {
+                continue;
+            }
+
+            bool matchesFilter = true;
+            if (!m_filterText.isEmpty())
+            {
+                const QString labelLower = item.label.toLower();
+                const QString idLower = item.id.toLower();
+                const QString pathLower = item.assetPath.toLower();
+                const QString relLower = item.relativePath.toLower();
+                matchesFilter = labelLower.contains(m_filterText) ||
+                    idLower.contains(m_filterText) ||
+                    pathLower.contains(m_filterText) ||
+                    relLower.contains(m_filterText);
+            }
+
+            if (!matchesFilter)
+            {
+                continue;
+            }
+
+            const int slashIndex = pathWithinCategory.indexOf('/');
+            if (slashIndex >= 0)
+            {
+                const QString folderName = pathWithinCategory.left(slashIndex);
+                if (!folderName.isEmpty())
+                {
+                    folderNames.insert(folderName);
+                }
+                continue;
+            }
+
+            files.push_back({&item, pathWithinCategory});
         }
 
-        if (!item.iconPath.isEmpty())
+        if (!folderNames.isEmpty())
         {
-            listItem->setIcon(QIcon(item.iconPath));
+            QStringList sortedFolders = folderNames.values();
+            sortedFolders.sort(Qt::CaseInsensitive);
+            for (const auto& folder : sortedFolders)
+            {
+                const QString id = pathView.category + pathView.subpath + folder + '/';
+                const QString label = folder + '/';
+                auto* listItem = new QListWidgetItem(label, m_list);
+                listItem->setData(Qt::UserRole, id);
+                QFont font = listItem->font();
+                font.setBold(true);
+                listItem->setFont(font);
+                listItem->setFlags(listItem->flags() & ~Qt::ItemIsDragEnabled);
+                listItem->setIcon(QIcon(":/aetherion/icons/folder.svg"));
+            }
         }
-        else
+
+        for (const auto& entry : files)
         {
-            listItem->setIcon(QIcon(":/aetherion/icons/file.svg"));
+            if (!entry.item)
+            {
+                continue;
+            }
+            const Item& item = *entry.item;
+            auto* listItem = new QListWidgetItem(entry.label, m_list);
+            listItem->setData(Qt::UserRole, item.id);
+            listItem->setData(Qt::UserRole + 1, item.assetPath);
+            if (!item.id.isEmpty())
+            {
+                QString tooltip = item.id;
+                if (!item.assetPath.isEmpty())
+                {
+                    tooltip += "\n" + item.assetPath;
+                }
+                listItem->setToolTip(tooltip);
+            }
+
+            if (!item.iconPath.isEmpty())
+            {
+                listItem->setIcon(QIcon(item.iconPath));
+            }
+            else
+            {
+                listItem->setIcon(QIcon(":/aetherion/icons/file.svg"));
+            }
+
+            listItem->setFlags(listItem->flags() | Qt::ItemIsDragEnabled);
         }
-        
-        // Set drag data for the item
-        listItem->setFlags(listItem->flags() | Qt::ItemIsDragEnabled);
     }
 
     if (m_list->count() == 0)

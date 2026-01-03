@@ -14,6 +14,8 @@
 #include <sstream>
 #include <unordered_set>
 
+#include "Aetherion/Assets/Material.h"
+
 #define CGLTF_IMPLEMENTATION
 #include "cgltf/cgltf.h"
 #include "nlohmann/json.hpp"
@@ -162,6 +164,76 @@ void WriteMeshImportSettingsToJson(
       !import["optimize"].is_boolean()) {
     import["optimize"] = settings.optimize;
   }
+  import["optimize"] = settings.optimize;
+}
+
+bool LoadMaterialJson(const std::filesystem::path &path,
+                      Material &outMaterial) {
+  Json root;
+  if (!LoadMetadataJson(path, root) || !root.is_object()) {
+    return false;
+  }
+
+  if (root.contains("baseColor") && root["baseColor"].is_array() &&
+      root["baseColor"].size() == 4) {
+    outMaterial.SetBaseColor(
+        {root["baseColor"][0].get<float>(), root["baseColor"][1].get<float>(),
+         root["baseColor"][2].get<float>(), root["baseColor"][3].get<float>()});
+  }
+
+  if (root.contains("metallic") && root["metallic"].is_number()) {
+    outMaterial.SetMetallic(root["metallic"].get<float>());
+  }
+
+  if (root.contains("roughness") && root["roughness"].is_number()) {
+    outMaterial.SetRoughness(root["roughness"].get<float>());
+  }
+
+  if (root.contains("emissiveFactor") && root["emissiveFactor"].is_array() &&
+      root["emissiveFactor"].size() == 3) {
+    outMaterial.SetEmissiveFactor({root["emissiveFactor"][0].get<float>(),
+                                   root["emissiveFactor"][1].get<float>(),
+                                   root["emissiveFactor"][2].get<float>()});
+  }
+
+  if (root.contains("albedoMapId") && root["albedoMapId"].is_string())
+    outMaterial.SetAlbedoMapId(root["albedoMapId"].get<std::string>());
+  if (root.contains("normalMapId") && root["normalMapId"].is_string())
+    outMaterial.SetNormalMapId(root["normalMapId"].get<std::string>());
+  if (root.contains("metallicRoughnessMapId") &&
+      root["metallicRoughnessMapId"].is_string())
+    outMaterial.SetMetallicRoughnessMapId(
+        root["metallicRoughnessMapId"].get<std::string>());
+  if (root.contains("emissiveMapId") && root["emissiveMapId"].is_string())
+    outMaterial.SetEmissiveMapId(root["emissiveMapId"].get<std::string>());
+  if (root.contains("occlusionMapId") && root["occlusionMapId"].is_string())
+    outMaterial.SetOcclusionMapId(root["occlusionMapId"].get<std::string>());
+
+  return true;
+}
+
+bool WriteMaterialToJson(const std::filesystem::path &path,
+                         const Material &material) {
+  Json root = Json::object();
+  try {
+    std::ifstream input(path);
+    if (input.is_open()) {
+      input >> root;
+    }
+  } catch (...) {
+  }
+
+  root["baseColor"] = material.GetBaseColor();
+  root["metallic"] = material.GetMetallic();
+  root["roughness"] = material.GetRoughness();
+  root["emissiveFactor"] = material.GetEmissiveFactor();
+  root["albedoMapId"] = material.GetAlbedoMapId();
+  root["normalMapId"] = material.GetNormalMapId();
+  root["metallicRoughnessMapId"] = material.GetMetallicRoughnessMapId();
+  root["emissiveMapId"] = material.GetEmissiveMapId();
+  root["occlusionMapId"] = material.GetOcclusionMapId();
+
+  return WriteMetadataJson(path, root);
 }
 
 bool ReadMetadataFile(const std::filesystem::path &metaPath, std::string &outId,
@@ -299,9 +371,15 @@ AssetRegistry::AssetType ClassifyAssetType(const std::filesystem::path &path) {
   if (ext == ".vert" || ext == ".frag" || ext == ".glsl" || ext == ".spv") {
     return AssetRegistry::AssetType::Shader;
   }
-  if (ext == ".json") {
-    return PathHasSegment(path, "scenes") ? AssetRegistry::AssetType::Scene
-                                          : AssetRegistry::AssetType::Other;
+  if (ext == ".json" || ext == Material::kExtension) {
+    if (PathHasSegment(path, "scenes")) {
+      return AssetRegistry::AssetType::Scene;
+    }
+    if (ext == Material::kExtension) {
+      return AssetRegistry::AssetType::Other; // Materials are loaded explicitly
+                                              // or via Scan with special check
+    }
+    return AssetRegistry::AssetType::Other;
   }
   return AssetRegistry::AssetType::Other;
 }
@@ -1121,7 +1199,11 @@ bool LoadObjMesh(const std::filesystem::path &sourcePath,
 
   return true;
 }
+} // namespace
 
+namespace Aetherion::Assets {
+
+namespace {
 int AssetTypeOrder(AssetRegistry::AssetType type) {
   switch (type) {
   case AssetRegistry::AssetType::Texture:
@@ -1143,7 +1225,6 @@ int AssetTypeOrder(AssetRegistry::AssetType type) {
 }
 } // namespace
 
-namespace Aetherion::Assets {
 const char *AssetRegistry::AssetTypeToString(AssetType type) {
   switch (type) {
   case AssetType::Texture:
@@ -1359,6 +1440,28 @@ void AssetRegistry::Scan(const std::string &rootPath) {
           } else {
             ++it;
           }
+        }
+      }
+    }
+  }
+
+  // Load newly discovered or modified materials
+  for (const auto &entry : m_entries) {
+    if (entry.type == AssetType::Other &&
+        std::filesystem::path(entry.path).extension() == Material::kExtension) {
+      // Check if we need to load/reload
+      if (m_materials.find(entry.id) == m_materials.end()) {
+        Material material;
+        if (LoadMaterialJson(entry.path, material)) {
+          m_materials[entry.id] = material;
+        }
+      } else {
+        // Reload if modified
+        // Optimization: We could check scanChanges, but explicit reload on
+        // Rescan is safer for now
+        Material material;
+        if (LoadMaterialJson(entry.path, material)) {
+          m_materials[entry.id] = material;
         }
       }
     }
@@ -1786,31 +1889,58 @@ AssetRegistry::ImportGltf(const std::string &gltfPath, bool forceReimport) {
     const cgltf_material &material = data->materials[i];
     std::string matId = meshId + ":mat:" + std::to_string(i);
 
-    CachedMaterial cached{};
-    cached.id = matId;
-    cached.name = material.name ? material.name : std::string();
+    Material cached{};
+    cached.SetBaseColor({1.0f, 1.0f, 1.0f, 1.0f});
+    cached.SetMetallic(0.0f);
+    cached.SetRoughness(1.0f);
+    cached.SetEmissiveFactor({material.emissive_factor[0],
+                              material.emissive_factor[1],
+                              material.emissive_factor[2]});
+
+    auto textureIdFor = [&](const cgltf_texture *tex) -> std::string {
+      if (!tex) {
+        return {};
+      }
+      const cgltf_size texIndex = static_cast<cgltf_size>(tex - data->textures);
+      if (texIndex < textureToImageId.size()) {
+        return textureToImageId[texIndex];
+      }
+      return {};
+    };
 
     if (material.has_pbr_metallic_roughness) {
       const auto &pbr = material.pbr_metallic_roughness;
-      cached.baseColor = {pbr.base_color_factor[0], pbr.base_color_factor[1],
-                          pbr.base_color_factor[2], pbr.base_color_factor[3]};
-      cached.metallic = pbr.metallic_factor;
-      cached.roughness = pbr.roughness_factor;
+      cached.SetBaseColor({pbr.base_color_factor[0], pbr.base_color_factor[1],
+                           pbr.base_color_factor[2], pbr.base_color_factor[3]});
+      cached.SetMetallic(pbr.metallic_factor);
+      cached.SetRoughness(pbr.roughness_factor);
       if (pbr.base_color_texture.texture) {
-        const cgltf_size texIndex = static_cast<cgltf_size>(
-            pbr.base_color_texture.texture - data->textures);
-        if (texIndex < textureToImageId.size()) {
-          cached.albedoTextureId = textureToImageId[texIndex];
-        }
+        cached.SetAlbedoMapId(textureIdFor(pbr.base_color_texture.texture));
       }
+      if (pbr.metallic_roughness_texture.texture) {
+        cached.SetMetallicRoughnessMapId(
+            textureIdFor(pbr.metallic_roughness_texture.texture));
+      }
+    }
+
+    if (material.normal_texture.texture) {
+      cached.SetNormalMapId(textureIdFor(material.normal_texture.texture));
+    }
+    if (material.occlusion_texture.texture) {
+      cached.SetOcclusionMapId(
+          textureIdFor(material.occlusion_texture.texture));
+    }
+    if (material.emissive_texture.texture) {
+      cached.SetEmissiveMapId(textureIdFor(material.emissive_texture.texture));
     }
 
     m_materials[matId] = cached;
     mesh.materialIds.push_back(matId);
     result.materials.push_back(matId);
-    if (!cached.albedoTextureId.empty()) {
-      if (uniqueTextures.emplace(cached.albedoTextureId).second) {
-        mesh.textureIds.push_back(cached.albedoTextureId);
+    const std::string &albedoId = cached.GetAlbedoMapId();
+    if (!albedoId.empty()) {
+      if (uniqueTextures.emplace(albedoId).second) {
+        mesh.textureIds.push_back(albedoId);
       }
     }
   }
@@ -1844,13 +1974,84 @@ AssetRegistry::GetTexture(const std::string &id) const {
   return &it->second;
 }
 
-const AssetRegistry::CachedMaterial *
-AssetRegistry::GetMaterial(const std::string &id) const {
+const Material *AssetRegistry::GetMaterial(const std::string &id) const {
   auto it = m_materials.find(id);
   if (it == m_materials.end()) {
     return nullptr;
   }
   return &it->second;
+}
+
+Material *AssetRegistry::GetMaterialMutable(const std::string &id) {
+  auto it = m_materials.find(id);
+  if (it == m_materials.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+Material *AssetRegistry::CreateMaterial(const std::string &name) {
+  std::string filename = name;
+  if (!Aetherion::Core::String::HasSuffix(filename,
+                                          std::string(Material::kExtension))) {
+    filename += std::string(Material::kExtension);
+  }
+
+  // Sanitize filename
+  std::replace(filename.begin(), filename.end(), ' ', '_');
+
+  std::filesystem::path path = m_rootPath / "materials" / filename;
+  if (!std::filesystem::exists(path.parent_path())) {
+    std::filesystem::create_directories(path.parent_path());
+  }
+
+  Material newMat;
+  // Defaults
+  newMat.SetBaseColor({1.0f, 1.0f, 1.0f, 1.0f});
+  newMat.SetRoughness(0.5f);
+  newMat.SetMetallic(0.0f);
+
+  std::string id;
+  // This creates the .asset.json metadata
+  EnsureMetadataForAsset(path, m_rootPath, AssetType::Other, id);
+
+  // Now write the actual .mat content (which is also JSON currently, or could
+  // be binary/custom) For simplicity, we are storing material data IN the .mat
+  // file directly as JSON. The asset system wrapper sees .mat as the source
+  // file.
+
+  // Write initial .mat file
+  if (WriteMaterialToJson(path, newMat)) {
+    m_materials[id] = newMat;
+
+    // Register asset entry
+    AssetEntry entry;
+    entry.id = id;
+    entry.path = path;
+    entry.type =
+        AssetType::Other; // TODO: Add dedicated Material AssetType or sub-type
+    m_entries.push_back(entry);
+    m_entryLookup[id] = m_entries.size() - 1;
+    m_pathToId[MakePathKey(path, m_rootPath)] = id;
+
+    return &m_materials[id];
+  }
+
+  return nullptr;
+}
+
+bool AssetRegistry::SaveMaterial(const std::string &assetId) {
+  auto it = m_materials.find(assetId);
+  if (it == m_materials.end()) {
+    return false;
+  }
+
+  const AssetEntry *entry = FindEntry(assetId);
+  if (!entry) {
+    return false;
+  }
+
+  return WriteMaterialToJson(entry->path, it->second);
 }
 
 AssetRegistry::MeshImportSettings

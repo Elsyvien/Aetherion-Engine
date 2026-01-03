@@ -20,6 +20,7 @@ class QAction;
 class QActionGroup;
 class QLabel;
 class QDockWidget;
+class QFileSystemWatcher;
 
 namespace Aetherion::Rendering
 {
@@ -47,6 +48,7 @@ class EditorCameraPreview;
 class EditorConsole;
 class EditorSelection;
 class EditorAuxPanel;
+class AICopilotPanel;
 
 class EditorMainWindow : public QMainWindow
 {
@@ -58,13 +60,14 @@ public:
                               QWidget* parent = nullptr);
     ~EditorMainWindow() override;
 
-    // TODO: Add menu actions for projects, play/pause, and layout management.
+    // TODO: Add menu actions for projects.
 private:
     std::shared_ptr<Runtime::EngineApplication> m_runtimeApp;
 
     std::shared_ptr<Scene::Scene> m_scene;
     std::filesystem::path m_scenePath;
     bool m_sceneDirty{false};
+    bool m_ignoreNextSceneChange{false};
     EditorSelection* m_selection = nullptr;
     QActionGroup* m_modeActionGroup = nullptr;
     QAction* m_modeEditAction = nullptr;
@@ -114,6 +117,7 @@ private:
     bool m_surfaceInitialized{false};
     class QTimer* m_renderTimer = nullptr;
     class QTimer* m_assetWatchTimer = nullptr;
+    QFileSystemWatcher* m_assetFileWatcher = nullptr;
     QElapsedTimer m_frameTimer;
     QLabel* m_fpsLabel = nullptr;
     QElapsedTimer m_fpsTimer;
@@ -126,6 +130,7 @@ private:
     QAction* m_showConsoleAction = nullptr;
     QAction* m_showMeshPreviewAction = nullptr;
     QAction* m_showCameraPreviewAction = nullptr;
+    QAction* m_showAICopilotAction = nullptr;
     QAction* m_playAction = nullptr;
     QAction* m_pauseAction = nullptr;
     QAction* m_stepAction = nullptr;
@@ -136,12 +141,14 @@ private:
     EditorInspectorPanel* m_inspectorPanel = nullptr;
     class EditorMeshPreview* m_meshPreview = nullptr;
     EditorCameraPreview* m_cameraPreview = nullptr;
+    AICopilotPanel* m_copilotPanel = nullptr;
     QDockWidget* m_hierarchyDock = nullptr;
     QDockWidget* m_inspectorDock = nullptr;
     QDockWidget* m_assetBrowserDock = nullptr;
     QDockWidget* m_consoleDock = nullptr;
     QDockWidget* m_meshPreviewDock = nullptr;
     QDockWidget* m_cameraPreviewDock = nullptr;
+    QDockWidget* m_copilotDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorConsole* m_console = nullptr;
     QByteArray m_defaultLayoutState;
@@ -149,6 +156,7 @@ private:
     EditorAuxPanel* m_auxPanel = nullptr;
     QString m_selectedAssetId;
     std::uint64_t m_assetChangeSerial{0};
+    bool m_assetWatcherDirty{true};
 
     std::unique_ptr<CommandHistory> m_commandHistory;
     QAction* m_undoAction = nullptr;
@@ -180,6 +188,7 @@ private:
     void RefreshAssetBrowser();
     void RescanAssets();
     void PollAssetChanges();
+    void RefreshAssetWatchPaths();
     void ImportGltfAsset();
     void AddAssetToScene(const QString& assetId);
     void DeleteAsset(const QString& assetId);

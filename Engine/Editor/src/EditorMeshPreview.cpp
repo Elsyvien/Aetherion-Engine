@@ -275,9 +275,9 @@ void EditorMeshPreview::onRenderFrame()
     if (m_assetRegistry)
     {
         if (const auto* cached = m_assetRegistry->GetMesh(instance.meshAssetId);
-            cached && !cached->textureIds.empty())
+            cached && !cached->materialIds.empty())
         {
-            instance.albedoTextureId = cached->textureIds.front();
+            instance.materialId = cached->materialIds.front();
         }
     }
     instance.transform = nullptr;

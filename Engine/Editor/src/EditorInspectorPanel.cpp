@@ -8,6 +8,7 @@
 #include <QFormLayout>
 #include <QImageReader>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPixmap>
@@ -23,6 +24,7 @@
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Editor/Commands/ComponentCommands.h"
 #include "Aetherion/Editor/Commands/TransformCommand.h"
+#include "Aetherion/Scene/AudioSourceComponent.h"
 #include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/ColliderComponent.h"
 #include "Aetherion/Scene/Entity.h"
@@ -208,6 +210,13 @@ void EditorInspectorPanel::RebuildUi() {
   m_lightAmbientB = nullptr;
   m_lightPrimary = nullptr;
 
+  m_audioPath = nullptr;
+  m_audioVolume = nullptr;
+  m_audioPitch = nullptr;
+  m_audioLoop = nullptr;
+  m_audioSpatial = nullptr;
+  m_audioPlayOnAwake = nullptr;
+
   auto addMeshStatsRows = [this](
                               QFormLayout *form, QWidget *parent,
                               const Assets::AssetRegistry::MeshData &meshData) {
@@ -329,11 +338,10 @@ void EditorInspectorPanel::RebuildUi() {
           }
 
           if (const auto *cachedMesh = registry->GetMesh(entry->id)) {
-            form->addRow(
-                tr("Materials"),
-                new QLabel(QString::number(static_cast<long long>(
-                              cachedMesh->materialIds.size())),
-                           formHost));
+            form->addRow(tr("Materials"),
+                         new QLabel(QString::number(static_cast<long long>(
+                                        cachedMesh->materialIds.size())),
+                                    formHost));
             if (!cachedMesh->materialIds.empty()) {
               auto *materialLabel =
                   new QLabel(FormatIdList(cachedMesh->materialIds), formHost);
@@ -341,11 +349,10 @@ void EditorInspectorPanel::RebuildUi() {
               form->addRow(tr("Material IDs"), materialLabel);
             }
 
-            form->addRow(
-                tr("Textures"),
-                new QLabel(QString::number(static_cast<long long>(
-                              cachedMesh->textureIds.size())),
-                           formHost));
+            form->addRow(tr("Textures"),
+                         new QLabel(QString::number(static_cast<long long>(
+                                        cachedMesh->textureIds.size())),
+                                    formHost));
             if (!cachedMesh->textureIds.empty()) {
               auto *textureLabel =
                   new QLabel(FormatIdList(cachedMesh->textureIds), formHost);
@@ -353,8 +360,8 @@ void EditorInspectorPanel::RebuildUi() {
               form->addRow(tr("Texture IDs"), textureLabel);
             }
           } else {
-            form->addRow(tr("Materials"), new QLabel(tr("N/A"), formHost));     
-            form->addRow(tr("Textures"), new QLabel(tr("N/A"), formHost));      
+            form->addRow(tr("Materials"), new QLabel(tr("N/A"), formHost));
+            form->addRow(tr("Textures"), new QLabel(tr("N/A"), formHost));
           }
 
           const std::string meshId = entry->id;
@@ -399,29 +406,29 @@ void EditorInspectorPanel::RebuildUi() {
           form->addRow(tr("Flip Winding"), importFlipWinding);
           form->addRow(tr("Optimize"), importOptimize);
 
-          auto applyImportSettings =
-              [this, meshId, importScale, importNormals, importTangents,
-               importFlipUvs, importFlipWinding, importOptimize, importCenter]() {
-                if (!m_assetRegistry) {
-                  return;
-                }
+          auto applyImportSettings = [this, meshId, importScale, importNormals,
+                                      importTangents, importFlipUvs,
+                                      importFlipWinding, importOptimize,
+                                      importCenter]() {
+            if (!m_assetRegistry) {
+              return;
+            }
 
-                Assets::AssetRegistry::MeshImportSettings settings{};
-                settings.scale = static_cast<float>(importScale->value());
-                settings.centerMesh = importCenter->isChecked();
-                settings.generateNormals = importNormals->isChecked();
-                settings.generateTangents = importTangents->isChecked();
-                settings.flipUVs = importFlipUvs->isChecked();
-                settings.flipWinding = importFlipWinding->isChecked();
-                settings.optimize = importOptimize->isChecked();
+            Assets::AssetRegistry::MeshImportSettings settings{};
+            settings.scale = static_cast<float>(importScale->value());
+            settings.centerMesh = importCenter->isChecked();
+            settings.generateNormals = importNormals->isChecked();
+            settings.generateTangents = importTangents->isChecked();
+            settings.flipUVs = importFlipUvs->isChecked();
+            settings.flipWinding = importFlipWinding->isChecked();
+            settings.optimize = importOptimize->isChecked();
 
-                m_assetRegistry->SetMeshImportSettings(meshId, settings);
-              };
+            m_assetRegistry->SetMeshImportSettings(meshId, settings);
+          };
 
           connect(importScale, qOverload<double>(&QDoubleSpinBox::valueChanged),
-                  this, [applyImportSettings](double) {
-                    applyImportSettings();
-                  });
+                  this,
+                  [applyImportSettings](double) { applyImportSettings(); });
           connect(importCenter, &QCheckBox::toggled, this,
                   [applyImportSettings](bool) { applyImportSettings(); });
           connect(importNormals, &QCheckBox::toggled, this,
@@ -460,7 +467,7 @@ void EditorInspectorPanel::RebuildUi() {
         }
       } else {
         const QString status = registry ? tr("Not found in registry")
-                                        : tr("Asset registry unavailable");     
+                                        : tr("Asset registry unavailable");
         form->addRow(tr("Status"), new QLabel(status, formHost));
       }
 
@@ -496,8 +503,10 @@ void EditorInspectorPanel::RebuildUi() {
   auto camera = m_entity->GetComponent<Scene::CameraComponent>();
   auto rigidbody = m_entity->GetComponent<Scene::RigidbodyComponent>();
   auto collider = m_entity->GetComponent<Scene::ColliderComponent>();
+  auto audioSource = m_entity->GetComponent<Scene::AudioSourceComponent>();
 
-  if (!transform && !mesh && !light && !camera && !rigidbody && !collider) {
+  if (!transform && !mesh && !light && !camera && !rigidbody && !collider &&
+      !audioSource) {
     auto *noEditable =
         new QLabel(tr("No editable components on selected entity."), m_content);
     noEditable->setAlignment(Qt::AlignTop | Qt::AlignLeft);
@@ -568,31 +577,33 @@ void EditorInspectorPanel::RebuildUi() {
     return container;
   };
 
-  auto makeVectorRow = [this](const QString& label, QDoubleSpinBox* x, QDoubleSpinBox* y, QDoubleSpinBox* z, float resetVal) {
-      auto* container = new QWidget(m_content);
-      auto* layout = new QHBoxLayout(container);
-      layout->setContentsMargins(0, 0, 0, 0);
-      layout->setSpacing(2);
+  auto makeVectorRow = [this](const QString &label, QDoubleSpinBox *x,
+                              QDoubleSpinBox *y, QDoubleSpinBox *z,
+                              float resetVal) {
+    auto *container = new QWidget(m_content);
+    auto *layout = new QHBoxLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(2);
 
-      layout->addWidget(new QLabel("X", container));
-      layout->addWidget(x, 1);
-      layout->addWidget(new QLabel("Y", container));
-      layout->addWidget(y, 1);
-      layout->addWidget(new QLabel("Z", container));
-      layout->addWidget(z, 1);
+    layout->addWidget(new QLabel("X", container));
+    layout->addWidget(x, 1);
+    layout->addWidget(new QLabel("Y", container));
+    layout->addWidget(y, 1);
+    layout->addWidget(new QLabel("Z", container));
+    layout->addWidget(z, 1);
 
-      auto* resetBtn = new QToolButton(container);
-      resetBtn->setText("R");
-      resetBtn->setToolTip(tr("Reset %1").arg(label));
-      resetBtn->setFixedSize(20, 20); // Small button
-      connect(resetBtn, &QToolButton::clicked, this, [x, y, z, resetVal] {
-          x->setValue(resetVal);
-          y->setValue(resetVal);
-          z->setValue(resetVal);
-      });
-      layout->addWidget(resetBtn);
+    auto *resetBtn = new QToolButton(container);
+    resetBtn->setText("R");
+    resetBtn->setToolTip(tr("Reset %1").arg(label));
+    resetBtn->setFixedSize(20, 20); // Small button
+    connect(resetBtn, &QToolButton::clicked, this, [x, y, z, resetVal] {
+      x->setValue(resetVal);
+      y->setValue(resetVal);
+      z->setValue(resetVal);
+    });
+    layout->addWidget(resetBtn);
 
-      return container;
+    return container;
   };
 
   if (transform) {
@@ -620,9 +631,12 @@ void EditorInspectorPanel::RebuildUi() {
     m_scaleY->setValue(transform->GetScaleY());
     m_scaleZ->setValue(transform->GetScaleZ());
 
-    form->addRow(tr("Position"), makeVectorRow(tr("Position"), m_posX, m_posY, m_posZ, 0.0f));
-    form->addRow(tr("Rotation"), makeVectorRow(tr("Rotation"), m_rotX, m_rotY, m_rotZ, 0.0f));
-    form->addRow(tr("Scale"), makeVectorRow(tr("Scale"), m_scaleX, m_scaleY, m_scaleZ, 1.0f));
+    form->addRow(tr("Position"),
+                 makeVectorRow(tr("Position"), m_posX, m_posY, m_posZ, 0.0f));
+    form->addRow(tr("Rotation"),
+                 makeVectorRow(tr("Rotation"), m_rotX, m_rotY, m_rotZ, 0.0f));
+    form->addRow(tr("Scale"), makeVectorRow(tr("Scale"), m_scaleX, m_scaleY,
+                                            m_scaleZ, 1.0f));
 
     auto applyAndEmit = [this, transform]() {
       if (m_buildingUi || !m_entity) {
@@ -764,7 +778,7 @@ void EditorInspectorPanel::RebuildUi() {
     }
 
     const QString currentTextureId =
-        QString::fromStdString(mesh->GetAlbedoTextureId());
+        QString::fromStdString(mesh->GetMaterialAssetId());
     const int textureIndex = m_meshTexture->findData(currentTextureId);
     if (textureIndex >= 0) {
       m_meshTexture->setCurrentIndex(textureIndex);
@@ -810,9 +824,23 @@ void EditorInspectorPanel::RebuildUi() {
         return;
       }
 
-      const auto *entry = m_assetRegistry->FindEntry(normalized.toStdString());
+      std::string previewAssetId = normalized.toStdString();
+      if (m_assetRegistry) {
+        // Check if it is a material and resolve albedo
+        const auto *mat = m_assetRegistry->GetMaterial(previewAssetId);
+        if (mat) {
+          previewAssetId = mat->GetAlbedoMapId();
+        }
+      }
+
+      if (previewAssetId.empty()) {
+        setPreviewText(tr("No Albedo"));
+        return;
+      }
+
+      const auto *entry = m_assetRegistry->FindEntry(previewAssetId);
       if (!entry) {
-        setPreviewText(tr("Not found"));
+        setPreviewText(tr("Texture not found"));
         return;
       }
 
@@ -919,7 +947,7 @@ void EditorInspectorPanel::RebuildUi() {
       if (m_meshTexture) {
         const QString texId = m_meshTexture->currentText().trimmed();
         const QString normalized = (texId == tr("(None)")) ? QString() : texId;
-        mesh->SetAlbedoTextureId(normalized.toStdString());
+        mesh->SetMaterialAssetId(normalized.toStdString());
       }
       emit sceneModified();
       updateMeshStats();
@@ -1401,6 +1429,74 @@ void EditorInspectorPanel::RebuildUi() {
         makeComponentHeader(tr("Collider"), collider, formHost));
   }
 
+  // Audio Source Component UI
+  if (audioSource) {
+    auto *formHost = new QWidget(m_content);
+    auto *form = new QFormLayout(formHost);
+    form->setLabelAlignment(Qt::AlignLeft);
+
+    m_audioPath = new QLineEdit(m_content);
+    m_audioPath->setText(QString::fromStdString(audioSource->GetSoundPath()));
+
+    m_audioVolume = makeSpin(0.0, 10.0, 0.1);
+    m_audioVolume->setValue(audioSource->GetVolume());
+
+    m_audioPitch = makeSpin(0.1, 5.0, 0.1);
+    m_audioPitch->setValue(audioSource->GetPitch());
+
+    m_audioLoop = new QCheckBox(m_content);
+    m_audioLoop->setChecked(audioSource->GetLoop());
+
+    m_audioSpatial = new QCheckBox(m_content);
+    m_audioSpatial->setChecked(audioSource->GetSpatial());
+
+    m_audioPlayOnAwake = new QCheckBox(m_content);
+    m_audioPlayOnAwake->setChecked(audioSource->GetPlayOnAwake());
+
+    form->addRow(tr("Sound Path"), m_audioPath);
+    form->addRow(tr("Volume"), m_audioVolume);
+    form->addRow(tr("Pitch"), m_audioPitch);
+    form->addRow(tr("Loop"), m_audioLoop);
+    form->addRow(tr("Spatial"), m_audioSpatial);
+    form->addRow(tr("Play On Awake"), m_audioPlayOnAwake);
+
+    auto *playBtn = new QPushButton(tr("Test Play"), formHost);
+    form->addRow(playBtn);
+
+    auto updateAudio = [this, audioSource]() {
+      if (m_buildingUi || !m_entity)
+        return;
+
+      audioSource->SetSoundPath(m_audioPath->text().toStdString());
+      audioSource->SetVolume(static_cast<float>(m_audioVolume->value()));
+      audioSource->SetPitch(static_cast<float>(m_audioPitch->value()));
+      audioSource->SetLoop(m_audioLoop->isChecked());
+      audioSource->SetSpatial(m_audioSpatial->isChecked());
+      audioSource->SetPlayOnAwake(m_audioPlayOnAwake->isChecked());
+      emit sceneModified();
+    };
+
+    connect(m_audioPath, &QLineEdit::editingFinished, this,
+            [updateAudio]() { updateAudio(); });
+    connect(m_audioVolume, qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this, [updateAudio](double) { updateAudio(); });
+    connect(m_audioPitch, qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this, [updateAudio](double) { updateAudio(); });
+    connect(m_audioLoop, &QCheckBox::toggled, this,
+            [updateAudio](bool) { updateAudio(); });
+    connect(m_audioSpatial, &QCheckBox::toggled, this,
+            [updateAudio](bool) { updateAudio(); });
+    connect(m_audioPlayOnAwake, &QCheckBox::toggled, this,
+            [updateAudio](bool) { updateAudio(); });
+
+    connect(playBtn, &QPushButton::clicked, this,
+            [audioSource]() { audioSource->Play(); });
+
+    formHost->setLayout(form);
+    m_contentLayout->addWidget(
+        makeComponentHeader(tr("Audio Source"), audioSource, formHost));
+  }
+
   m_contentLayout->addStretch(1);
 
   auto *addCompBtn = new QPushButton(tr("Add Component"), m_content);
@@ -1452,6 +1548,14 @@ void EditorInspectorPanel::RebuildUi() {
     if (!m_entity->GetComponent<Scene::ColliderComponent>()) {
       menu.addAction(tr("Collider"), [this] {
         auto comp = std::make_shared<Scene::ColliderComponent>();
+        if (m_commandExecutor)
+          m_commandExecutor(
+              std::make_unique<AddComponentCommand>(m_entity, comp));
+      });
+    }
+    if (!m_entity->GetComponent<Scene::AudioSourceComponent>()) {
+      menu.addAction(tr("Audio Source"), [this] {
+        auto comp = std::make_shared<Scene::AudioSourceComponent>();
         if (m_commandExecutor)
           m_commandExecutor(
               std::make_unique<AddComponentCommand>(m_entity, comp));
