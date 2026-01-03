@@ -153,6 +153,7 @@ private:
 
   struct GpuMaterial {
     VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
+    VkDescriptorPool descriptorPool{VK_NULL_HANDLE};
     VkBuffer uniformBuffer{VK_NULL_HANDLE};
     VkDeviceMemory uniformMemory{VK_NULL_HANDLE};
     // Keep track of dependencies to detect changes?
@@ -278,6 +279,7 @@ private:
   VkSampler m_textureSampler{VK_NULL_HANDLE};
   VkSampler m_postProcessSampler{VK_NULL_HANDLE};
   GpuTexture m_defaultTexture{};
+  GpuMaterial m_defaultMaterial{};
   std::array<VkBuffer, kMaxFramesInFlight> m_uniformBuffers{};
   std::array<VkDeviceMemory, kMaxFramesInFlight> m_uniformMemories{};
   std::array<void *, kMaxFramesInFlight> m_uniformMapped{};
@@ -292,6 +294,7 @@ private:
   std::unordered_map<std::string, GpuTexture> m_textureCache;
   std::unordered_set<std::string> m_missingTextures;
   std::unordered_map<std::string, GpuMaterial> m_materialCache;
+  std::unordered_set<std::string> m_missingMaterials;
 
   VkDescriptorSetLayout m_materialDescriptorSetLayout{VK_NULL_HANDLE};
 
@@ -311,7 +314,6 @@ private:
   void CreateSceneResources();
   void CreatePickingResources();
   void CreateUniformBuffers();
-  void CreateDescriptorPoolAndSets();
   void CreateDescriptorPoolAndSets();
   void CreateTextureDescriptorPool();
   VkDescriptorPool CreateTextureDescriptorPoolInternal();
@@ -338,13 +340,13 @@ private:
   void UpdateColliderBuffer(const RenderView &view);
   void DestroyMeshCache();
   void DestroyTextureCache();
+  void DestroyMaterialCache();
   void DestroySceneResources();
   void DestroyPickingResources();
   void ProcessDeferredDeletions();
   void EnqueueDeletion(std::function<void()> &&callback,
                        uint32_t frames = kMaxFramesInFlight);
   void FlushDeferredDeletions();
-  VkDescriptorPool CreateTextureDescriptorPoolInternal();
 
 #ifdef __APPLE__
   void UpdateMetalLayerSize(int width, int height);
@@ -356,8 +358,9 @@ private:
   InstancesFromView(const RenderView &view, float timeSeconds) const;
 
   [[nodiscard]] const GpuMesh *ResolveMesh(const std::string &assetId);
-  [[nodiscard]] const GpuTexture *ResolveTexture(const std::string &assetId);
-  [[nodiscard]] const GpuMaterial *ResolveMaterial(const std::string &assetId);
+  [[nodiscard]] const GpuTexture *ResolveTexture(const std::string &assetId);   
+  [[nodiscard]] const GpuMaterial *ResolveMaterial(const std::string &assetId); 
+  GpuMaterial CreateMaterialResources(const Assets::Material &material);
   GpuTexture CreateTextureFromPixels(const unsigned char *pixels,
                                      uint32_t width, uint32_t height);
   void TransitionImageLayout(VkImage image, VkFormat format,

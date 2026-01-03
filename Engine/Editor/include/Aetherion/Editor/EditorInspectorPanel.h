@@ -8,14 +8,14 @@
 
 #include "Aetherion/Core/Types.h"
 
-namespace Aetherion::Editor { class Command; }
+namespace Aetherion::Editor {
+class Command;
+}
 
-namespace Aetherion::Scene
-{
+namespace Aetherion::Scene {
 class Entity;
 } // namespace Aetherion::Scene
-namespace Aetherion::Assets
-{
+namespace Aetherion::Assets {
 class AssetRegistry;
 } // namespace Aetherion::Assets
 
@@ -25,80 +25,82 @@ class QDoubleSpinBox;
 class QWidget;
 class QComboBox;
 class QCheckBox;
+class QLineEdit;
 
-namespace Aetherion::Editor
-{
-class EditorInspectorPanel : public QWidget
-{
-    Q_OBJECT
+namespace Aetherion::Editor {
+class EditorInspectorPanel : public QWidget {
+  Q_OBJECT
 
 public:
-    explicit EditorInspectorPanel(QWidget* parent = nullptr);
-    ~EditorInspectorPanel() override = default;
+  explicit EditorInspectorPanel(QWidget *parent = nullptr);
+  ~EditorInspectorPanel() override = default;
 
-    void SetSelectedEntity(std::shared_ptr<Scene::Entity> entity);
-    void SetSelectedAsset(QString assetId);
-    void SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry);
+  void SetSelectedEntity(std::shared_ptr<Scene::Entity> entity);
+  void SetSelectedAsset(QString assetId);
+  void SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry);
 
-    using CommandExecutor = std::function<void(std::unique_ptr<Command>)>;
-    void SetCommandExecutor(CommandExecutor executor) { m_commandExecutor = std::move(executor); }
+  using CommandExecutor = std::function<void(std::unique_ptr<Command>)>;
+  void SetCommandExecutor(CommandExecutor executor) {
+    m_commandExecutor = std::move(executor);
+  }
 
 signals:
-    void transformChanged(Aetherion::Core::EntityId entityId,
-                          float posX,
-                          float posY,
-                          float posZ,
-                          float rotDegX,
-                          float rotDegY,
-                          float rotDegZ,
-                          float scaleX,
-                          float scaleY,
-                          float scaleZ);
-    void sceneModified();
+  void transformChanged(Aetherion::Core::EntityId entityId, float posX,
+                        float posY, float posZ, float rotDegX, float rotDegY,
+                        float rotDegZ, float scaleX, float scaleY,
+                        float scaleZ);
+  void sceneModified();
 
 private:
-    void RebuildUi();
+  void RebuildUi();
 
-    std::shared_ptr<Scene::Entity> m_entity;
-    std::shared_ptr<Assets::AssetRegistry> m_assetRegistry;
-    QString m_assetId;
-    bool m_showingAsset = false;
+  std::shared_ptr<Scene::Entity> m_entity;
+  std::shared_ptr<Assets::AssetRegistry> m_assetRegistry;
+  QString m_assetId;
+  bool m_showingAsset = false;
 
-    QScrollArea* m_scrollArea = nullptr;
-    QWidget* m_content = nullptr;
-    QVBoxLayout* m_contentLayout = nullptr;
+  QScrollArea *m_scrollArea = nullptr;
+  QWidget *m_content = nullptr;
+  QVBoxLayout *m_contentLayout = nullptr;
 
-    QDoubleSpinBox* m_posX = nullptr;
-    QDoubleSpinBox* m_posY = nullptr;
-    QDoubleSpinBox* m_posZ = nullptr;
-    QDoubleSpinBox* m_rotX = nullptr;
-    QDoubleSpinBox* m_rotY = nullptr;
-    QDoubleSpinBox* m_rotZ = nullptr;
-    QDoubleSpinBox* m_scaleX = nullptr;
-    QDoubleSpinBox* m_scaleY = nullptr;
-    QDoubleSpinBox* m_scaleZ = nullptr;
-    QDoubleSpinBox* m_colorR = nullptr;
-    QDoubleSpinBox* m_colorG = nullptr;
-    QDoubleSpinBox* m_colorB = nullptr;
-    QDoubleSpinBox* m_meshRotationSpeed = nullptr;
-    QComboBox* m_meshAsset = nullptr;
-    QComboBox* m_meshTexture = nullptr;
-    QCheckBox* m_meshVisible = nullptr;
-    QCheckBox* m_lightEnabled = nullptr;
-    QComboBox* m_lightType = nullptr;
-    QDoubleSpinBox* m_lightColorR = nullptr;
-    QDoubleSpinBox* m_lightColorG = nullptr;
-    QDoubleSpinBox* m_lightColorB = nullptr;
-    QDoubleSpinBox* m_lightIntensity = nullptr;
-    QDoubleSpinBox* m_lightRange = nullptr;
-    QDoubleSpinBox* m_lightInnerAngle = nullptr;
-    QDoubleSpinBox* m_lightOuterAngle = nullptr;
-    QDoubleSpinBox* m_lightAmbientR = nullptr;
-    QDoubleSpinBox* m_lightAmbientG = nullptr;
-    QDoubleSpinBox* m_lightAmbientB = nullptr;
-    QCheckBox* m_lightPrimary = nullptr;
+  QDoubleSpinBox *m_posX = nullptr;
+  QDoubleSpinBox *m_posY = nullptr;
+  QDoubleSpinBox *m_posZ = nullptr;
+  QDoubleSpinBox *m_rotX = nullptr;
+  QDoubleSpinBox *m_rotY = nullptr;
+  QDoubleSpinBox *m_rotZ = nullptr;
+  QDoubleSpinBox *m_scaleX = nullptr;
+  QDoubleSpinBox *m_scaleY = nullptr;
+  QDoubleSpinBox *m_scaleZ = nullptr;
+  QDoubleSpinBox *m_colorR = nullptr;
+  QDoubleSpinBox *m_colorG = nullptr;
+  QDoubleSpinBox *m_colorB = nullptr;
+  QDoubleSpinBox *m_meshRotationSpeed = nullptr;
+  QComboBox *m_meshAsset = nullptr;
+  QComboBox *m_meshTexture = nullptr;
+  QCheckBox *m_meshVisible = nullptr;
+  QCheckBox *m_lightEnabled = nullptr;
+  QComboBox *m_lightType = nullptr;
+  QDoubleSpinBox *m_lightColorR = nullptr;
+  QDoubleSpinBox *m_lightColorG = nullptr;
+  QDoubleSpinBox *m_lightColorB = nullptr;
+  QDoubleSpinBox *m_lightIntensity = nullptr;
+  QDoubleSpinBox *m_lightRange = nullptr;
+  QDoubleSpinBox *m_lightInnerAngle = nullptr;
+  QDoubleSpinBox *m_lightOuterAngle = nullptr;
+  QDoubleSpinBox *m_lightAmbientR = nullptr;
+  QDoubleSpinBox *m_lightAmbientG = nullptr;
+  QDoubleSpinBox *m_lightAmbientB = nullptr;
+  QCheckBox *m_lightPrimary = nullptr;
 
-    bool m_buildingUi = false;
-    CommandExecutor m_commandExecutor;
+  QLineEdit *m_audioPath = nullptr;
+  QDoubleSpinBox *m_audioVolume = nullptr;
+  QDoubleSpinBox *m_audioPitch = nullptr;
+  QCheckBox *m_audioLoop = nullptr;
+  QCheckBox *m_audioSpatial = nullptr;
+  QCheckBox *m_audioPlayOnAwake = nullptr;
+
+  bool m_buildingUi = false;
+  CommandExecutor m_commandExecutor;
 };
 } // namespace Aetherion::Editor

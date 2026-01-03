@@ -75,6 +75,14 @@ struct alignas(16) FrameUniformObject {
   LightUniform lights[kMaxLights];
 };
 
+struct alignas(16) MaterialUniform {
+  float baseColor[4];
+  float emissiveFactor[4];
+  float metallicFactor;
+  float roughnessFactor;
+  float padding[2];
+};
+
 constexpr uint32_t kInstanceFlagUnlit = 1u;
 constexpr std::array<const char *, VulkanViewport::kPassCount> kPassNames = {
     "Opaque",
@@ -770,6 +778,7 @@ void VulkanViewport::RecreateRenderer(int width, int height) {
     CreateDescriptorPoolAndSets();
     CreateTextureDescriptorPool();
     CreateTextureResources();
+    CreateMaterialDescriptorPool();
     CreateSceneResources();
     CreatePickingResources();
     CreatePipeline();
@@ -825,6 +834,7 @@ void VulkanViewport::DestroyDeviceResources() {
 
   DestroySwapchainResources();
   DestroyMeshCache();
+  DestroyMaterialCache();
   DestroyTextureCache();
 
   for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
@@ -935,6 +945,14 @@ void VulkanViewport::DestroyDeviceResources() {
   m_textureDescriptorPools.clear();
   m_activeTextureDescriptorPool = 0;
 
+  for (auto pool : m_materialDescriptorPools) {
+    if (device != VK_NULL_HANDLE && pool != VK_NULL_HANDLE) {
+      vkDestroyDescriptorPool(device, pool, nullptr);
+    }
+  }
+  m_materialDescriptorPools.clear();
+  m_activeMaterialDescriptorPool = 0;
+
   if (device != VK_NULL_HANDLE && m_descriptorSetLayout != VK_NULL_HANDLE) {
     vkDestroyDescriptorSetLayout(device, m_descriptorSetLayout, nullptr);
   }
@@ -952,6 +970,10 @@ void VulkanViewport::DestroyDeviceResources() {
                                  nullptr);
   }
   m_postProcessDescriptorSetLayout = VK_NULL_HANDLE;
+  if (device != VK_NULL_HANDLE && m_materialDescriptorSetLayout != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(device, m_materialDescriptorSetLayout, nullptr);
+  }
+  m_materialDescriptorSetLayout = VK_NULL_HANDLE;
 
   if (device != VK_NULL_HANDLE && m_textureSampler != VK_NULL_HANDLE) {
     vkDestroySampler(device, m_textureSampler, nullptr);
@@ -1052,6 +1074,34 @@ void VulkanViewport::DestroyTextureCache() {
   }
   m_textureCache.clear();
   m_missingTextures.clear();
+}
+
+void VulkanViewport::DestroyMaterialCache() {
+  VkDevice device = (m_context && m_context->IsInitialized())
+                        ? m_context->GetDevice()
+                        : VK_NULL_HANDLE;
+
+  auto destroyMaterial = [device](GpuMaterial &material) {
+    if (device != VK_NULL_HANDLE && material.descriptorSet != VK_NULL_HANDLE &&
+        material.descriptorPool != VK_NULL_HANDLE) {
+      vkFreeDescriptorSets(device, material.descriptorPool, 1,
+                           &material.descriptorSet);
+    }
+    if (device != VK_NULL_HANDLE && material.uniformBuffer != VK_NULL_HANDLE) {
+      vkDestroyBuffer(device, material.uniformBuffer, nullptr);
+    }
+    if (device != VK_NULL_HANDLE && material.uniformMemory != VK_NULL_HANDLE) {
+      vkFreeMemory(device, material.uniformMemory, nullptr);
+    }
+    material = {};
+  };
+
+  destroyMaterial(m_defaultMaterial);
+  for (auto &entry : m_materialCache) {
+    destroyMaterial(entry.second);
+  }
+  m_materialCache.clear();
+  m_missingMaterials.clear();
 }
 
 void VulkanViewport::DestroySceneResources() {
@@ -1258,29 +1308,113 @@ void VulkanViewport::HandleAssetChanges(
     texture = {};
   };
 
+  auto destroyMaterial = [this, device](GpuMaterial &material) {
+    if (material.descriptorSet == VK_NULL_HANDLE &&
+        material.uniformBuffer == VK_NULL_HANDLE) {
+      material = {};
+      return;
+    }
+    VkDescriptorSet descriptorSet = material.descriptorSet;
+    VkDescriptorPool descriptorPool = material.descriptorPool;
+    VkBuffer uniformBuffer = material.uniformBuffer;
+    VkDeviceMemory uniformMemory = material.uniformMemory;
+    EnqueueDeletion([device, descriptorSet, descriptorPool, uniformBuffer,
+                     uniformMemory]() {
+      if (device != VK_NULL_HANDLE && descriptorSet != VK_NULL_HANDLE &&
+          descriptorPool != VK_NULL_HANDLE) {
+        vkFreeDescriptorSets(device, descriptorPool, 1, &descriptorSet);
+      }
+      if (device != VK_NULL_HANDLE && uniformBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, uniformBuffer, nullptr);
+      }
+      if (device != VK_NULL_HANDLE && uniformMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, uniformMemory, nullptr);
+      }
+    });
+    material = {};
+  };
+
+  auto invalidateMaterial = [this, &destroyMaterial](const std::string &id) {
+    if (auto it = m_materialCache.find(id); it != m_materialCache.end()) {
+      destroyMaterial(it->second);
+      m_materialCache.erase(it);
+    }
+    m_missingMaterials.erase(id);
+  };
+
+  auto invalidateMaterialsForMesh = [this, &destroyMaterial](
+                                        const std::string &meshId) {
+    const std::string prefix = meshId + ":mat:";
+    for (auto it = m_materialCache.begin(); it != m_materialCache.end();) {
+      if (it->first.rfind(prefix, 0) == 0) {
+        destroyMaterial(it->second);
+        it = m_materialCache.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    for (auto it = m_missingMaterials.begin(); it != m_missingMaterials.end();) {
+      if (it->rfind(prefix, 0) == 0) {
+        it = m_missingMaterials.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  };
+
+  bool texturesChanged = false;
+  bool shaderChanged = false;
+
   for (const auto &change : changes) {
     const bool invalidate =
-        change.kind == Assets::AssetRegistry::AssetChange::Kind::Removed ||
-        change.kind == Assets::AssetRegistry::AssetChange::Kind::Modified ||
+        change.kind == Assets::AssetRegistry::AssetChange::Kind::Removed ||     
+        change.kind == Assets::AssetRegistry::AssetChange::Kind::Modified ||    
         change.kind == Assets::AssetRegistry::AssetChange::Kind::Moved;
     if (!invalidate) {
       continue;
     }
 
     if (change.type == Assets::AssetRegistry::AssetType::Mesh) {
-      if (auto it = m_meshCache.find(change.id); it != m_meshCache.end()) {
+      if (auto it = m_meshCache.find(change.id); it != m_meshCache.end()) {     
         destroyMesh(it->second);
         m_meshCache.erase(it);
       }
       m_missingMeshes.erase(change.id);
-    } else if (change.type == Assets::AssetRegistry::AssetType::Texture) {
+      invalidateMaterialsForMesh(change.id);
+    } else if (change.type == Assets::AssetRegistry::AssetType::Texture) {      
       if (auto it = m_textureCache.find(change.id);
           it != m_textureCache.end()) {
         destroyTexture(it->second);
         m_textureCache.erase(it);
       }
       m_missingTextures.erase(change.id);
+      texturesChanged = true;
+    } else if (change.type == Assets::AssetRegistry::AssetType::Shader) {
+      shaderChanged = true;
+    } else if (change.type == Assets::AssetRegistry::AssetType::Other) {
+      bool isMaterial = (m_materialCache.find(change.id) != m_materialCache.end());
+      if (!isMaterial && m_assetRegistry) {
+        if (const auto *entry = m_assetRegistry->FindEntry(change.id)) {
+          isMaterial = entry->path.extension() ==
+                       std::filesystem::path(
+                           std::string(Assets::Material::kExtension));
+        }
+      }
+      if (isMaterial) {
+        invalidateMaterial(change.id);
+      }
     }
+  }
+
+  if (texturesChanged) {
+    for (auto &entry : m_materialCache) {
+      destroyMaterial(entry.second);
+    }
+    m_materialCache.clear();
+    m_missingMaterials.clear();
+  }
+  if (shaderChanged) {
+    m_needsSwapchainRecreate = true;
   }
 }
 
@@ -1940,8 +2074,9 @@ void VulkanViewport::CreateDescriptorSetLayout() {
       VK_SUCCESS) {
     throw std::runtime_error("Failed to create material descriptor set layout");
   }
+}
 
-  void VulkanViewport::CreateMeshBuffers() {
+void VulkanViewport::CreateMeshBuffers() {
     const std::array<Vertex, 4> vertices = {
         Vertex{{-0.5f, -0.5f, 0.0f},
                {0.0f, 0.0f, 1.0f},
@@ -2128,9 +2263,9 @@ void VulkanViewport::CreateDescriptorSetLayout() {
     if (iconStagingIndexMemory != VK_NULL_HANDLE) {
       vkFreeMemory(device, iconStagingIndexMemory, nullptr);
     }
-  }
+}
 
-  void VulkanViewport::CreateLineBuffers() {
+void VulkanViewport::CreateLineBuffers() {
     const float gridHalf = 10.0f;
     const float step = 1.0f;
     const int gridCount = static_cast<int>(gridHalf / step);
@@ -2464,9 +2599,28 @@ void VulkanViewport::CreateDescriptorSetLayout() {
     return poolHandle;
   }
 
-  void
-  VulkanViewport::CreateMaterialDescriptorPool() { // Reuse naming convention
-    // Similar to texture pool but adds UniformBuffer support
+  void VulkanViewport::CreateMaterialDescriptorPool() {
+    if (!m_context || !m_context->IsInitialized()) {
+      return;
+    }
+
+    DestroyMaterialCache();
+
+    VkDevice device = m_context->GetDevice();
+    for (auto pool : m_materialDescriptorPools) {
+      if (pool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device, pool, nullptr);
+      }
+    }
+    m_materialDescriptorPools.clear();
+    m_activeMaterialDescriptorPool = 0;
+    m_materialDescriptorPools.push_back(CreateMaterialDescriptorPoolInternal());
+
+    Assets::Material defaultMaterial;
+    defaultMaterial.SetBaseColor({1.0f, 1.0f, 1.0f, 1.0f});
+    defaultMaterial.SetMetallic(0.0f);
+    defaultMaterial.SetRoughness(0.5f);
+    m_defaultMaterial = CreateMaterialResources(defaultMaterial);
   }
 
   VkDescriptorPool VulkanViewport::CreateMaterialDescriptorPoolInternal() {
@@ -2496,12 +2650,6 @@ void VulkanViewport::CreateDescriptorSetLayout() {
     }
     return poolHandle;
   }
-
-  // Note: I need to add declaration to header first?
-  // Wait, I can't add definition without declaration if it's a member function.
-  // I added member variable, but not the function declaration
-  // `CreateMaterialDescriptorPoolInternal`. I should check VulkanViewport.h
-  // again.
 
   void VulkanViewport::CreateTextureResources() {
     VkDevice device = m_context->GetDevice();
@@ -2971,26 +3119,29 @@ void VulkanViewport::CreateDescriptorSetLayout() {
   }
 
   void VulkanViewport::CreateCommandPoolAndBuffers() {
+    VkCommandPool &commandPool = m_commandPool;
+    auto &commandBuffers = m_commandBuffers;
+
     VkCommandPoolCreateInfo pool{};
     pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     pool.queueFamilyIndex = m_context->GetGraphicsQueueFamilyIndex();
 
     if (vkCreateCommandPool(m_context->GetDevice(), &pool, nullptr,
-                            &m_commandPool) != VK_SUCCESS) {
+                            &commandPool) != VK_SUCCESS) {
       throw std::runtime_error("Failed to create command pool");
     }
 
-    m_commandBuffers.resize(kMaxFramesInFlight);
+    commandBuffers.resize(kMaxFramesInFlight);
 
     VkCommandBufferAllocateInfo alloc{};
     alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    alloc.commandPool = m_commandPool;
+    alloc.commandPool = commandPool;
     alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    alloc.commandBufferCount = static_cast<uint32_t>(m_commandBuffers.size());
+    alloc.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
 
     if (vkAllocateCommandBuffers(m_context->GetDevice(), &alloc,
-                                 m_commandBuffers.data()) != VK_SUCCESS) {
+                                 commandBuffers.data()) != VK_SUCCESS) {
       throw std::runtime_error("Failed to allocate command buffers");
     }
   }
@@ -3079,12 +3230,12 @@ void VulkanViewport::CreateDescriptorSetLayout() {
 
     const VkDeviceSize offsets[] = {0};
     const VkDescriptorSet uboSet = m_descriptorSets[m_frameIndex];
-    VkDescriptorSet boundTextureSet = VK_NULL_HANDLE;
-    if (m_defaultTexture.descriptorSet != VK_NULL_HANDLE) {
-      VkDescriptorSet sets[] = {uboSet, m_defaultTexture.descriptorSet};
+    VkDescriptorSet boundMaterialSet = VK_NULL_HANDLE;
+    if (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE) {
+      VkDescriptorSet sets[] = {uboSet, m_defaultMaterial.descriptorSet};
       vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               m_pipelineLayout, 0, 2, sets, 0, nullptr);
-      boundTextureSet = m_defaultTexture.descriptorSet;
+      boundMaterialSet = m_defaultMaterial.descriptorSet;
     }
 
     InstancePushConstants baseConstants{};
@@ -3113,17 +3264,17 @@ void VulkanViewport::CreateDescriptorSetLayout() {
       VkBuffer boundVertex = VK_NULL_HANDLE;
       VkBuffer boundIndex = VK_NULL_HANDLE;
       for (const auto &instance : instances) {
-        const GpuTexture *texture = ResolveTexture(instance.textureId);
-        VkDescriptorSet textureSet =
-            (texture && texture->descriptorSet != VK_NULL_HANDLE)
-                ? texture->descriptorSet
-                : m_defaultTexture.descriptorSet;
+        const GpuMaterial *material = ResolveMaterial(instance.materialId);
+        VkDescriptorSet materialSet =
+            (material && material->descriptorSet != VK_NULL_HANDLE)
+                ? material->descriptorSet
+                : VK_NULL_HANDLE;
 
-        if (textureSet != VK_NULL_HANDLE && textureSet != boundTextureSet) {
-          VkDescriptorSet sets[] = {uboSet, textureSet};
+        if (materialSet != VK_NULL_HANDLE && materialSet != boundMaterialSet) {
+          VkDescriptorSet sets[] = {uboSet, materialSet};
           vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   m_pipelineLayout, 0, 2, sets, 0, nullptr);
-          boundTextureSet = textureSet;
+          boundMaterialSet = materialSet;
         }
 
         const GpuMesh *mesh = ResolveMesh(instance.meshId);
@@ -3164,10 +3315,12 @@ void VulkanViewport::CreateDescriptorSetLayout() {
       defaultQuad.color[2] = 0.70f;
       defaultQuad.color[3] = 1.0f;
 
-      if (m_defaultTexture.descriptorSet != VK_NULL_HANDLE) {
-        VkDescriptorSet sets[] = {uboSet, m_defaultTexture.descriptorSet};
+      if (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE &&
+          boundMaterialSet != m_defaultMaterial.descriptorSet) {
+        VkDescriptorSet sets[] = {uboSet, m_defaultMaterial.descriptorSet};
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_pipelineLayout, 0, 2, sets, 0, nullptr);
+        boundMaterialSet = m_defaultMaterial.descriptorSet;
       }
 
       vkCmdPushConstants(cb, m_pipelineLayout,
@@ -3188,12 +3341,12 @@ void VulkanViewport::CreateDescriptorSetLayout() {
                              VK_SHADER_STAGE_FRAGMENT_BIT,
                          0, sizeof(InstancePushConstants), &baseConstants);
       vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_overlayPipeline);
-      if (m_defaultTexture.descriptorSet != VK_NULL_HANDLE &&
-          boundTextureSet != m_defaultTexture.descriptorSet) {
-        VkDescriptorSet sets[] = {uboSet, m_defaultTexture.descriptorSet};
+      if (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE &&
+          boundMaterialSet != m_defaultMaterial.descriptorSet) {
+        VkDescriptorSet sets[] = {uboSet, m_defaultMaterial.descriptorSet};
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_pipelineLayout, 0, 2, sets, 0, nullptr);
-        boundTextureSet = m_defaultTexture.descriptorSet;
+        boundMaterialSet = m_defaultMaterial.descriptorSet;
       }
       vkCmdBindVertexBuffers(cb, 0, 1, &m_selectionVertexBuffer, offsets);
       vkCmdDraw(cb, m_selectionVertexCount, 1, 0, 0);
@@ -3268,11 +3421,11 @@ void VulkanViewport::CreateDescriptorSetLayout() {
 
     const VkDeviceSize offsets[] = {0};
     const VkDescriptorSet uboSet = m_descriptorSets[m_frameIndex];
-    VkDescriptorSet textureSet = m_defaultTexture.descriptorSet;
-    if (textureSet != VK_NULL_HANDLE) {
-      VkDescriptorSet sets[] = {uboSet, textureSet};
+    VkDescriptorSet materialSet = m_defaultMaterial.descriptorSet;
+    if (materialSet != VK_NULL_HANDLE) {
+      VkDescriptorSet sets[] = {uboSet, materialSet};
       vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              m_pipelineLayout, 0, 2, sets, 0, nullptr);
+                              m_pipelineLayout, 0, 2, sets, 0, nullptr);        
     }
 
     VkPipeline pickPipeline =
@@ -5318,9 +5471,184 @@ void VulkanViewport::CreateDescriptorSetLayout() {
     }
     stbi_image_free(pixels);
 
-    auto [it, inserted] = m_textureCache.emplace(assetId, std::move(texture));
+    auto [it, inserted] = m_textureCache.emplace(assetId, std::move(texture));  
     if (!inserted) {
       it->second = std::move(texture);
+    }
+    return &it->second;
+  }
+
+  VulkanViewport::GpuMaterial
+  VulkanViewport::CreateMaterialResources(const Assets::Material &material) {
+    GpuMaterial result{};
+    if (!m_context || !m_context->IsInitialized()) {
+      return result;
+    }
+    if (m_materialDescriptorSetLayout == VK_NULL_HANDLE ||
+        m_materialDescriptorPools.empty()) {
+      return result;
+    }
+
+    VkDevice device = m_context->GetDevice();
+    VkPhysicalDevice gpu = m_context->GetPhysicalDevice();
+
+    VkDescriptorSetAllocateInfo alloc{};
+    alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc.descriptorSetCount = 1;
+    alloc.pSetLayouts = &m_materialDescriptorSetLayout;
+
+    VkDescriptorPool pool =
+        m_materialDescriptorPools[m_activeMaterialDescriptorPool];
+    alloc.descriptorPool = pool;
+    VkResult allocRes =
+        vkAllocateDescriptorSets(device, &alloc, &result.descriptorSet);
+    if (allocRes == VK_ERROR_OUT_OF_POOL_MEMORY ||
+        allocRes == VK_ERROR_FRAGMENTED_POOL) {
+      m_materialDescriptorPools.push_back(
+          CreateMaterialDescriptorPoolInternal());
+      m_activeMaterialDescriptorPool = m_materialDescriptorPools.size() - 1;
+      pool = m_materialDescriptorPools[m_activeMaterialDescriptorPool];
+      alloc.descriptorPool = pool;
+      allocRes = vkAllocateDescriptorSets(device, &alloc, &result.descriptorSet);
+    }
+    if (allocRes != VK_SUCCESS) {
+      return result;
+    }
+    result.descriptorPool = pool;
+
+    try {
+      CreateBuffer(gpu, device, sizeof(MaterialUniform),
+                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                   result.uniformBuffer, result.uniformMemory);
+    } catch (...) {
+      if (result.descriptorSet != VK_NULL_HANDLE &&
+          result.descriptorPool != VK_NULL_HANDLE) {
+        vkFreeDescriptorSets(device, result.descriptorPool, 1,
+                             &result.descriptorSet);
+      }
+      result = {};
+      return result;
+    }
+
+    MaterialUniform uniform{};
+    const auto baseColor = material.GetBaseColor();
+    const auto emissive = material.GetEmissiveFactor();
+    uniform.baseColor[0] = baseColor[0];
+    uniform.baseColor[1] = baseColor[1];
+    uniform.baseColor[2] = baseColor[2];
+    uniform.baseColor[3] = baseColor[3];
+    uniform.emissiveFactor[0] = emissive[0];
+    uniform.emissiveFactor[1] = emissive[1];
+    uniform.emissiveFactor[2] = emissive[2];
+    uniform.emissiveFactor[3] = 1.0f;
+    uniform.metallicFactor = material.GetMetallic();
+    uniform.roughnessFactor = material.GetRoughness();
+
+    void *uboData = nullptr;
+    if (vkMapMemory(device, result.uniformMemory, 0, sizeof(uniform), 0,
+                    &uboData) == VK_SUCCESS &&
+        uboData) {
+      std::memcpy(uboData, &uniform, sizeof(uniform));
+      vkUnmapMemory(device, result.uniformMemory);
+    }
+
+    auto resolveTextureInfo = [this](const std::string &id) {
+      VkDescriptorImageInfo info{};
+      const GpuTexture *tex = ResolveTexture(id);
+      if (!tex || tex->view == VK_NULL_HANDLE || tex->sampler == VK_NULL_HANDLE) {
+        tex = &m_defaultTexture;
+      }
+      info.sampler = tex ? tex->sampler : VK_NULL_HANDLE;
+      info.imageView = tex ? tex->view : VK_NULL_HANDLE;
+      info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      return info;
+    };
+
+    std::array<VkDescriptorImageInfo, 5> imageInfos = {
+        resolveTextureInfo(material.GetAlbedoMapId()),
+        resolveTextureInfo(material.GetNormalMapId()),
+        resolveTextureInfo(material.GetMetallicRoughnessMapId()),
+        resolveTextureInfo(material.GetEmissiveMapId()),
+        resolveTextureInfo(material.GetOcclusionMapId()),
+    };
+
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = result.uniformBuffer;
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(uniform);
+
+    std::array<VkWriteDescriptorSet, 6> writes{};
+    for (uint32_t i = 0; i < 5; ++i) {
+      writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      writes[i].dstSet = result.descriptorSet;
+      writes[i].dstBinding = i;
+      writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      writes[i].descriptorCount = 1;
+      writes[i].pImageInfo = &imageInfos[i];
+    }
+    writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[5].dstSet = result.descriptorSet;
+    writes[5].dstBinding = 5;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[5].descriptorCount = 1;
+    writes[5].pBufferInfo = &bufferInfo;
+
+    vkUpdateDescriptorSets(device,
+                           static_cast<uint32_t>(writes.size()), writes.data(),
+                           0, nullptr);
+
+    return result;
+  }
+
+  const VulkanViewport::GpuMaterial *VulkanViewport::ResolveMaterial(
+      const std::string &assetId) {
+    if (!m_context || !m_context->IsInitialized()) {
+      return nullptr;
+    }
+
+    if (assetId.empty()) {
+      return (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE)
+                 ? &m_defaultMaterial
+                 : nullptr;
+    }
+
+    auto cached = m_materialCache.find(assetId);
+    if (cached != m_materialCache.end()) {
+      return &cached->second;
+    }
+
+    if (!m_assetRegistry) {
+      return (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE)
+                 ? &m_defaultMaterial
+                 : nullptr;
+    }
+
+    const auto *material = m_assetRegistry->GetMaterial(assetId);
+    if (!material) {
+      if (m_missingMaterials.emplace(assetId).second && m_context) {
+        m_context->Log(LogSeverity::Warning,
+                       "VulkanViewport: material asset not found '" +
+                           assetId + "'");
+      }
+      return (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE)
+                 ? &m_defaultMaterial
+                 : nullptr;
+    }
+    m_missingMaterials.erase(assetId);
+
+    GpuMaterial gpuMaterial = CreateMaterialResources(*material);
+    if (gpuMaterial.descriptorSet == VK_NULL_HANDLE) {
+      return (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE)
+                 ? &m_defaultMaterial
+                 : nullptr;
+    }
+
+    auto [it, inserted] =
+        m_materialCache.emplace(assetId, std::move(gpuMaterial));
+    if (!inserted) {
+      it->second = std::move(gpuMaterial);
     }
     return &it->second;
   }

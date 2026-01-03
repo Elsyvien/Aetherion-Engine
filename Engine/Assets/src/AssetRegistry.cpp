@@ -1200,7 +1200,11 @@ bool LoadObjMesh(const std::filesystem::path &sourcePath,
 
   return true;
 }
+} // namespace
 
+namespace Aetherion::Assets {
+
+namespace {
 int AssetTypeOrder(AssetRegistry::AssetType type) {
   switch (type) {
   case AssetRegistry::AssetType::Texture:
@@ -1222,7 +1226,6 @@ int AssetTypeOrder(AssetRegistry::AssetType type) {
 }
 } // namespace
 
-namespace Aetherion::Assets {
 const char *AssetRegistry::AssetTypeToString(AssetType type) {
   switch (type) {
   case AssetType::Texture:
@@ -1887,31 +1890,58 @@ AssetRegistry::ImportGltf(const std::string &gltfPath, bool forceReimport) {
     const cgltf_material &material = data->materials[i];
     std::string matId = meshId + ":mat:" + std::to_string(i);
 
-    CachedMaterial cached{};
-    cached.id = matId;
-    cached.name = material.name ? material.name : std::string();
+    Material cached{};
+    cached.SetBaseColor({1.0f, 1.0f, 1.0f, 1.0f});
+    cached.SetMetallic(0.0f);
+    cached.SetRoughness(1.0f);
+    cached.SetEmissiveFactor({material.emissive_factor[0],
+                              material.emissive_factor[1],
+                              material.emissive_factor[2]});
+
+    auto textureIdFor = [&](const cgltf_texture *tex) -> std::string {
+      if (!tex) {
+        return {};
+      }
+      const cgltf_size texIndex = static_cast<cgltf_size>(tex - data->textures);
+      if (texIndex < textureToImageId.size()) {
+        return textureToImageId[texIndex];
+      }
+      return {};
+    };
 
     if (material.has_pbr_metallic_roughness) {
       const auto &pbr = material.pbr_metallic_roughness;
-      cached.baseColor = {pbr.base_color_factor[0], pbr.base_color_factor[1],
-                          pbr.base_color_factor[2], pbr.base_color_factor[3]};
-      cached.metallic = pbr.metallic_factor;
-      cached.roughness = pbr.roughness_factor;
+      cached.SetBaseColor({pbr.base_color_factor[0], pbr.base_color_factor[1],
+                           pbr.base_color_factor[2], pbr.base_color_factor[3]});
+      cached.SetMetallic(pbr.metallic_factor);
+      cached.SetRoughness(pbr.roughness_factor);
       if (pbr.base_color_texture.texture) {
-        const cgltf_size texIndex = static_cast<cgltf_size>(
-            pbr.base_color_texture.texture - data->textures);
-        if (texIndex < textureToImageId.size()) {
-          cached.albedoTextureId = textureToImageId[texIndex];
-        }
+        cached.SetAlbedoMapId(textureIdFor(pbr.base_color_texture.texture));
       }
+      if (pbr.metallic_roughness_texture.texture) {
+        cached.SetMetallicRoughnessMapId(
+            textureIdFor(pbr.metallic_roughness_texture.texture));
+      }
+    }
+
+    if (material.normal_texture.texture) {
+      cached.SetNormalMapId(textureIdFor(material.normal_texture.texture));
+    }
+    if (material.occlusion_texture.texture) {
+      cached.SetOcclusionMapId(
+          textureIdFor(material.occlusion_texture.texture));
+    }
+    if (material.emissive_texture.texture) {
+      cached.SetEmissiveMapId(textureIdFor(material.emissive_texture.texture));
     }
 
     m_materials[matId] = cached;
     mesh.materialIds.push_back(matId);
     result.materials.push_back(matId);
-    if (!cached.albedoTextureId.empty()) {
-      if (uniqueTextures.emplace(cached.albedoTextureId).second) {
-        mesh.textureIds.push_back(cached.albedoTextureId);
+    const std::string &albedoId = cached.GetAlbedoMapId();
+    if (!albedoId.empty()) {
+      if (uniqueTextures.emplace(albedoId).second) {
+        mesh.textureIds.push_back(albedoId);
       }
     }
   }

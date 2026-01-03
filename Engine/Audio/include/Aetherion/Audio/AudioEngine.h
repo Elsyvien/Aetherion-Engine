@@ -36,10 +36,4 @@ private:
   ma_engine *m_Engine = nullptr;
   bool m_Initialized = false;
 };
-}
-
-ma_engine *m_Engine = nullptr;
-bool m_Initialized = false;
-}
-;
 } // namespace Aetherion::Audio

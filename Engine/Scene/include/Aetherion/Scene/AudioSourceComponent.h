@@ -33,6 +33,12 @@ public:
   void Play();
   void Stop();
 
+  bool IsPlayRequested() const { return m_PlayRequested; }
+  void ClearPlayRequested() { m_PlayRequested = false; }
+
+  bool HasAwakePlayed() const { return m_AwakePlayed; }
+  void SetAwakePlayed(bool played) { m_AwakePlayed = played; }
+
 private:
   std::string m_SoundPath;
   float m_Volume = 1.0f;
@@ -40,5 +46,9 @@ private:
   bool m_Loop = false;
   bool m_Spatial = true;
   bool m_PlayOnAwake = true;
+
+  // Runtime state
+  bool m_PlayRequested = false;
+  bool m_AwakePlayed = false;
 };
 } // namespace Aetherion::Scene

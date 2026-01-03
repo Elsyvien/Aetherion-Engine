@@ -8,8 +8,10 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDirIterator>
 #include <QDockWidget>
 #include <QFileDialog>
+#include <QFileSystemWatcher>
 #include <QFormLayout>
 #include <QInputDialog>
 #include <QKeyEvent>
@@ -26,6 +28,7 @@
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QSet>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -863,6 +866,14 @@ EditorMainWindow::EditorMainWindow(
     }
   }
 
+  m_assetFileWatcher = new QFileSystemWatcher(this);
+  connect(m_assetFileWatcher, &QFileSystemWatcher::directoryChanged, this,
+          [this](const QString &) { m_assetWatcherDirty = true; });
+  connect(m_assetFileWatcher, &QFileSystemWatcher::fileChanged, this,
+          [this](const QString &) { m_assetWatcherDirty = true; });
+  RefreshAssetWatchPaths();
+  m_assetWatcherDirty = false;
+
   m_assetWatchTimer = new QTimer(this);
   m_assetWatchTimer->setInterval(500);
   connect(m_assetWatchTimer, &QTimer::timeout, this,
@@ -1650,11 +1661,69 @@ void EditorMainWindow::RescanAssets() {
   }
   registry->Scan(root.string());
   RefreshAssetBrowser();
+  RefreshAssetWatchPaths();
   m_assetChangeSerial = registry->GetChangeSerial();
+  m_assetWatcherDirty = false;
   if (m_inspectorPanel) {
     m_inspectorPanel->SetAssetRegistry(registry);
   }
   statusBar()->showMessage(tr("Assets rescanned"), 2000);
+}
+
+void EditorMainWindow::RefreshAssetWatchPaths() {
+  if (!m_assetFileWatcher) {
+    return;
+  }
+
+  std::filesystem::path root = GetAssetsRootPath();
+  if (root.empty()) {
+    return;
+  }
+
+  const QDir rootDir(QString::fromStdString(root.string()));
+  if (!rootDir.exists()) {
+    const auto existing = m_assetFileWatcher->directories();
+    if (!existing.isEmpty()) {
+      m_assetFileWatcher->removePaths(existing);
+    }
+    return;
+  }
+
+  const QString rootPath = QDir::cleanPath(rootDir.absolutePath());
+  QSet<QString> desired;
+  desired.insert(rootPath);
+
+  QDirIterator it(rootPath, QDir::Dirs | QDir::NoDotAndDotDot,
+                  QDirIterator::Subdirectories);
+  while (it.hasNext()) {
+    desired.insert(QDir::cleanPath(it.next()));
+  }
+
+  const QStringList currentList = m_assetFileWatcher->directories();
+  QSet<QString> current;
+  for (const auto &dir : currentList) {
+    current.insert(QDir::cleanPath(dir));
+  }
+
+  QStringList toAdd;
+  QStringList toRemove;
+  for (const auto &dir : desired) {
+    if (!current.contains(dir)) {
+      toAdd.push_back(dir);
+    }
+  }
+  for (const auto &dir : current) {
+    if (!desired.contains(dir)) {
+      toRemove.push_back(dir);
+    }
+  }
+
+  if (!toRemove.isEmpty()) {
+    m_assetFileWatcher->removePaths(toRemove);
+  }
+  if (!toAdd.isEmpty()) {
+    m_assetFileWatcher->addPaths(toAdd);
+  }
 }
 
 void EditorMainWindow::PollAssetChanges() {
@@ -1663,6 +1732,13 @@ void EditorMainWindow::PollAssetChanges() {
   if (!registry) {
     return;
   }
+
+  const bool watcherActive =
+      m_assetFileWatcher && !m_assetFileWatcher->directories().isEmpty();
+  if (watcherActive && !m_assetWatcherDirty) {
+    return;
+  }
+  m_assetWatcherDirty = false;
 
   registry->Rescan();
 
@@ -1674,18 +1750,84 @@ void EditorMainWindow::PollAssetChanges() {
   m_assetChangeSerial = registry->GetChangeSerial();
 
   bool selectionRemoved = false;
+  bool sceneChanged = false;
+  bool sceneRemoved = false;
+  std::string selectedId;
   if (!m_selectedAssetId.isEmpty()) {
-    const std::string selectedId = m_selectedAssetId.toStdString();
+    selectedId = m_selectedAssetId.toStdString();
+  }
+  std::string sceneId;
+  std::filesystem::path normalizedScenePath;
+  if (!m_scenePath.empty()) {
+    normalizedScenePath = NormalizePath(m_scenePath);
+    if (const auto *sceneEntry =
+            registry->FindEntry(m_scenePath.string())) {
+      sceneId = sceneEntry->id;
+    }
+  }
+  if (!m_selectedAssetId.isEmpty()) {
     for (const auto &change : changes) {
       if (change.id == selectedId &&
-          change.kind == Assets::AssetRegistry::AssetChange::Kind::Removed) {
+          change.kind == Assets::AssetRegistry::AssetChange::Kind::Removed) {   
         selectionRemoved = true;
-        break;
+      }
+      if (change.type == Assets::AssetRegistry::AssetType::Scene &&
+          (change.kind ==
+               Assets::AssetRegistry::AssetChange::Kind::Removed ||
+           change.kind ==
+               Assets::AssetRegistry::AssetChange::Kind::Modified ||
+           change.kind ==
+               Assets::AssetRegistry::AssetChange::Kind::Moved)) {
+        if (!sceneId.empty() && change.id == sceneId) {
+          sceneChanged = true;
+          sceneRemoved =
+              change.kind ==
+              Assets::AssetRegistry::AssetChange::Kind::Removed;
+        } else if (!normalizedScenePath.empty()) {
+          if (const auto *entry = registry->FindEntry(change.id)) {
+            if (NormalizePath(entry->path) == normalizedScenePath) {
+              sceneChanged = true;
+              sceneRemoved =
+                  change.kind ==
+                  Assets::AssetRegistry::AssetChange::Kind::Removed;
+            }
+          }
+        }
+      }
+    }
+  } else {
+    for (const auto &change : changes) {
+      if (change.type == Assets::AssetRegistry::AssetType::Scene &&
+          (change.kind ==
+               Assets::AssetRegistry::AssetChange::Kind::Removed ||
+           change.kind ==
+               Assets::AssetRegistry::AssetChange::Kind::Modified ||
+           change.kind ==
+               Assets::AssetRegistry::AssetChange::Kind::Moved)) {
+        if (!sceneId.empty() && change.id == sceneId) {
+          sceneChanged = true;
+          sceneRemoved =
+              change.kind ==
+              Assets::AssetRegistry::AssetChange::Kind::Removed;
+          break;
+        }
+        if (!normalizedScenePath.empty()) {
+          if (const auto *entry = registry->FindEntry(change.id)) {
+            if (NormalizePath(entry->path) == normalizedScenePath) {
+              sceneChanged = true;
+              sceneRemoved =
+                  change.kind ==
+                  Assets::AssetRegistry::AssetChange::Kind::Removed;
+              break;
+            }
+          }
+        }
       }
     }
   }
 
   RefreshAssetBrowser();
+  RefreshAssetWatchPaths();
 
   if (selectionRemoved) {
     if (m_assetBrowser) {
@@ -1711,6 +1853,22 @@ void EditorMainWindow::PollAssetChanges() {
   }
   if (m_meshPreview) {
     m_meshPreview->HandleAssetChanges(changes);
+  }
+
+  if (sceneChanged) {
+    if (m_ignoreNextSceneChange) {
+      m_ignoreNextSceneChange = false;
+      return;
+    }
+    if (sceneRemoved) {
+      statusBar()->showMessage(tr("Active scene removed on disk"), 4000);
+    } else if (!m_sceneDirty) {
+      ReloadScene();
+      statusBar()->showMessage(tr("Scene reloaded from disk"), 2000);
+    } else {
+      statusBar()->showMessage(
+          tr("Scene changed on disk; reload manually to keep edits"), 4000);
+    }
   }
 }
 
@@ -1785,7 +1943,9 @@ void EditorMainWindow::ImportGltfAsset() {
 
   registry->Scan(rootPath.string());
   RefreshAssetBrowser();
+  RefreshAssetWatchPaths();
   m_assetChangeSerial = registry->GetChangeSerial();
+  m_assetWatcherDirty = false;
   if (m_inspectorPanel) {
     m_inspectorPanel->SetAssetRegistry(registry);
   }
@@ -2510,6 +2670,7 @@ bool EditorMainWindow::SaveSceneToPath(const std::filesystem::path &path) {
 
   m_scenePath = target;
   SetSceneDirty(false);
+  m_ignoreNextSceneChange = true;
   statusBar()->showMessage(tr("Scene saved"), 2000);
   return true;
 }
@@ -2537,6 +2698,7 @@ bool EditorMainWindow::LoadSceneFromPath(const std::filesystem::path &path) {
 
   m_scenePath = target;
   m_scene = loaded;
+  m_ignoreNextSceneChange = false;
   ClearPlaySessionSnapshot();
   if (m_runtimeApp) {
     m_runtimeApp->SetActiveScene(m_scene);

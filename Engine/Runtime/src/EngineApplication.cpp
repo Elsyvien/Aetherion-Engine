@@ -31,6 +31,7 @@
 
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Audio/AudioEngine.h"
+#include "Aetherion/Audio/AudioSystem.h"
 #include "Aetherion/Core/Math.h"
 #include "Aetherion/Core/String.h"
 #include "Aetherion/Physics/PhysicsSystem.h"
@@ -435,6 +436,65 @@ private:
   Scene::Scene *m_boundScenePtr{nullptr};
 };
 
+class AudioRuntimeSystem final : public IRuntimeSystem {
+public:
+  explicit AudioRuntimeSystem(std::weak_ptr<Scene::Scene> scene)
+      : m_scene(std::move(scene)) {}
+
+  [[nodiscard]] std::string GetName() const override {
+    return "AudioRuntimeSystem";
+  }
+
+  void Initialize(EngineContext &context) override {
+    m_context = &context;
+    EnsureAudioSystem();
+    BindScene();
+  }
+
+  void Tick(EngineContext &context, float deltaTime) override {
+    m_context = &context;
+    EnsureAudioSystem();
+    BindScene();
+
+    if (m_audioSystem) {
+      m_audioSystem->Update(deltaTime);
+    }
+  }
+
+  void Shutdown(EngineContext &context) override {
+    if (m_audioSystem) {
+      m_audioSystem->Shutdown();
+      m_audioSystem.reset();
+    }
+    m_context = nullptr;
+  }
+
+private:
+  void EnsureAudioSystem() {
+    if (!m_context)
+      return;
+
+    auto engine = m_context->GetAudioSystem();
+    if (engine && !m_audioSystem) {
+      m_audioSystem = std::make_unique<Audio::AudioSystem>(engine.get());
+    }
+  }
+
+  void BindScene() {
+    if (!m_audioSystem)
+      return;
+
+    auto scene = m_scene.lock();
+    if (scene) {
+      m_audioSystem->BindScene(scene.get());
+    }
+  }
+
+  EngineContext *m_context{nullptr};
+  std::unique_ptr<Audio::AudioSystem> m_audioSystem;
+  std::weak_ptr<Scene::Scene> m_scene;
+};
+
 class SceneSystemDispatcher final : public IRuntimeSystem {
 public:
   explicit SceneSystemDispatcher(std::weak_ptr<Scene::Scene> scene)
@@ -790,29 +850,6 @@ private:
           instance.meshAssetId = entry->id;
         }
       }
-
-      instance.albedoTextureId = mesh->GetAlbedoTextureId();
-      if (registry && !instance.albedoTextureId.empty()) {
-        if (const auto *entry = registry->FindEntry(instance.albedoTextureId)) {
-          instance.albedoTextureId = entry->id;
-        }
-      }
-      if (instance.albedoTextureId.empty() && registry &&
-          !instance.meshAssetId.empty()) {
-        if (const auto *cachedMesh = registry->GetMesh(instance.meshAssetId)) {
-          for (const auto &materialId : cachedMesh->materialIds) {
-            if (const auto *material = registry->GetMaterial(materialId);
-                material && !material->albedoTextureId.empty()) {
-              instance.albedoTextureId = material->albedoTextureId;
-              break;
-            }
-          }
-          if (instance.albedoTextureId.empty() &&
-              !cachedMesh->textureIds.empty()) {
-            instance.albedoTextureId = cachedMesh->textureIds.front();
-          }
-        }
-      }
       instance.hasModel = false;
       view->instances.push_back(instance);
 
@@ -1112,6 +1149,7 @@ void EngineApplication::SetActiveScene(std::shared_ptr<Scene::Scene> scene) {
 
 void EngineApplication::RegisterPlaceholderSystems() {
   RegisterSystem(std::make_shared<PhysicsRuntimeSystem>(m_activeScene));
+  RegisterSystem(std::make_shared<AudioRuntimeSystem>(m_activeScene));
   RegisterSystem(std::make_shared<SceneSystemDispatcher>(m_activeScene));
   RegisterSystem(std::make_shared<RenderViewSystem>(m_activeScene));
   DebugPrint("Placeholder systems registered.");

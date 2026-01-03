@@ -9,6 +9,7 @@
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Core/Math.h"
 #include "Aetherion/Runtime/EngineContext.h"
+#include "Aetherion/Scene/AudioListenerComponent.h"
 #include "Aetherion/Scene/AudioSourceComponent.h"
 #include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/ColliderComponent.h"
@@ -202,6 +203,12 @@ bool SceneSerializer::Save(const Scene &scene,
       audioJson["spatial"] = audioSource->GetSpatial();
       audioJson["playOnAwake"] = audioSource->GetPlayOnAwake();
       components["AudioSource"] = std::move(audioJson);
+    }
+
+    if (auto listener = entity->GetComponent<AudioListenerComponent>()) {
+      Json listenerJson;
+      listenerJson["active"] = listener->IsActive();
+      components["AudioListener"] = std::move(listenerJson);
     }
 
     entityJson["components"] = std::move(components);
@@ -437,6 +444,14 @@ SceneSerializer::Load(const std::filesystem::path &path) const {
         audioSource->SetPlayOnAwake(ReadBool(audioJson, "playOnAwake", true));
 
         entity->AddComponent(audioSource);
+      }
+
+      auto listenerIt = components.find("AudioListener");
+      if (listenerIt != components.end() && listenerIt->is_object()) {
+        const Json &listenerJson = *listenerIt;
+        auto listener = std::make_shared<AudioListenerComponent>();
+        listener->SetActive(ReadBool(listenerJson, "active", true));
+        entity->AddComponent(listener);
       }
     }
 

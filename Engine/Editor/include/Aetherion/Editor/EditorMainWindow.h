@@ -20,6 +20,7 @@ class QAction;
 class QActionGroup;
 class QLabel;
 class QDockWidget;
+class QFileSystemWatcher;
 
 namespace Aetherion::Rendering
 {
@@ -66,6 +67,7 @@ private:
     std::shared_ptr<Scene::Scene> m_scene;
     std::filesystem::path m_scenePath;
     bool m_sceneDirty{false};
+    bool m_ignoreNextSceneChange{false};
     EditorSelection* m_selection = nullptr;
     QActionGroup* m_modeActionGroup = nullptr;
     QAction* m_modeEditAction = nullptr;
@@ -115,6 +117,7 @@ private:
     bool m_surfaceInitialized{false};
     class QTimer* m_renderTimer = nullptr;
     class QTimer* m_assetWatchTimer = nullptr;
+    QFileSystemWatcher* m_assetFileWatcher = nullptr;
     QElapsedTimer m_frameTimer;
     QLabel* m_fpsLabel = nullptr;
     QElapsedTimer m_fpsTimer;
@@ -153,6 +156,7 @@ private:
     EditorAuxPanel* m_auxPanel = nullptr;
     QString m_selectedAssetId;
     std::uint64_t m_assetChangeSerial{0};
+    bool m_assetWatcherDirty{true};
 
     std::unique_ptr<CommandHistory> m_commandHistory;
     QAction* m_undoAction = nullptr;
@@ -184,6 +188,7 @@ private:
     void RefreshAssetBrowser();
     void RescanAssets();
     void PollAssetChanges();
+    void RefreshAssetWatchPaths();
     void ImportGltfAsset();
     void AddAssetToScene(const QString& assetId);
     void DeleteAsset(const QString& assetId);
