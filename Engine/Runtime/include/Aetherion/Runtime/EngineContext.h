@@ -19,7 +19,7 @@ class PhysicsWorld;
 }
 
 namespace Aetherion::Audio {
-class AudioEngineStub;
+class AudioEngine;
 }
 
 namespace Aetherion::Scripting {
@@ -54,8 +54,8 @@ public:
   [[nodiscard]] std::shared_ptr<Physics::PhysicsWorld>
   GetPhysicsSystem() const noexcept;
 
-  void SetAudioSystem(std::shared_ptr<Audio::AudioEngineStub> audio);
-  [[nodiscard]] std::shared_ptr<Audio::AudioEngineStub>
+  void SetAudioSystem(std::shared_ptr<Audio::AudioEngine> audio);
+  [[nodiscard]] std::shared_ptr<Audio::AudioEngine>
   GetAudioSystem() const noexcept;
 
   void SetScriptingRuntime(
@@ -87,7 +87,7 @@ private:
   std::shared_ptr<Rendering::RenderView> m_renderView;
   std::shared_ptr<Assets::AssetRegistry> m_assetRegistry;
   std::shared_ptr<Physics::PhysicsWorld> m_physicsSystem;
-  std::shared_ptr<Audio::AudioEngineStub> m_audioSystem;
+  std::shared_ptr<Audio::AudioEngine> m_audioSystem;
   std::shared_ptr<Scripting::ScriptingRuntimeStub> m_scriptingRuntime;
   bool m_simulationPlaying{false};
   bool m_simulationPaused{false};

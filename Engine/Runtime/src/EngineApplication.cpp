@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -29,7 +30,7 @@
 #endif
 
 #include "Aetherion/Assets/AssetRegistry.h"
-#include "Aetherion/Audio/AudioPlaceholder.h"
+#include "Aetherion/Audio/AudioEngine.h"
 #include "Aetherion/Core/Math.h"
 #include "Aetherion/Core/String.h"
 #include "Aetherion/Physics/PhysicsSystem.h"
@@ -48,6 +49,7 @@
 #include "Aetherion/Scene/System.h"
 #include "Aetherion/Scene/TransformComponent.h"
 #include "Aetherion/Scripting/ScriptingPlaceholder.h"
+#include "nlohmann/json.hpp"
 
 namespace Aetherion::Runtime {
 namespace {
@@ -130,6 +132,125 @@ std::filesystem::path ResolveAssetsRoot() {
   }
 
   return std::filesystem::path("assets");
+}
+
+struct ProjectMetadata {
+  std::string name;
+  std::filesystem::path assetsRoot;
+  std::filesystem::path bootstrapScene;
+  std::filesystem::path configPath;
+  bool loaded{false};
+  bool assetsRootSpecified{false};
+  bool assetsRootValid{true};
+};
+
+std::filesystem::path
+FindProjectMetadataFile(const std::filesystem::path &start) {
+  std::error_code ec;
+  std::filesystem::path probe = start;
+  if (probe.empty()) {
+    probe = std::filesystem::current_path(ec);
+    if (ec) {
+      return {};
+    }
+  }
+
+  const std::array<const char *, 2> candidates = {
+      "aetherion.project.json",
+      "project.json",
+  };
+
+  for (int i = 0; i < 6; ++i) {
+    for (const char *name : candidates) {
+      const std::filesystem::path candidate = probe / name;
+      if (std::filesystem::exists(candidate, ec)) {
+        return candidate;
+      }
+    }
+    if (!probe.has_parent_path()) {
+      break;
+    }
+    auto parent = probe.parent_path();
+    if (parent == probe) {
+      break;
+    }
+    probe = parent;
+  }
+
+  return {};
+}
+
+ProjectMetadata LoadProjectMetadata(const std::filesystem::path &assetsRoot) {
+  ProjectMetadata metadata{};
+  std::filesystem::path startDir =
+      assetsRoot.empty() ? std::filesystem::path() : assetsRoot.parent_path();
+  const std::filesystem::path configPath = FindProjectMetadataFile(startDir);
+  if (configPath.empty()) {
+    return metadata;
+  }
+
+  std::ifstream input(configPath);
+  if (!input.is_open()) {
+    return metadata;
+  }
+
+  using Json = nlohmann::json;
+  Json root;
+  try {
+    input >> root;
+  } catch (const std::exception &) {
+    return metadata;
+  }
+
+  metadata.loaded = true;
+  metadata.configPath = configPath;
+
+  auto readString = [&root](const char *key) -> std::string {
+    const auto it = root.find(key);
+    if (it != root.end() && it->is_string()) {
+      return it->get<std::string>();
+    }
+    return {};
+  };
+
+  metadata.name = readString("name");
+  if (metadata.name.empty()) {
+    metadata.name = readString("projectName");
+  }
+
+  std::string assetsValue = readString("assetsRoot");
+  if (assetsValue.empty()) {
+    assetsValue = readString("assetsDir");
+  }
+  if (!assetsValue.empty()) {
+    metadata.assetsRootSpecified = true;
+    std::filesystem::path assetsPath(assetsValue);
+    if (assetsPath.is_relative()) {
+      assetsPath = configPath.parent_path() / assetsPath;
+    }
+    std::error_code ec;
+    assetsPath = std::filesystem::absolute(assetsPath, ec);
+    if (ec || !std::filesystem::exists(assetsPath, ec)) {
+      metadata.assetsRootValid = false;
+      metadata.assetsRoot.clear();
+    } else {
+      metadata.assetsRoot = assetsPath;
+    }
+  }
+
+  std::string bootstrapValue = readString("bootstrapScene");
+  if (bootstrapValue.empty()) {
+    bootstrapValue = readString("startupScene");
+  }
+  if (!bootstrapValue.empty()) {
+    std::filesystem::path scenePath(bootstrapValue);
+    if (scenePath.is_relative()) {
+      scenePath = configPath.parent_path() / scenePath;
+    }
+    metadata.bootstrapScene = scenePath;
+  }
+
+  return metadata;
 }
 
 std::string BoolToOnOff(bool value) { return value ? "on" : "off"; }
@@ -288,8 +409,7 @@ private:
     }
 
     if (!m_physicsSystem && physicsWorld) {
-      m_physicsSystem =
-          std::make_unique<Physics::PhysicsSystem>(physicsWorld);
+      m_physicsSystem = std::make_unique<Physics::PhysicsSystem>(physicsWorld);
       m_physicsSystem->Initialize();
     }
   }
@@ -731,9 +851,7 @@ private:
 } // namespace
 
 EngineApplication::EngineApplication()
-    : m_context(std::make_shared<EngineContext>()) {
-  // TODO: Load project metadata and configure context.
-}
+    : m_context(std::make_shared<EngineContext>()) {}
 
 EngineApplication::~EngineApplication() = default;
 
@@ -769,13 +887,29 @@ void EngineApplication::Initialize(bool enableValidationLayers,
   m_context->SetRenderView(std::make_shared<Rendering::RenderView>());
   m_context->SetAssetRegistry(std::make_shared<Assets::AssetRegistry>());
   m_context->SetPhysicsSystem(std::make_shared<Physics::PhysicsWorld>());
-  m_context->SetAudioSystem(std::make_shared<Audio::AudioEngineStub>());
+  m_context->SetAudioSystem(std::make_shared<Audio::AudioEngine>());
   m_context->SetScriptingRuntime(
       std::make_shared<Scripting::ScriptingRuntimeStub>());
-  m_context->SetProjectName("Aetherion");
 
-  const std::filesystem::path assetsRoot = ResolveAssetsRoot();
-  DebugPrint("Resolved assets root: " + assetsRoot.string());
+  const std::filesystem::path resolvedAssetsRoot = ResolveAssetsRoot();
+  ProjectMetadata project = LoadProjectMetadata(resolvedAssetsRoot);
+  if (project.loaded) {
+    DebugPrint("Loaded project metadata: " + project.configPath.string());
+  }
+
+  std::filesystem::path assetsRoot = resolvedAssetsRoot;
+  if (!project.assetsRoot.empty()) {
+    assetsRoot = project.assetsRoot;
+  } else if (project.loaded && project.assetsRootSpecified &&
+             !project.assetsRootValid) {
+    DebugPrint("Project metadata assetsRoot not found. Using resolved assets.");
+  }
+
+  const std::string projectName =
+      project.name.empty() ? "Aetherion" : project.name;
+  m_context->SetProjectName(projectName);
+  DebugPrint("Project name: " + projectName);
+  DebugPrint("Assets root: " + assetsRoot.string());
   if (const auto assets = m_context->GetAssetRegistry()) {
     assets->Scan(assetsRoot.string());
     DebugPrint("Asset scan complete: " + assets->GetRootPath().string() + " (" +
@@ -795,13 +929,15 @@ void EngineApplication::Initialize(bool enableValidationLayers,
   }
 
   Scene::SceneSerializer serializer(*m_context);
-  const auto scenePath = assetsRoot / "scenes" / "bootstrap_scene.json";
+  const auto scenePath = project.bootstrapScene.empty()
+                             ? assetsRoot / "scenes" / "bootstrap_scene.json"
+                             : project.bootstrapScene;
   DebugPrint("Loading bootstrap scene: " + scenePath.string());
   m_activeScene = serializer.Load(scenePath);
   if (!m_activeScene) {
     DebugPrint("Bootstrap scene missing. Creating default scene...");
     m_activeScene = serializer.CreateDefaultScene();
-    serializer.Save(*m_activeScene, scenePath);
+    (void)serializer.Save(*m_activeScene, scenePath);
     DebugPrint("Default scene saved to: " + scenePath.string());
   } else {
     DebugPrint("Bootstrap scene loaded successfully.");
@@ -976,8 +1112,8 @@ void EngineApplication::SetActiveScene(std::shared_ptr<Scene::Scene> scene) {
 
 void EngineApplication::RegisterPlaceholderSystems() {
   RegisterSystem(std::make_shared<PhysicsRuntimeSystem>(m_activeScene));
-  RegisterSystem(std::make_shared<SceneSystemDispatcher>(m_activeScene));   
-  RegisterSystem(std::make_shared<RenderViewSystem>(m_activeScene));        
+  RegisterSystem(std::make_shared<SceneSystemDispatcher>(m_activeScene));
+  RegisterSystem(std::make_shared<RenderViewSystem>(m_activeScene));
   DebugPrint("Placeholder systems registered.");
   // TODO: Register systems with the engine once rendering/physics/audio exist.
 }

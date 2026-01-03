@@ -7,7 +7,9 @@
 #include <utility>
 
 #include "Aetherion/Assets/AssetRegistry.h"
+#include "Aetherion/Core/Math.h"
 #include "Aetherion/Runtime/EngineContext.h"
+#include "Aetherion/Scene/AudioSourceComponent.h"
 #include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/ColliderComponent.h"
 #include "Aetherion/Scene/Entity.h"
@@ -16,7 +18,6 @@
 #include "Aetherion/Scene/RigidbodyComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
-#include "Aetherion/Core/Math.h"
 #include "nlohmann/json.hpp"
 
 namespace {
@@ -118,9 +119,9 @@ bool SceneSerializer::Save(const Scene &scene,
 
     if (auto transform = entity->GetComponent<TransformComponent>()) {
       Json transformJson;
-      const auto& pos = transform->GetPosition();
-      const auto& rot = transform->GetRotationDegrees();
-      const auto& sca = transform->GetScale();
+      const auto &pos = transform->GetPosition();
+      const auto &rot = transform->GetRotationDegrees();
+      const auto &sca = transform->GetScale();
       transformJson["position"] = {pos[0], pos[1], pos[2]};
       transformJson["rotation"] = {rot[0], rot[1], rot[2]};
       transformJson["scale"] = {sca[0], sca[1], sca[2]};
@@ -134,7 +135,7 @@ bool SceneSerializer::Save(const Scene &scene,
       meshJson["visible"] = mesh->IsVisible();
       meshJson["color"] = {color[0], color[1], color[2]};
       meshJson["rotationSpeed"] = mesh->GetRotationSpeedDegPerSec();
-      meshJson["albedoTexture"] = mesh->GetAlbedoTextureId();
+      meshJson["materialId"] = mesh->GetMaterialAssetId();
       meshJson["meshId"] = mesh->GetMeshAssetId();
       components["MeshRenderer"] = std::move(meshJson);
     }
@@ -190,6 +191,17 @@ bool SceneSerializer::Save(const Scene &scene,
       const auto offset = collider->GetOffset();
       colJson["offset"] = {offset[0], offset[1], offset[2]};
       components["Collider"] = std::move(colJson);
+    }
+
+    if (auto audioSource = entity->GetComponent<AudioSourceComponent>()) {
+      Json audioJson;
+      audioJson["soundPath"] = audioSource->GetSoundPath();
+      audioJson["volume"] = audioSource->GetVolume();
+      audioJson["pitch"] = audioSource->GetPitch();
+      audioJson["loop"] = audioSource->GetLoop();
+      audioJson["spatial"] = audioSource->GetSpatial();
+      audioJson["playOnAwake"] = audioSource->GetPlayOnAwake();
+      components["AudioSource"] = std::move(audioJson);
     }
 
     entityJson["components"] = std::move(components);
@@ -294,10 +306,10 @@ SceneSerializer::Load(const std::filesystem::path &path) const {
           mesh->SetMeshAssetId(meshId);
         }
 
-        const std::string albedoTexture =
-            ReadString(meshJson, "albedoTexture", std::string());
-        if (!albedoTexture.empty()) {
-          mesh->SetAlbedoTextureId(albedoTexture);
+        const std::string materialId =
+            ReadString(meshJson, "materialId", std::string());
+        if (!materialId.empty()) {
+          mesh->SetMaterialAssetId(materialId);
         }
 
         entity->AddComponent(mesh);
@@ -410,6 +422,21 @@ SceneSerializer::Load(const std::filesystem::path &path) const {
         }
 
         entity->AddComponent(collider);
+      }
+
+      auto audioSourceIt = components.find("AudioSource");
+      if (audioSourceIt != components.end() && audioSourceIt->is_object()) {
+        const Json &audioJson = *audioSourceIt;
+        auto audioSource = std::make_shared<AudioSourceComponent>();
+
+        audioSource->SetSoundPath(ReadString(audioJson, "soundPath", ""));
+        audioSource->SetVolume(ReadNumber(audioJson, "volume", 1.0f));
+        audioSource->SetPitch(ReadNumber(audioJson, "pitch", 1.0f));
+        audioSource->SetLoop(ReadBool(audioJson, "loop", false));
+        audioSource->SetSpatial(ReadBool(audioJson, "spatial", true));
+        audioSource->SetPlayOnAwake(ReadBool(audioJson, "playOnAwake", true));
+
+        entity->AddComponent(audioSource);
       }
     }
 

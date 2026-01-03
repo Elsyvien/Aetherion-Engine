@@ -128,7 +128,8 @@ private:
     InstancePushConstants constants{};
     Core::EntityId entityId{0};
     std::string meshId;
-    std::string textureId;
+    std::string materialId;
+    std::string textureId; // Deprecated, kept for immediate compile fix
   };
 
   struct GpuMesh {
@@ -148,6 +149,14 @@ private:
     VkDescriptorPool descriptorPool{VK_NULL_HANDLE};
     uint32_t width{0};
     uint32_t height{0};
+  };
+
+  struct GpuMaterial {
+    VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
+    VkBuffer uniformBuffer{VK_NULL_HANDLE};
+    VkDeviceMemory uniformMemory{VK_NULL_HANDLE};
+    // Keep track of dependencies to detect changes?
+    // For now we rely on AssetRegistry changes.
   };
 
   std::shared_ptr<VulkanContext> m_context;
@@ -215,6 +224,9 @@ private:
   VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
   VkPipelineLayout m_postProcessPipelineLayout{VK_NULL_HANDLE};
   VkPipeline m_pipeline{VK_NULL_HANDLE};
+
+  std::vector<VkDescriptorPool> m_materialDescriptorPools;
+  size_t m_activeMaterialDescriptorPool{0};
   VkPipeline m_linePipeline{VK_NULL_HANDLE};
   VkPipeline m_overlayPipeline{VK_NULL_HANDLE};
   VkPipeline m_pickingPipeline{VK_NULL_HANDLE};
@@ -279,6 +291,9 @@ private:
   std::unordered_set<std::string> m_missingMeshes;
   std::unordered_map<std::string, GpuTexture> m_textureCache;
   std::unordered_set<std::string> m_missingTextures;
+  std::unordered_map<std::string, GpuMaterial> m_materialCache;
+
+  VkDescriptorSetLayout m_materialDescriptorSetLayout{VK_NULL_HANDLE};
 
   void CreateSurface(void *nativeHandle);
   void CreateSwapchain(int width, int height);
@@ -297,7 +312,11 @@ private:
   void CreatePickingResources();
   void CreateUniformBuffers();
   void CreateDescriptorPoolAndSets();
+  void CreateDescriptorPoolAndSets();
   void CreateTextureDescriptorPool();
+  VkDescriptorPool CreateTextureDescriptorPoolInternal();
+  void CreateMaterialDescriptorPool();
+  VkDescriptorPool CreateMaterialDescriptorPoolInternal();
   void CreateTextureResources();
   void CreatePipeline();
   void CreateFramebuffers();
@@ -338,6 +357,7 @@ private:
 
   [[nodiscard]] const GpuMesh *ResolveMesh(const std::string &assetId);
   [[nodiscard]] const GpuTexture *ResolveTexture(const std::string &assetId);
+  [[nodiscard]] const GpuMaterial *ResolveMaterial(const std::string &assetId);
   GpuTexture CreateTextureFromPixels(const unsigned char *pixels,
                                      uint32_t width, uint32_t height);
   void TransitionImageLayout(VkImage image, VkFormat format,

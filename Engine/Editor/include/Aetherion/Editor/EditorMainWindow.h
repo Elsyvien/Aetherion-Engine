@@ -47,6 +47,7 @@ class EditorCameraPreview;
 class EditorConsole;
 class EditorSelection;
 class EditorAuxPanel;
+class AICopilotPanel;
 
 class EditorMainWindow : public QMainWindow
 {
@@ -58,7 +59,7 @@ public:
                               QWidget* parent = nullptr);
     ~EditorMainWindow() override;
 
-    // TODO: Add menu actions for projects, play/pause, and layout management.
+    // TODO: Add menu actions for projects.
 private:
     std::shared_ptr<Runtime::EngineApplication> m_runtimeApp;
 
@@ -126,6 +127,7 @@ private:
     QAction* m_showConsoleAction = nullptr;
     QAction* m_showMeshPreviewAction = nullptr;
     QAction* m_showCameraPreviewAction = nullptr;
+    QAction* m_showAICopilotAction = nullptr;
     QAction* m_playAction = nullptr;
     QAction* m_pauseAction = nullptr;
     QAction* m_stepAction = nullptr;
@@ -136,12 +138,14 @@ private:
     EditorInspectorPanel* m_inspectorPanel = nullptr;
     class EditorMeshPreview* m_meshPreview = nullptr;
     EditorCameraPreview* m_cameraPreview = nullptr;
+    AICopilotPanel* m_copilotPanel = nullptr;
     QDockWidget* m_hierarchyDock = nullptr;
     QDockWidget* m_inspectorDock = nullptr;
     QDockWidget* m_assetBrowserDock = nullptr;
     QDockWidget* m_consoleDock = nullptr;
     QDockWidget* m_meshPreviewDock = nullptr;
     QDockWidget* m_cameraPreviewDock = nullptr;
+    QDockWidget* m_copilotDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorConsole* m_console = nullptr;
     QByteArray m_defaultLayoutState;
