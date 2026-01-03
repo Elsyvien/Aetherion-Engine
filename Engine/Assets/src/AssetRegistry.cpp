@@ -166,7 +166,6 @@ void WriteMeshImportSettingsToJson(
   }
   import["optimize"] = settings.optimize;
 }
-}
 
 bool LoadMaterialJson(const std::filesystem::path &path,
                       Material &outMaterial) {

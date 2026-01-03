@@ -778,7 +778,7 @@ void EditorInspectorPanel::RebuildUi() {
     }
 
     const QString currentTextureId =
-        QString::fromStdString(mesh->GetAlbedoTextureId());
+        QString::fromStdString(mesh->GetMaterialAssetId());
     const int textureIndex = m_meshTexture->findData(currentTextureId);
     if (textureIndex >= 0) {
       m_meshTexture->setCurrentIndex(textureIndex);
@@ -947,7 +947,7 @@ void EditorInspectorPanel::RebuildUi() {
       if (m_meshTexture) {
         const QString texId = m_meshTexture->currentText().trimmed();
         const QString normalized = (texId == tr("(None)")) ? QString() : texId;
-        mesh->SetAlbedoTextureId(normalized.toStdString());
+        mesh->SetMaterialAssetId(normalized.toStdString());
       }
       emit sceneModified();
       updateMeshStats();

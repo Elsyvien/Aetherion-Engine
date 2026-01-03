@@ -100,6 +100,7 @@ set(RUNTIME_SOURCES
     Engine/Physics/src/PhysicsSystem.cpp
     Engine/Physics/src/PhysicsContactListener.cpp
     Engine/Scene/src/RigidbodyComponent.cpp
+    Engine/Scene/src/ColliderComponent.cpp
     Engine/Scene/src/AudioSourceComponent.cpp
     Engine/Scene/src/AudioListenerComponent.cpp
     Engine/Audio/src/AudioEngine.cpp

@@ -2033,8 +2033,8 @@ void EditorMainWindow::AddAssetToScene(const QString &assetId) {
   meshRenderer->SetColor(1.0f, 1.0f, 1.0f);
   {
     if (const auto *cached = registry->GetMesh(idStr);
-        cached && !cached->textureIds.empty()) {
-      meshRenderer->SetAlbedoTextureId(cached->textureIds.front());
+        cached && !cached->materialIds.empty()) {
+      meshRenderer->SetMaterialAssetId(cached->materialIds.front());
     }
   }
 
@@ -2573,8 +2573,8 @@ void EditorMainWindow::CreateMeshEntity(Aetherion::Core::EntityId parentId,
   meshRenderer->SetMeshAssetId(assetRef);
   meshRenderer->SetColor(1.0f, 1.0f, 1.0f);
   if (const auto *cached = registry->GetMesh(entry->id);
-      cached && !cached->textureIds.empty()) {
-    meshRenderer->SetAlbedoTextureId(cached->textureIds.front());
+      cached && !cached->materialIds.empty()) {
+    meshRenderer->SetMaterialAssetId(cached->materialIds.front());
   }
 
   newEntity->AddComponent(transform);
