@@ -23,6 +23,7 @@ public:
         bool isHeader{false};
         QString iconPath;
         QString assetPath;
+        QString relativePath;
     };
 
     explicit EditorAssetBrowser(QWidget* parent = nullptr);
@@ -60,6 +61,7 @@ private:
     void updateVisibleItems();
     void updateNavigationButtons();
     void onFilterTextChanged(const QString& text);
+    void NavigateToPath(const QString& path, bool pushHistory);
 
     QListWidget* m_list = nullptr;
     QLineEdit* m_filterEdit = nullptr;
