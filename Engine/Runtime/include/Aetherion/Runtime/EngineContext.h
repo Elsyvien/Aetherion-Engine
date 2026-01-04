@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 
+#include "Aetherion/Core/EventBus.h"
 #include "Aetherion/Core/Types.h"
 
 namespace Aetherion::Rendering {
@@ -63,6 +64,12 @@ public:
   [[nodiscard]] std::shared_ptr<Scripting::ScriptingRuntime>
   GetScriptingRuntime() const noexcept;
 
+  /// @brief Get the global event bus for inter-system communication
+  [[nodiscard]] Core::EventBus &GetEventBus() noexcept { return m_eventBus; }
+  [[nodiscard]] const Core::EventBus &GetEventBus() const noexcept {
+    return m_eventBus;
+  }
+
   // Simulation state (play/pause/step) shared with runtime systems
   void SetSimulationState(bool playing, bool paused) noexcept;
   [[nodiscard]] bool IsSimulationPlaying() const noexcept {
@@ -93,6 +100,7 @@ private:
   std::shared_ptr<Physics::PhysicsWorld> m_physicsSystem;
   std::shared_ptr<Audio::AudioEngine> m_audioSystem;
   std::shared_ptr<Scripting::ScriptingRuntime> m_scriptingRuntime;
+  Core::EventBus m_eventBus;
   bool m_simulationPlaying{false};
   bool m_simulationPaused{false};
   bool m_stepOnceRequested{false};
