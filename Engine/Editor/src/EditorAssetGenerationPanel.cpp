@@ -16,9 +16,15 @@
 #include <QTextEdit>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QtConcurrent>
+#include <atomic>
 
 #include "Aetherion/Assets/AssetGenerator.h"
 #include "Aetherion/Assets/AssetRegistry.h"
+
+namespace {
+    std::atomic<bool> s_isProcessing{false};
+}
 
 namespace Aetherion::Editor {
 
@@ -79,12 +85,10 @@ void EditorAssetGenerationPanel::setupUI() {
     
     m_promptEdit = new QTextEdit(promptGroup);
     m_promptEdit->setPlaceholderText(
-        tr("Describe the asset you want to generate...\n\n"
-           "Examples:\n"
-           "• red brick wall texture with noise\n"
-           "• blue gradient background\n"
-           "• checkerboard pattern in green and white"));
-    m_promptEdit->setMaximumHeight(120);
+        tr("Describe the asset to generate...\n"
+           "e.g. red brick texture, blue gradient, checkerboard"));
+    m_promptEdit->setMinimumHeight(60);
+    m_promptEdit->setMaximumHeight(80);
     promptLayout->addWidget(m_promptEdit);
     
     auto *promptOptionsLayout = new QHBoxLayout();
@@ -149,29 +153,38 @@ void EditorAssetGenerationPanel::setupUI() {
     // =========================================================================
     auto *buttonLayout = new QHBoxLayout();
     
-    m_generateBtn = new QPushButton(tr("🎨 Generate"), m_centralWidget);
+    m_generateBtn = new QPushButton(tr("Generate"), m_centralWidget);
+    m_generateBtn->setMinimumHeight(32);
     m_generateBtn->setStyleSheet(
         "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; "
-        "padding: 8px 16px; border-radius: 4px; }"
+        "padding: 6px 12px; border: none; border-radius: 3px; }"
         "QPushButton:hover { background-color: #45a049; }"
-        "QPushButton:disabled { background-color: #888; }");
+        "QPushButton:pressed { background-color: #3d8b40; }"
+        "QPushButton:disabled { background-color: #666; color: #999; }");
     connect(m_generateBtn, &QPushButton::clicked, this,
             &EditorAssetGenerationPanel::startGeneration);
     
     m_cancelBtn = new QPushButton(tr("Cancel"), m_centralWidget);
+    m_cancelBtn->setMinimumHeight(32);
     m_cancelBtn->setEnabled(false);
+    m_cancelBtn->setStyleSheet(
+        "QPushButton { padding: 6px 12px; border-radius: 3px; }"
+        "QPushButton:disabled { color: #666; }");
     connect(m_cancelBtn, &QPushButton::clicked, this,
             &EditorAssetGenerationPanel::cancelSelected);
     
     m_retryBtn = new QPushButton(tr("Retry"), m_centralWidget);
+    m_retryBtn->setMinimumHeight(32);
     m_retryBtn->setEnabled(false);
+    m_retryBtn->setStyleSheet(
+        "QPushButton { padding: 6px 12px; border-radius: 3px; }"
+        "QPushButton:disabled { color: #666; }");
     connect(m_retryBtn, &QPushButton::clicked, this,
             &EditorAssetGenerationPanel::retrySelected);
     
-    buttonLayout->addWidget(m_generateBtn);
+    buttonLayout->addWidget(m_generateBtn, 1);
     buttonLayout->addWidget(m_cancelBtn);
     buttonLayout->addWidget(m_retryBtn);
-    buttonLayout->addStretch();
     
     m_mainLayout->addLayout(buttonLayout);
     
@@ -201,15 +214,20 @@ void EditorAssetGenerationPanel::setupUI() {
     
     m_historyList = new QListWidget(historyGroup);
     m_historyList->setAlternatingRowColors(true);
-    m_historyList->setMaximumHeight(150);
+    m_historyList->setMinimumHeight(80);
+    m_historyList->setMaximumHeight(120);
     connect(m_historyList, &QListWidget::itemClicked, this,
             &EditorAssetGenerationPanel::onHistoryItemSelected);
     historyLayout->addWidget(m_historyList);
     
-    m_clearHistoryBtn = new QPushButton(tr("Clear History"), historyGroup);
+    m_clearHistoryBtn = new QPushButton(tr("Clear"), historyGroup);
+    m_clearHistoryBtn->setMaximumWidth(80);
     connect(m_clearHistoryBtn, &QPushButton::clicked, this,
             &EditorAssetGenerationPanel::clearHistory);
-    historyLayout->addWidget(m_clearHistoryBtn);
+    auto *historyBtnLayout = new QHBoxLayout();
+    historyBtnLayout->addStretch();
+    historyBtnLayout->addWidget(m_clearHistoryBtn);
+    historyLayout->addLayout(historyBtnLayout);
     
     m_mainLayout->addWidget(historyGroup);
     
@@ -332,7 +350,17 @@ void EditorAssetGenerationPanel::clearHistory() {
 }
 
 void EditorAssetGenerationPanel::processQueue() {
-    m_generationQueue->ProcessNext();
+    // Avoid blocking UI - only start processing if not already running
+    if (s_isProcessing.exchange(true)) {
+        return;  // Already processing in background
+    }
+    
+    // Run generation in background thread
+    auto queue = m_generationQueue;
+    (void)QtConcurrent::run([queue]() {
+        queue->ProcessNext();
+        s_isProcessing.store(false);
+    });
 }
 
 void EditorAssetGenerationPanel::onAssetTypeChanged(int index) {

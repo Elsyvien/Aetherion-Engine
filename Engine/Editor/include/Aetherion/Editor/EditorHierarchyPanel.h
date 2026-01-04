@@ -8,6 +8,7 @@
 
 class QTreeWidgetItem;
 class QMenu;
+class QLineEdit;
 
 namespace Aetherion::Scene
 {
@@ -32,6 +33,9 @@ public:
     void SetSelectedEntity(Aetherion::Core::EntityId id);
     Aetherion::Core::EntityId GetSelectedEntityId() const;
 
+    /// @brief Clear and focus the search box
+    void FocusSearch();
+
 signals:
     void entitySelected(Aetherion::Core::EntityId id);
     void entityActivated(Aetherion::Core::EntityId id);
@@ -52,15 +56,19 @@ protected:
 
 private slots:
     void showContextMenu(const QPoint& pos);
+    void onSearchTextChanged(const QString& text);
 
 private:
     void setupContextMenu();
+    void applyFilter(const QString& filter);
 
     HierarchyTreeWidget* m_tree = nullptr;
+    QLineEdit* m_searchBox = nullptr;
     QMenu* m_contextMenu = nullptr;
     std::shared_ptr<Scene::Scene> m_scene;
     EditorSelection* m_selection = nullptr;
     QHash<qulonglong, QTreeWidgetItem*> m_itemLookup;
     bool m_updatingSelection = false;
+    QString m_currentFilter;
 };
 } // namespace Aetherion::Editor

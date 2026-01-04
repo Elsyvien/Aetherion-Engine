@@ -2,6 +2,7 @@
 #include "Aetherion/Editor/AICopilotPanel.h"
 #include "Aetherion/Editor/AICopilotProcessor.h"
 #include "Aetherion/Editor/EditorAssetGenerationPanel.h"
+#include "Aetherion/Editor/EditorStatisticsPanel.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -3646,6 +3647,17 @@ void EditorMainWindow::CreateDockPanels() {
               m_console->AppendMessage(QString("Generation failed: %1 - %2").arg(assetId, error), ConsoleSeverity::Error);
             }
           });
+
+  // Statistics panel
+  m_statsPanel = new EditorStatisticsPanel(this);
+  m_statsPanel->setObjectName("StatisticsDock");
+  m_statsDock = m_statsPanel;
+  if (m_scene) {
+    m_statsPanel->SetScene(m_scene);
+  }
+  addDockWidget(Qt::RightDockWidgetArea, m_statsPanel);
+  tabifyDockWidget(m_assetGenPanel, m_statsPanel);
+  m_statsPanel->hide(); // Hidden by default, user can enable from View menu
 
 }
 

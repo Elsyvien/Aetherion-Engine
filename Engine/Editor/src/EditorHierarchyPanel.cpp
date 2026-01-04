@@ -5,6 +5,7 @@
 #include <QDropEvent>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QStyle>
 #include <QTreeWidget>
@@ -80,12 +81,24 @@ EditorHierarchyPanel::EditorHierarchyPanel(QWidget* parent)
 {
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
+    layout->setSpacing(4);
 
     auto* header = new QLabel(tr("Hierarchy"), this);
+    
+    // Search box for filtering entities
+    m_searchBox = new QLineEdit(this);
+    m_searchBox->setPlaceholderText(tr("Search entities..."));
+    m_searchBox->setClearButtonEnabled(true);
+    m_searchBox->setStyleSheet(
+        "QLineEdit { padding: 4px; border: 1px solid #555; border-radius: 3px; }"
+        "QLineEdit:focus { border-color: #0078d4; }");
+    connect(m_searchBox, &QLineEdit::textChanged, this, &EditorHierarchyPanel::onSearchTextChanged);
+    
     m_tree = new HierarchyTreeWidget(this);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
 
     layout->addWidget(header);
+    layout->addWidget(m_searchBox);
     layout->addWidget(m_tree, 1);
     setLayout(layout);
 
@@ -486,6 +499,14 @@ void EditorHierarchyPanel::keyPressEvent(QKeyEvent* event)
 {
     Core::EntityId id = GetSelectedEntityId();
     
+    // Ctrl+F focuses search
+    if (event->key() == Qt::Key_F && (event->modifiers() & Qt::ControlModifier))
+    {
+        FocusSearch();
+        event->accept();
+        return;
+    }
+    
     if (event->key() == Qt::Key_Delete && id != 0)
     {
         emit entityDeleteRequested(id);
@@ -512,6 +533,78 @@ void EditorHierarchyPanel::keyPressEvent(QKeyEvent* event)
     }
     
     QWidget::keyPressEvent(event);
+}
+
+void EditorHierarchyPanel::FocusSearch()
+{
+    if (m_searchBox)
+    {
+        m_searchBox->setFocus();
+        m_searchBox->selectAll();
+    }
+}
+
+void EditorHierarchyPanel::onSearchTextChanged(const QString& text)
+{
+    m_currentFilter = text.trimmed().toLower();
+    applyFilter(m_currentFilter);
+}
+
+void EditorHierarchyPanel::applyFilter(const QString& filter)
+{
+    if (!m_tree)
+    {
+        return;
+    }
+    
+    // Process all items in the tree
+    std::function<bool(QTreeWidgetItem*)> processItem = [&](QTreeWidgetItem* item) -> bool {
+        if (!item)
+        {
+            return false;
+        }
+        
+        const QString itemText = item->text(0).toLower();
+        bool matches = filter.isEmpty() || itemText.contains(filter);
+        
+        // Check children
+        bool hasVisibleChild = false;
+        for (int i = 0; i < item->childCount(); ++i)
+        {
+            if (processItem(item->child(i)))
+            {
+                hasVisibleChild = true;
+            }
+        }
+        
+        // Show if matches or has visible children
+        const bool shouldShow = matches || hasVisibleChild;
+        item->setHidden(!shouldShow);
+        
+        // Expand parent items when filtering to show matches
+        if (!filter.isEmpty() && (matches || hasVisibleChild))
+        {
+            item->setExpanded(true);
+        }
+        
+        // Highlight matching items
+        if (matches && !filter.isEmpty())
+        {
+            item->setBackground(0, QColor(0, 120, 212, 40));
+        }
+        else
+        {
+            item->setBackground(0, QBrush());
+        }
+        
+        return shouldShow;
+    };
+    
+    // Process from top level items
+    for (int i = 0; i < m_tree->topLevelItemCount(); ++i)
+    {
+        processItem(m_tree->topLevelItem(i));
+    }
 }
 } // namespace Aetherion::Editor
 

@@ -112,7 +112,9 @@ Files:
 - `Engine/Editor/src/AICopilotProcessor.cpp`
 
 - Simple text UI for prompts.
-- Processor supports spawning entities (lights/cameras/cubes) and grid layouts.
+- Processor supports spawning primitives (cube, sphere, plane, cylinder, cone,
+  pyramid, wedge, octahedron, tri prism), lights, and cameras.
+- Supports grid/line/circle/random layouts and selection move/rotate/scale.
 - Uses CommandExecutor to add entities into the Scene.
 
 ## Settings

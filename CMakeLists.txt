@@ -70,7 +70,7 @@ elseif(APPLE)
     endif()
 endif()
 
-find_package(Qt6 6.2 COMPONENTS Widgets REQUIRED)
+find_package(Qt6 6.2 COMPONENTS Widgets Concurrent REQUIRED)
 find_package(Vulkan REQUIRED)
 if(AETHERION_ENABLE_PYTHON)
     find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
@@ -204,6 +204,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/AICopilotPanel.cpp
     Engine/Editor/src/AICopilotProcessor.cpp
     Engine/Editor/src/EditorAssetGenerationPanel.cpp
+    Engine/Editor/src/EditorStatisticsPanel.cpp
     Engine/Editor/src/EditorSettings.cpp
     Engine/Editor/src/EditorSettingsDialog.cpp
     Engine/Editor/resources/AetherionEditor.qrc
@@ -226,6 +227,7 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/AICopilotPanel.h
         Engine/Editor/include/Aetherion/Editor/AICopilotProcessor.h
         Engine/Editor/include/Aetherion/Editor/EditorAssetGenerationPanel.h
+        Engine/Editor/include/Aetherion/Editor/EditorStatisticsPanel.h
         Engine/Editor/include/Aetherion/Editor/EditorSettings.h
         Engine/Editor/include/Aetherion/Editor/EditorSettingsDialog.h
 )
@@ -242,6 +244,7 @@ target_link_libraries(AetherionEditor
     PRIVATE
         AetherionRuntime
         Qt6::Widgets
+        Qt6::Concurrent
         Vulkan::Vulkan
 )
 

@@ -54,6 +54,7 @@ class EditorSelection;
 class EditorAuxPanel;
 class EditorCommandPalette;
 class EditorAssetGenerationPanel;
+class EditorStatisticsPanel;
 class AICopilotPanel;
 class AICopilotProcessor;
 
@@ -154,6 +155,7 @@ private:
     class EditorMeshPreview* m_meshPreview = nullptr;
     EditorCameraPreview* m_cameraPreview = nullptr;
     AICopilotPanel* m_copilotPanel = nullptr;
+    EditorStatisticsPanel* m_statsPanel = nullptr;
     QDockWidget* m_hierarchyDock = nullptr;
     QDockWidget* m_inspectorDock = nullptr;
     QDockWidget* m_assetBrowserDock = nullptr;
@@ -162,6 +164,7 @@ private:
     QDockWidget* m_cameraPreviewDock = nullptr;
     QDockWidget* m_copilotDock = nullptr;
     QDockWidget* m_assetGenDock = nullptr;
+    QDockWidget* m_statsDock = nullptr;
     QDockWidget* m_bookmarksDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorAssetGenerationPanel* m_assetGenPanel = nullptr;
