@@ -843,6 +843,9 @@ EditorMainWindow::EditorMainWindow(
   if (m_scene && m_hierarchyPanel) {
     m_hierarchyPanel->BindScene(m_scene);
   }
+  if (m_scene && m_statsPanel) {
+    m_statsPanel->SetScene(m_scene);
+  }
   m_scenePath = GetDefaultScenePath();
   UpdateWindowTitle();
 
@@ -1384,6 +1387,22 @@ void EditorMainWindow::CreateMenuBarContent() {
   RegisterCommandAction(m_showAssetGenAction, tr("View"),
                         tr("Toggle the asset generation panel"));
 
+  m_showStatsAction = viewMenu->addAction(tr("Show Statistics"));
+  m_showStatsAction->setCheckable(true);
+  m_showStatsAction->setChecked(false);
+  m_showStatsAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_9));
+  connect(m_showStatsAction, &QAction::triggered, this,
+          [this](bool checked) {
+            if (m_statsDock) {
+              m_statsDock->setVisible(checked);
+              if (checked) {
+                m_statsDock->raise();
+              }
+            }
+          });
+  RegisterCommandAction(m_showStatsAction, tr("View"),
+                        tr("Toggle the statistics panel"));
+
   viewMenu->addSeparator();
   auto *saveLayoutAction = viewMenu->addAction(tr("Save Layout As..."), [this] {
     bool ok = false;
@@ -1696,6 +1715,11 @@ void EditorMainWindow::ApplySettings(const EditorSettings &settings,
     RecreateRuntimeAndRenderer(m_validationEnabled);
   } else if (m_vulkanViewport) {
     m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
+  }
+
+  // Update LLM generator configuration for AI-powered asset generation
+  if (m_assetGenPanel) {
+    m_assetGenPanel->ConfigureLLMGenerator(m_settings.llm);
   }
 
   UpdateRenderTimerInterval(m_vulkanViewport && m_vulkanViewport->IsReady());
@@ -2210,6 +2234,9 @@ void EditorMainWindow::AddAssetToScene(const QString &assetId) {
     m_hierarchyPanel->BindScene(m_scene);
     m_hierarchyPanel->SetSelectedEntity(newId);
   }
+  if (m_statsPanel) {
+    m_statsPanel->RefreshStats();
+  }
 
   if (m_selection) {
     m_selection->SelectEntity(newEntity);
@@ -2407,6 +2434,9 @@ void EditorMainWindow::DeleteEntity(Aetherion::Core::EntityId id) {
   if (m_hierarchyPanel) {
     m_hierarchyPanel->BindScene(m_scene);
   }
+  if (m_statsPanel) {
+    m_statsPanel->RefreshStats();
+  }
 
   AppendConsole(m_console, tr("Deleted entity: %1").arg(entityName),
                 ConsoleSeverity::Info);
@@ -2482,6 +2512,9 @@ void EditorMainWindow::DuplicateEntity(Aetherion::Core::EntityId id) {
   if (m_hierarchyPanel) {
     m_hierarchyPanel->BindScene(m_scene);
     m_hierarchyPanel->SetSelectedEntity(newId);
+  }
+  if (m_statsPanel) {
+    m_statsPanel->RefreshStats();
   }
 
   if (m_selection) {
@@ -2599,6 +2632,9 @@ void EditorMainWindow::HandleCopilotPrompt(const QString &prompt) {
       m_hierarchyPanel->BindScene(m_scene);
       m_hierarchyPanel->SetSelectedEntity(lastId);
     }
+    if (m_statsPanel) {
+      m_statsPanel->RefreshStats();
+    }
     
     if (m_selection && m_scene) {
         auto entity = m_scene->GetEntityById(lastId);
@@ -2648,6 +2684,9 @@ void EditorMainWindow::CreateEmptyEntity(Aetherion::Core::EntityId parentId) {
   if (m_hierarchyPanel) {
     m_hierarchyPanel->BindScene(m_scene);
     m_hierarchyPanel->SetSelectedEntity(newId);
+  }
+  if (m_statsPanel) {
+    m_statsPanel->RefreshStats();
   }
 
   if (m_selection) {
@@ -2706,6 +2745,9 @@ void EditorMainWindow::CreateLightEntity(Aetherion::Core::EntityId parentId) {
     m_hierarchyPanel->BindScene(m_scene);
     m_hierarchyPanel->SetSelectedEntity(newId);
   }
+  if (m_statsPanel) {
+    m_statsPanel->RefreshStats();
+  }
 
   if (m_selection) {
     m_selection->SelectEntity(newEntity);
@@ -2758,6 +2800,9 @@ void EditorMainWindow::CreateCameraEntity(Aetherion::Core::EntityId parentId) {
   if (m_hierarchyPanel) {
     m_hierarchyPanel->BindScene(m_scene);
     m_hierarchyPanel->SetSelectedEntity(newId);
+  }
+  if (m_statsPanel) {
+    m_statsPanel->RefreshStats();
   }
 
   if (m_selection) {
@@ -2831,6 +2876,9 @@ void EditorMainWindow::CreateMeshEntity(Aetherion::Core::EntityId parentId,
   if (m_hierarchyPanel) {
     m_hierarchyPanel->BindScene(m_scene);
     m_hierarchyPanel->SetSelectedEntity(newId);
+  }
+  if (m_statsPanel) {
+    m_statsPanel->RefreshStats();
   }
 
   if (m_selection) {
@@ -2961,6 +3009,9 @@ bool EditorMainWindow::LoadSceneFromPath(const std::filesystem::path &path) {
     m_hierarchyPanel->SetSelectionModel(m_selection);
     m_hierarchyPanel->BindScene(m_scene);
   }
+  if (m_statsPanel) {
+    m_statsPanel->SetScene(m_scene);
+  }
 
   if (m_inspectorPanel) {
     m_inspectorPanel->SetSelectedEntity(
@@ -3020,6 +3071,9 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation) {
   if (m_hierarchyPanel) {
     m_hierarchyPanel->SetSelectionModel(m_selection);
     m_hierarchyPanel->BindScene(m_scene);
+  }
+  if (m_statsPanel) {
+    m_statsPanel->SetScene(m_scene);
   }
   m_scenePath = GetDefaultScenePath();
   SetSceneDirty(false);
@@ -3622,6 +3676,9 @@ void EditorMainWindow::CreateDockPanels() {
       m_assetGenPanel->SetAssetRegistry(context->GetAssetRegistry());
     }
   }
+  // Configure LLM generator with current settings for AI-powered asset generation
+  m_assetGenPanel->ConfigureLLMGenerator(m_settings.llm);
+  
   addDockWidget(Qt::RightDockWidgetArea, m_assetGenPanel);
   tabifyDockWidget(copilotDock, m_assetGenPanel);
   copilotDock->raise();

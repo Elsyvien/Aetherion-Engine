@@ -141,6 +141,7 @@ private:
     QAction* m_showBookmarksAction = nullptr;
     QAction* m_showAICopilotAction = nullptr;
     QAction* m_showAssetGenAction = nullptr;
+    QAction* m_showStatsAction = nullptr;
     QAction* m_showAiHudAction = nullptr;
     QAction* m_commandPaletteAction = nullptr;
     QAction* m_focusAssetFilterAction = nullptr;

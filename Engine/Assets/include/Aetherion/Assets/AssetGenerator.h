@@ -308,4 +308,16 @@ private:
     std::unordered_map<std::string, GeneratorCreator> m_creators;
 };
 
+// Forward declaration for LLMConfig
+struct LLMConfig;
+
+/// @brief Create an LLM-powered asset generator
+/// @return Shared pointer to the generator (not configured)
+std::shared_ptr<IAssetGenerator> CreateLLMAssetGenerator();
+
+/// @brief Create an LLM-powered asset generator with configuration
+/// @param config LLM configuration with API key and settings
+/// @return Shared pointer to the configured generator
+std::shared_ptr<IAssetGenerator> CreateLLMAssetGenerator(const LLMConfig& config);
+
 } // namespace Aetherion::Assets

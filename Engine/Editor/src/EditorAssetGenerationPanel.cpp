@@ -21,9 +21,29 @@
 
 #include "Aetherion/Assets/AssetGenerator.h"
 #include "Aetherion/Assets/AssetRegistry.h"
+#include "Aetherion/Assets/LLMClient.h"
 
 namespace {
     std::atomic<bool> s_isProcessing{false};
+    
+    // Convert editor LLM provider to assets LLM provider
+    Aetherion::Assets::LLMProvider ConvertProvider(
+        Aetherion::Editor::LLMProviderType editorProvider) {
+        switch (editorProvider) {
+            case Aetherion::Editor::LLMProviderType::OpenAI:
+                return Aetherion::Assets::LLMProvider::OpenAI;
+            case Aetherion::Editor::LLMProviderType::Anthropic:
+                return Aetherion::Assets::LLMProvider::Anthropic;
+            case Aetherion::Editor::LLMProviderType::StabilityAI:
+                return Aetherion::Assets::LLMProvider::StabilityAI;
+            case Aetherion::Editor::LLMProviderType::LocalOllama:
+                return Aetherion::Assets::LLMProvider::LocalOllama;
+            case Aetherion::Editor::LLMProviderType::Custom:
+                return Aetherion::Assets::LLMProvider::Custom;
+            default:
+                return Aetherion::Assets::LLMProvider::OpenAI;
+        }
+    }
 }
 
 namespace Aetherion::Editor {
@@ -68,6 +88,46 @@ void EditorAssetGenerationPanel::SetAssetRegistry(
         if (!rootPath.empty()) {
             m_generationQueue->SetOutputDirectory(rootPath / "_generated");
         }
+    }
+}
+
+void EditorAssetGenerationPanel::ConfigureLLMGenerator(const LLMSettings& settings) {
+    if (settings.provider == LLMProviderType::None) {
+        // Use default procedural generators - unregister any LLM generator
+        m_generationQueue->UnregisterGenerator("LLMAssetGenerator");
+        
+        // Ensure we have at least the procedural generators
+        if (!m_generationQueue->GetGeneratorForType("texture")) {
+            m_generationQueue->RegisterGenerator(
+                std::make_shared<Assets::ProceduralTextureGenerator>());
+            m_generationQueue->RegisterGenerator(
+                std::make_shared<Assets::StubAssetGenerator>());
+        }
+        return;
+    }
+    
+    // Create LLM configuration
+    Assets::LLMConfig config;
+    config.provider = ConvertProvider(settings.provider);
+    config.apiKey = settings.apiKey;
+    config.endpoint = settings.endpoint;
+    config.model = settings.model;
+    config.imageModel = settings.imageModel;
+    config.timeoutMs = settings.timeoutMs;
+    config.enableLogging = settings.enableLogging;
+    
+    // Create and register LLM generator
+    auto llmGenerator = Assets::CreateLLMAssetGenerator(config);
+    if (llmGenerator) {
+        // Unregister old LLM generator if exists
+        m_generationQueue->UnregisterGenerator("LLMAssetGenerator");
+        m_generationQueue->RegisterGenerator(llmGenerator);
+    }
+    
+    // Keep procedural generator as fallback
+    if (!m_generationQueue->GetGenerator("ProceduralTextureGenerator")) {
+        m_generationQueue->RegisterGenerator(
+            std::make_shared<Assets::ProceduralTextureGenerator>());
     }
 }
 

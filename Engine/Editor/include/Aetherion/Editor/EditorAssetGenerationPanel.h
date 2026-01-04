@@ -5,6 +5,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "Aetherion/Editor/EditorSettings.h"
+
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -20,6 +22,7 @@ class QVBoxLayout;
 namespace Aetherion::Assets {
 class AssetRegistry;
 class GenerationQueue;
+class IAssetGenerator;
 struct GenerationResult;
 } // namespace Aetherion::Assets
 
@@ -43,6 +46,9 @@ public:
 
     /// @brief Set the asset registry for integration
     void SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry);
+
+    /// @brief Configure LLM generator from editor settings
+    void ConfigureLLMGenerator(const LLMSettings& settings);
 
     /// @brief Get the generation queue
     [[nodiscard]] std::shared_ptr<Assets::GenerationQueue> GetGenerationQueue() const {

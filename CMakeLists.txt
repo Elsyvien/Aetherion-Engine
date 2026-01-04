@@ -70,7 +70,7 @@ elseif(APPLE)
     endif()
 endif()
 
-find_package(Qt6 6.2 COMPONENTS Widgets Concurrent REQUIRED)
+find_package(Qt6 6.2 COMPONENTS Widgets Concurrent Network REQUIRED)
 find_package(Vulkan REQUIRED)
 if(AETHERION_ENABLE_PYTHON)
     find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
@@ -99,6 +99,8 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/SceneSerializer.cpp
     Engine/Assets/src/AssetRegistry.cpp
     Engine/Assets/src/AssetGenerator.cpp
+    Engine/Assets/src/LLMClient.cpp
+    Engine/Assets/src/LLMAssetGenerator.cpp
     Engine/Platform/src/PlatformAbstraction.cpp
     Engine/Rendering/src/RenderingPlaceholder.cpp
     Engine/Rendering/src/VulkanContext.cpp
@@ -181,6 +183,7 @@ target_link_libraries(AetherionRuntime
     PUBLIC
         Vulkan::Vulkan
         Jolt
+        Qt6::Network
         $<$<BOOL:${AETHERION_ENABLE_PYTHON}>:Python3::Python>
 )
 target_compile_definitions(AetherionRuntime
@@ -245,6 +248,7 @@ target_link_libraries(AetherionEditor
         AetherionRuntime
         Qt6::Widgets
         Qt6::Concurrent
+        Qt6::Network
         Vulkan::Vulkan
 )
 
