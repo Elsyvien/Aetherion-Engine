@@ -113,6 +113,7 @@ set(RUNTIME_SOURCES
     Engine/Audio/src/AudioEngine.cpp
     Engine/Audio/src/AudioSystem.cpp
     Engine/Scripting/src/ScriptingPlaceholder.cpp
+    Engine/Runtime/src/SystemScheduler.cpp
 )
 
 # Compile Vulkan shaders to SPIR-V (output: <build>/shaders/*.spv)
