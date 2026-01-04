@@ -4785,6 +4785,30 @@ void VulkanViewport::RecordOpaquePass(
     vkCmdDraw(cb, m_colliderVertexCount, 1, 0, 0);
   }
 
+  // Render particles using the main pipeline (filled triangles with vertex
+  // colors)
+  if (m_pipeline != VK_NULL_HANDLE &&
+      m_particleVertexBuffer != VK_NULL_HANDLE && m_particleVertexCount > 0) {
+    baseConstants.flags = kInstanceFlagUnlit;
+    vkCmdPushConstants(cb, m_pipelineLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT |
+                           VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(InstancePushConstants), &baseConstants);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+    if (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE &&
+        boundMaterialSet != m_defaultMaterial.descriptorSet) {
+      VkDescriptorSet sets[] = {uboSet, m_defaultMaterial.descriptorSet,
+                                shadowSet};
+      vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              m_pipelineLayout, 0, 3, sets, 0, nullptr);
+      boundMaterialSet = m_defaultMaterial.descriptorSet;
+    }
+    VkBuffer particleBuffers[] = {m_particleVertexBuffer,
+                                  fallbackInstanceBuffer};
+    vkCmdBindVertexBuffers(cb, 0, 2, particleBuffers, offsets);
+    vkCmdDraw(cb, m_particleVertexCount, 1, 0, 0);
+  }
+
   vkCmdEndRenderPass(cb);
 }
 
