@@ -2509,9 +2509,29 @@ void EditorMainWindow::HandleCopilotPrompt(const QString &prompt) {
 
   int count = 1;
   QRegularExpression numberRegex(R"(\b(\d+)\b)");
-  auto match = numberRegex.match(trimmed);
-  if (match.hasMatch()) {
-    count = match.captured(1).toInt();
+  QRegularExpressionMatchIterator matchIt = numberRegex.globalMatch(trimmed);
+  int firstMatchValue = -1;
+  int numericMatchCount = 0;
+  while (matchIt.hasNext()) {
+    const QRegularExpressionMatch m = matchIt.next();
+    bool ok = false;
+    const int value = m.captured(1).toInt(&ok);
+    if (!ok) {
+      continue;
+    }
+    if (firstMatchValue < 0) {
+      firstMatchValue = value;
+    }
+    ++numericMatchCount;
+  }
+  if (firstMatchValue > 0) {
+    count = firstMatchValue;
+  }
+  if (numericMatchCount > 1 && m_copilotPanel) {
+    m_copilotPanel->AppendMessage(
+        "Copilot",
+        tr("Multiple numbers detected in your command; using %1 as the spawn count.")
+            .arg(count));
   }
   count = std::clamp(count, 1, 64);
 
