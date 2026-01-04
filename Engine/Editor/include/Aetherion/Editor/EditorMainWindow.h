@@ -23,6 +23,8 @@ class QActionGroup;
 class QLabel;
 class QDockWidget;
 class QFileSystemWatcher;
+class QListWidget;
+class QPushButton;
 
 namespace Aetherion::Rendering
 {
@@ -133,6 +135,7 @@ private:
     QAction* m_showConsoleAction = nullptr;
     QAction* m_showMeshPreviewAction = nullptr;
     QAction* m_showCameraPreviewAction = nullptr;
+    QAction* m_showBookmarksAction = nullptr;
     QAction* m_showAICopilotAction = nullptr;
     QAction* m_showAiHudAction = nullptr;
     QAction* m_playAction = nullptr;
@@ -153,6 +156,7 @@ private:
     QDockWidget* m_meshPreviewDock = nullptr;
     QDockWidget* m_cameraPreviewDock = nullptr;
     QDockWidget* m_copilotDock = nullptr;
+    QDockWidget* m_bookmarksDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorConsole* m_console = nullptr;
     QByteArray m_defaultLayoutState;
@@ -176,6 +180,20 @@ private:
     TransformData m_interactiveCurrentData;
     bool m_aiHudVisible{true};
     std::deque<QString> m_aiHudHistory;
+    struct CameraBookmark {
+        QString name;
+        float posX{0.0f};
+        float posY{0.0f};
+        float posZ{0.0f};
+        float rotY{0.0f};
+        float rotX{0.0f};
+        float zoom{1.0f};
+    };
+    std::vector<CameraBookmark> m_bookmarks;
+    QListWidget* m_bookmarkList = nullptr;
+    QPushButton* m_addBookmarkBtn = nullptr;
+    QPushButton* m_renameBookmarkBtn = nullptr;
+    QPushButton* m_deleteBookmarkBtn = nullptr;
 
     void BeginInteractiveTransform();
     void UpdateInteractiveTransformTarget(float dx, float dy, float dz);        
@@ -214,6 +232,15 @@ private:
     void CreateMeshEntity(Aetherion::Core::EntityId parentId,
                           const QString& meshAssetId,
                           const QString& displayName);
+    void CreateBookmarksDock();
+    void RefreshBookmarksList();
+    void AddBookmarkFromCamera();
+    void RenameBookmark();
+    void DeleteBookmark();
+    void ApplyBookmark(int row);
+    std::filesystem::path GetBookmarksPath() const;
+    void LoadBookmarks();
+    void SaveBookmarks() const;
     void OpenScene();
     void SaveScene();
     void ReloadScene();

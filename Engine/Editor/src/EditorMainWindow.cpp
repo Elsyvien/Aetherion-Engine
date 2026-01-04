@@ -39,6 +39,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <deque>
+#include <fstream>
+#include <filesystem>
 
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Editor/EditorAssetBrowser.h"
@@ -66,6 +69,7 @@
 #include "Aetherion/Scene/SceneSerializer.h"
 #include "Aetherion/Scene/TransformComponent.h"
 #include "Aetherion/Scene/AIBehaviorComponent.h"
+#include "nlohmann/json.hpp"
 
 namespace Aetherion::Editor {
 class EditorAuxPanel final : public QWidget {
@@ -815,6 +819,8 @@ EditorMainWindow::EditorMainWindow(
   setCentralWidget(centerSplit);
 
   CreateDockPanels();
+  LoadBookmarks();
+  RefreshBookmarksList();
   CreateMenuBarContent();
   CreateToolBarContent();
   ConfigureStatusBar();
@@ -1257,7 +1263,7 @@ void EditorMainWindow::CreateMenuBarContent() {
   m_showCameraPreviewAction = viewMenu->addAction(tr("Show Camera Preview"));
   m_showCameraPreviewAction->setCheckable(true);
   m_showCameraPreviewAction->setChecked(true);
-  m_showCameraPreviewAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_6));
+  m_showCameraPreviewAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_6));   
   connect(m_showCameraPreviewAction, &QAction::triggered, this,
           [this](bool checked) {
             if (m_cameraPreviewDock) {
@@ -1268,10 +1274,24 @@ void EditorMainWindow::CreateMenuBarContent() {
             }
           });
 
+  m_showBookmarksAction = viewMenu->addAction(tr("Show Bookmarks"));
+  m_showBookmarksAction->setCheckable(true);
+  m_showBookmarksAction->setChecked(true);
+  m_showBookmarksAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_8));
+  connect(m_showBookmarksAction, &QAction::triggered, this,
+          [this](bool checked) {
+            if (m_bookmarksDock) {
+              m_bookmarksDock->setVisible(checked);
+              if (checked) {
+                m_bookmarksDock->raise();
+              }
+            }
+          });
+
   m_showAICopilotAction = viewMenu->addAction(tr("Show AI Copilot"));
   m_showAICopilotAction->setCheckable(true);
   m_showAICopilotAction->setChecked(true);
-  m_showAICopilotAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_7));
+  m_showAICopilotAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_7));       
   connect(m_showAICopilotAction, &QAction::triggered, this,
           [this](bool checked) {
             if (m_copilotDock) {
@@ -3079,6 +3099,175 @@ void EditorMainWindow::SaveLayout() const {
   settings.setValue("layout/mainWindowGeometry", saveGeometry());
 }
 
+std::filesystem::path EditorMainWindow::GetBookmarksPath() const {
+  return std::filesystem::path(".cache") / "camera_bookmarks.json";
+}
+
+void EditorMainWindow::LoadBookmarks() {
+  m_bookmarks.clear();
+  const std::filesystem::path path = GetBookmarksPath();
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec)) {
+    return;
+  }
+
+  try {
+    std::ifstream input(path);
+    if (!input.is_open()) {
+      return;
+    }
+    nlohmann::json root;
+    input >> root;
+    if (!root.is_array()) {
+      return;
+    }
+    for (const auto &entry : root) {
+      if (!entry.is_object()) {
+        continue;
+      }
+      CameraBookmark bm;
+      bm.name = QString::fromStdString(
+          entry.value("name", std::string("Bookmark")));
+      bm.posX = entry.value("posX", 0.0f);
+      bm.posY = entry.value("posY", 0.0f);
+      bm.posZ = entry.value("posZ", 0.0f);
+      bm.rotY = entry.value("rotY", 0.0f);
+      bm.rotX = entry.value("rotX", 0.0f);
+      bm.zoom = entry.value("zoom", 1.0f);
+      m_bookmarks.push_back(std::move(bm));
+    }
+  } catch (...) {
+    // ignore malformed bookmark file
+  }
+}
+
+void EditorMainWindow::SaveBookmarks() const {
+  const std::filesystem::path path = GetBookmarksPath();
+  std::error_code ec;
+  std::filesystem::create_directories(path.parent_path(), ec);
+
+  nlohmann::json root = nlohmann::json::array();
+  for (const auto &bm : m_bookmarks) {
+    nlohmann::json entry;
+    entry["name"] = bm.name.toStdString();
+    entry["posX"] = bm.posX;
+    entry["posY"] = bm.posY;
+    entry["posZ"] = bm.posZ;
+    entry["rotY"] = bm.rotY;
+    entry["rotX"] = bm.rotX;
+    entry["zoom"] = bm.zoom;
+    root.push_back(entry);
+  }
+
+  std::ofstream output(path, std::ios::trunc);
+  if (output.is_open()) {
+    output << root.dump(2);
+  }
+}
+
+void EditorMainWindow::RefreshBookmarksList() {
+  if (!m_bookmarkList) {
+    return;
+  }
+  m_bookmarkList->clear();
+  for (const auto &bm : m_bookmarks) {
+    auto *item = new QListWidgetItem(bm.name, m_bookmarkList);
+    item->setToolTip(
+        tr("Pos: %.2f, %.2f, %.2f | Rot: %.1f, %.1f | Zoom: %.2f")
+            .arg(bm.posX)
+            .arg(bm.posY)
+            .arg(bm.posZ)
+            .arg(bm.rotY)
+            .arg(bm.rotX)
+            .arg(bm.zoom));
+    m_bookmarkList->addItem(item);
+  }
+  if (m_renameBookmarkBtn)
+    m_renameBookmarkBtn->setEnabled(!m_bookmarks.empty());
+  if (m_deleteBookmarkBtn)
+    m_deleteBookmarkBtn->setEnabled(!m_bookmarks.empty());
+}
+
+void EditorMainWindow::AddBookmarkFromCamera() {
+  if (!m_viewport) {
+    return;
+  }
+  CameraBookmark bm{};
+  bm.posX = m_viewport->getCameraX();
+  bm.posY = m_viewport->getCameraY();
+  bm.posZ = m_viewport->getCameraZ();
+  bm.rotY = m_viewport->getCameraRotationY();
+  bm.rotX = m_viewport->getCameraRotationX();
+  bm.zoom = m_viewport->getCameraZoom();
+
+  const int nextIdx = static_cast<int>(m_bookmarks.size()) + 1;
+  bm.name = tr("Bookmark %1").arg(nextIdx);
+  m_bookmarks.push_back(bm);
+  SaveBookmarks();
+  RefreshBookmarksList();
+}
+
+void EditorMainWindow::RenameBookmark() {
+  if (!m_bookmarkList) {
+    return;
+  }
+  auto *item = m_bookmarkList->currentItem();
+  const int row = item ? m_bookmarkList->row(item) : -1;
+  if (row < 0 || row >= static_cast<int>(m_bookmarks.size())) {
+    return;
+  }
+
+  bool ok = false;
+  const QString newName = QInputDialog::getText(
+      this, tr("Rename Bookmark"), tr("Name:"), QLineEdit::Normal,
+      m_bookmarks[static_cast<size_t>(row)].name, &ok);
+  if (!ok) {
+    return;
+  }
+  const QString trimmed = newName.trimmed();
+  if (trimmed.isEmpty()) {
+    return;
+  }
+  m_bookmarks[static_cast<size_t>(row)].name = trimmed;
+  SaveBookmarks();
+  RefreshBookmarksList();
+  if (m_bookmarkList && row < m_bookmarkList->count()) {
+    m_bookmarkList->setCurrentRow(row);
+  }
+}
+
+void EditorMainWindow::DeleteBookmark() {
+  if (!m_bookmarkList) {
+    return;
+  }
+  auto *item = m_bookmarkList->currentItem();
+  const int row = item ? m_bookmarkList->row(item) : -1;
+  if (row < 0 || row >= static_cast<int>(m_bookmarks.size())) {
+    return;
+  }
+  m_bookmarks.erase(m_bookmarks.begin() + row);
+  SaveBookmarks();
+  RefreshBookmarksList();
+}
+
+void EditorMainWindow::ApplyBookmark(int row) {
+  if (row < 0 || row >= static_cast<int>(m_bookmarks.size())) {
+    return;
+  }
+  const auto &bm = m_bookmarks[static_cast<size_t>(row)];
+  if (m_viewport) {
+    m_viewport->SetCameraState(bm.posX, bm.posY, bm.posZ, bm.rotY, bm.rotX,
+                               bm.zoom);
+  }
+  if (m_vulkanViewport) {
+    m_vulkanViewport->SetCameraPosition(bm.posX, bm.posY, bm.posZ);
+    m_vulkanViewport->SetCameraRotation(bm.rotY, bm.rotX);
+    m_vulkanViewport->SetCameraZoom(bm.zoom);
+  }
+  statusBar()->showMessage(
+      tr("Camera moved to %1").arg(bm.name), 2000);
+}
+
 void EditorMainWindow::closeEvent(QCloseEvent *event) {
   if (!ConfirmSaveIfDirty()) {
     event->ignore();
@@ -3163,6 +3352,73 @@ void EditorMainWindow::CreateDockPanels() {
               m_showConsoleAction->blockSignals(false);
             }
           });
+
+  auto *bookmarksDock = new QDockWidget(tr("Bookmarks"), this);
+  bookmarksDock->setObjectName("BookmarksDock");
+  bookmarksDock->setAttribute(Qt::WA_NativeWindow, true);
+  m_bookmarksDock = bookmarksDock;
+  auto *bookmarkContainer = new QWidget(bookmarksDock);
+  auto *bookmarkLayout = new QVBoxLayout(bookmarkContainer);
+  bookmarkLayout->setContentsMargins(6, 6, 6, 6);
+  bookmarkLayout->setSpacing(6);
+
+  m_bookmarkList = new QListWidget(bookmarkContainer);
+  m_bookmarkList->setSelectionMode(QAbstractItemView::SingleSelection);
+  m_bookmarkList->setContextMenuPolicy(Qt::CustomContextMenu);
+  bookmarkLayout->addWidget(m_bookmarkList, 1);
+
+  auto *btnRow = new QWidget(bookmarkContainer);
+  auto *btnLayout = new QHBoxLayout(btnRow);
+  btnLayout->setContentsMargins(0, 0, 0, 0);
+  btnLayout->setSpacing(4);
+
+  m_addBookmarkBtn = new QPushButton(tr("Add"), btnRow);
+  m_renameBookmarkBtn = new QPushButton(tr("Rename"), btnRow);
+  m_deleteBookmarkBtn = new QPushButton(tr("Delete"), btnRow);
+  btnLayout->addWidget(m_addBookmarkBtn);
+  btnLayout->addWidget(m_renameBookmarkBtn);
+  btnLayout->addWidget(m_deleteBookmarkBtn);
+  btnLayout->addStretch(1);
+  bookmarkLayout->addWidget(btnRow);
+
+  bookmarkContainer->setLayout(bookmarkLayout);
+  bookmarksDock->setWidget(bookmarkContainer);
+  bookmarksDock->setAllowedAreas(Qt::LeftDockWidgetArea |
+                                 Qt::RightDockWidgetArea);
+  addDockWidget(Qt::RightDockWidgetArea, bookmarksDock);
+
+  connect(bookmarksDock, &QDockWidget::visibilityChanged, this,
+          [this](bool visible) {
+            if (m_showBookmarksAction) {
+              m_showBookmarksAction->blockSignals(true);
+              m_showBookmarksAction->setChecked(visible);
+              m_showBookmarksAction->blockSignals(false);
+            }
+          });
+  connect(m_addBookmarkBtn, &QPushButton::clicked, this,
+          &EditorMainWindow::AddBookmarkFromCamera);
+  connect(m_renameBookmarkBtn, &QPushButton::clicked, this,
+          &EditorMainWindow::RenameBookmark);
+  connect(m_deleteBookmarkBtn, &QPushButton::clicked, this,
+          &EditorMainWindow::DeleteBookmark);
+  connect(m_bookmarkList, &QListWidget::itemDoubleClicked, this,
+          [this](QListWidgetItem *item) {
+            if (!item)
+              return;
+            ApplyBookmark(m_bookmarkList->row(item));
+          });
+  connect(m_bookmarkList, &QListWidget::itemSelectionChanged, this, [this]() {
+    const bool hasSel =
+        m_bookmarkList && !m_bookmarkList->selectedItems().isEmpty();
+    if (m_renameBookmarkBtn)
+      m_renameBookmarkBtn->setEnabled(hasSel);
+    if (m_deleteBookmarkBtn)
+      m_deleteBookmarkBtn->setEnabled(hasSel);
+  });
+  if (m_renameBookmarkBtn)
+    m_renameBookmarkBtn->setEnabled(false);
+  if (m_deleteBookmarkBtn)
+    m_deleteBookmarkBtn->setEnabled(false);
 
   tabifyDockWidget(assetDock, consoleDock);
   consoleDock->raise();

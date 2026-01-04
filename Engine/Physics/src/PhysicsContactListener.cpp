@@ -15,6 +15,30 @@ JPH::ValidateResult PhysicsContactListener::OnContactValidate(
   return JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
 }
 
+PhysicsContactListener::ContactPairKey
+PhysicsContactListener::MakeContactKey(const JPH::SubShapeIDPair &pair) {
+  // Combine the two body IDs and sub-shape IDs into a single 64-bit key
+  // This is a simplified approach - we use the hash of the pair
+  uint64_t body1 = pair.GetBody1ID().GetIndexAndSequenceNumber();
+  uint64_t body2 = pair.GetBody2ID().GetIndexAndSequenceNumber();
+  // Ensure consistent ordering for the same pair regardless of order
+  if (body1 > body2) {
+    std::swap(body1, body2);
+  }
+  return ContactPairKey{(body1 << 32) | body2};
+}
+
+void PhysicsContactListener::RegisterBody(uint32_t bodyId,
+                                          Core::EntityId entityId) {
+  std::lock_guard<std::mutex> lock(m_bodyCacheMutex);
+  m_bodyToEntityCache[bodyId] = entityId;
+}
+
+void PhysicsContactListener::UnregisterBody(uint32_t bodyId) {
+  std::lock_guard<std::mutex> lock(m_bodyCacheMutex);
+  m_bodyToEntityCache.erase(bodyId);
+}
+
 void PhysicsContactListener::OnContactAdded(
     const JPH::Body &inBody1, const JPH::Body &inBody2,
     const JPH::ContactManifold &inManifold,
@@ -40,6 +64,16 @@ void PhysicsContactListener::OnContactAdded(
                          inManifold.mWorldSpaceNormal.GetZ()};
   event.penetrationDepth = inManifold.mPenetrationDepth;
   event.impulse = 0.0f; // Not available yet during OnContactAdded
+
+  // Cache the contact pair for exit event handling
+  {
+    JPH::SubShapeIDPair pair(inBody1.GetID(), inManifold.mSubShapeID1,
+                             inBody2.GetID(), inManifold.mSubShapeID2);
+    ContactPairKey key = MakeContactKey(pair);
+    ContactPairInfo info{event.entityA, event.entityB};
+    std::lock_guard<std::mutex> lock(m_contactsMutex);
+    m_activeContacts[key] = info;
+  }
 
   std::lock_guard<std::mutex> lock(m_queueMutex);
   m_eventQueue.push_back({CollisionEventType::Enter, event});
@@ -76,11 +110,51 @@ void PhysicsContactListener::OnContactPersisted(
 }
 
 void PhysicsContactListener::OnContactRemoved(
-    [[maybe_unused]] const JPH::SubShapeIDPair &inSubShapePair) {
-  // Note: We cannot access bodies during OnContactRemoved
-  // For now, we don't queue exit events since we don't have entity mapping
-  // A more sophisticated implementation would cache body-to-entity mappings
-  // from OnContactAdded/Persisted and use them here
+    const JPH::SubShapeIDPair &inSubShapePair) {
+  // Look up the cached entity IDs for this contact pair
+  ContactPairKey key = MakeContactKey(inSubShapePair);
+  ContactPairInfo info;
+  bool found = false;
+
+  {
+    std::lock_guard<std::mutex> lock(m_contactsMutex);
+    auto it = m_activeContacts.find(key);
+    if (it != m_activeContacts.end()) {
+      info = it->second;
+      found = true;
+      m_activeContacts.erase(it);
+    }
+  }
+
+  if (!found) {
+    // Fallback: try to get entity IDs from the body cache
+    uint32_t body1Id = inSubShapePair.GetBody1ID().GetIndexAndSequenceNumber();
+    uint32_t body2Id = inSubShapePair.GetBody2ID().GetIndexAndSequenceNumber();
+
+    std::lock_guard<std::mutex> lock(m_bodyCacheMutex);
+    auto it1 = m_bodyToEntityCache.find(body1Id);
+    auto it2 = m_bodyToEntityCache.find(body2Id);
+    if (it1 != m_bodyToEntityCache.end() &&
+        it2 != m_bodyToEntityCache.end()) {
+      info.entityA = it1->second;
+      info.entityB = it2->second;
+      found = true;
+    }
+  }
+
+  if (found) {
+    CollisionEvent event;
+    event.entityA = info.entityA;
+    event.entityB = info.entityB;
+    // Contact point/normal not available during OnContactRemoved
+    event.contactPoint = {0.0f, 0.0f, 0.0f};
+    event.contactNormal = {0.0f, 0.0f, 0.0f};
+    event.penetrationDepth = 0.0f;
+    event.impulse = 0.0f;
+
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    m_eventQueue.push_back({CollisionEventType::Exit, event});
+  }
 }
 
 void PhysicsContactListener::ProcessEvents() {

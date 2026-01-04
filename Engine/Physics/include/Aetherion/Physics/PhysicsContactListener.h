@@ -7,6 +7,7 @@
 #include <array>
 #include <functional>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 #include "Aetherion/Core/Types.h"
@@ -75,16 +76,55 @@ public:
     m_bodyToEntity = std::move(mapper);
   }
 
+  /// @brief Register a body ID for contact tracking (call when body is created)
+  void RegisterBody(uint32_t bodyId, Core::EntityId entityId);
+
+  /// @brief Unregister a body ID (call when body is destroyed)
+  void UnregisterBody(uint32_t bodyId);
+
 private:
   struct QueuedEvent {
     CollisionEventType type;
     CollisionEvent event;
   };
 
+  /// @brief Key for tracking active contact pairs
+  struct ContactPairKey {
+    uint64_t subShapeIdPairValue; // Combined SubShapeIDPair value for lookup
+
+    bool operator==(const ContactPairKey &other) const {
+      return subShapeIdPairValue == other.subShapeIdPairValue;
+    }
+  };
+
+  struct ContactPairKeyHash {
+    std::size_t operator()(const ContactPairKey &key) const {
+      return std::hash<uint64_t>{}(key.subShapeIdPairValue);
+    }
+  };
+
+  /// @brief Cached entity IDs for a contact pair (needed for exit events)
+  struct ContactPairInfo {
+    Core::EntityId entityA{0};
+    Core::EntityId entityB{0};
+  };
+
   std::vector<QueuedEvent> m_eventQueue;
   std::mutex m_queueMutex;
   CollisionCallback m_callback;
   std::function<Core::EntityId(uint32_t)> m_bodyToEntity;
+
+  /// @brief Maps SubShapeIDPair to cached entity IDs for exit event handling
+  std::unordered_map<ContactPairKey, ContactPairInfo, ContactPairKeyHash>
+      m_activeContacts;
+  std::mutex m_contactsMutex;
+
+  /// @brief Maps BodyID to EntityId for exit events (since bodies aren't available)
+  std::unordered_map<uint32_t, Core::EntityId> m_bodyToEntityCache;
+  std::mutex m_bodyCacheMutex;
+
+  /// @brief Create a ContactPairKey from SubShapeIDPair
+  static ContactPairKey MakeContactKey(const JPH::SubShapeIDPair &pair);
 };
 
 } // namespace Aetherion::Physics

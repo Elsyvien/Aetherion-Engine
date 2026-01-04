@@ -33,6 +33,7 @@ public:
     void updateCamera(float deltaTime);
     void SetCameraTarget(float x, float y, float z);
     void SetCameraZoom(float zoom);
+    void SetCameraState(float x, float y, float z, float rotY, float rotX, float zoom);
     void SetAiHudText(const QString& text);
 
 signals:

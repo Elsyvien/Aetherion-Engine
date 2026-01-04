@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Aetherion/Audio/AudioEngine.h"
+#include "Aetherion/Core/Types.h"
 #include "Aetherion/Scene/System.h"
 #include <memory>
 #include <unordered_map>
@@ -11,30 +12,50 @@ class Scene;
 }
 
 namespace Aetherion::Audio {
+
+/// @brief System that manages audio playback for scene entities
+///
+/// The AudioSystem is responsible for:
+/// - Playing sounds when AudioSourceComponent requests playback
+/// - Updating 3D spatial positions for spatialized sounds
+/// - Managing sound lifetimes tied to entities
 class AudioSystem {
 public:
-  AudioSystem(AudioEngine *engine);
+  explicit AudioSystem(AudioEngine *engine);
   ~AudioSystem();
 
   void BindScene(Scene::Scene *scene);
+  void UnbindScene();
   void Update(float dt);
   void Shutdown();
 
+  /// @brief Stop all sounds for an entity
+  void StopEntity(Core::EntityId entityId);
+
+  /// @brief Pause all sounds for an entity
+  void PauseEntity(Core::EntityId entityId);
+
+  /// @brief Resume all sounds for an entity
+  void ResumeEntity(Core::EntityId entityId);
+
+  /// @brief Set whether the audio system is enabled
+  void SetEnabled(bool enabled) noexcept { m_enabled = enabled; }
+  [[nodiscard]] bool IsEnabled() const noexcept { return m_enabled; }
+
 private:
+  void UpdateListenerPosition();
+  void UpdateSpatialSounds();
+  void CleanupStoppedSounds();
+
   AudioEngine *m_Engine = nullptr;
   Scene::Scene *m_Scene = nullptr;
+  bool m_enabled{true};
 
-  // Map EntityId to some runtime sound object wrapper
-  // For now, let's assume we play sounds via AudioEngine and track them here if
-  // we want 3D updates. But since AudioEngine::PlayOneShot is fire-and-forget,
-  // we can't update them easily. We need to upgrade AudioEngine to return sound
-  // handles or objects.
-
-  // To keep it simple for this step, we will implement PlayOnAwake logic here
-  // using OneShot. Real-time updates (moving sounds) require ma_sound
-  // management.
-
-  // struct SoundInstance { ma_sound* sound; ... };
-  // std::unordered_map<uint32_t, SoundInstance> m_ActiveSounds;
+  /// @brief Active sound handles per entity
+  struct EntitySound {
+    SoundHandle handle;
+    bool spatialized{false};
+  };
+  std::unordered_map<Core::EntityId, std::vector<EntitySound>> m_entitySounds;
 };
 } // namespace Aetherion::Audio

@@ -181,6 +181,17 @@ void EditorViewport::SetCameraZoom(float zoom)
     emit cameraChanged();
 }
 
+void EditorViewport::SetCameraState(float x, float y, float z, float rotY, float rotX, float zoom)
+{
+    m_cameraX = x;
+    m_cameraY = y;
+    m_cameraZ = z;
+    m_cameraRotationY = rotY;
+    m_cameraRotationX = rotX;
+    m_cameraZoom = zoom;
+    emit cameraChanged();
+}
+
 void EditorViewport::SetAiHudText(const QString& text)
 {
     if (m_aiHudLabel) {
