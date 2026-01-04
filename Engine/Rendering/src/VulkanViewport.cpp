@@ -2762,10 +2762,8 @@ void VulkanViewport::CreateLineBuffers() {
                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                m_colliderVertexBuffer, m_colliderVertexMemory);
   m_colliderVertexCount = 0;
-}
 
-// Particle vertex buffer (for rendering particles as triangles)
-{
+  // Particle vertex buffer (for rendering particles as triangles)
   constexpr size_t maxParticles = 10000;
   constexpr size_t maxParticleVerts =
       maxParticles * 6; // Two triangles per particle
@@ -2775,6 +2773,152 @@ void VulkanViewport::CreateLineBuffers() {
                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                m_particleVertexBuffer, m_particleVertexMemory);
   m_particleVertexCount = 0;
+}
+
+void VulkanViewport::UpdateParticleBuffer(const RenderView &view) {
+  m_particleVertexCount = 0;
+  if (m_particleVertexMemory == VK_NULL_HANDLE) {
+    return;
+  }
+
+  // Count total particles
+  size_t totalParticles = 0;
+  for (const auto &emitter : view.particleEmitters) {
+    totalParticles += emitter.particles.size();
+  }
+
+  if (totalParticles == 0) {
+    return;
+  }
+
+  std::vector<Vertex> vertices;
+  vertices.reserve(totalParticles * 6);
+
+  // Generate camera-facing quads for each particle
+  // Use view direction from camera for billboard orientation
+  const float camPosX = view.camera.position[0];
+  const float camPosY = view.camera.position[1];
+  const float camPosZ = view.camera.position[2];
+
+  for (const auto &emitter : view.particleEmitters) {
+    for (const auto &p : emitter.particles) {
+      // Calculate billboard orientation vectors
+      // Using simple screen-aligned billboards
+      const float halfSize = p.size * 0.5f;
+
+      // Simple billboard: use fixed up vector and face camera
+      const float dx = camPosX - p.position[0];
+      const float dy = camPosY - p.position[1];
+      const float dz = camPosZ - p.position[2];
+      const float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+      // Forward direction (toward camera)
+      float fx = dist > 0.001f ? dx / dist : 0.0f;
+      float fy = dist > 0.001f ? dy / dist : 0.0f;
+      float fz = dist > 0.001f ? dz / dist : 1.0f;
+
+      // Right vector (cross product of forward and world up)
+      float rx = fz;
+      float ry = 0.0f;
+      float rz = -fx;
+      float rLen = std::sqrt(rx * rx + rz * rz);
+      if (rLen > 0.001f) {
+        rx /= rLen;
+        rz /= rLen;
+      } else {
+        rx = 1.0f;
+        rz = 0.0f;
+      }
+
+      // Up vector (cross product of right and forward)
+      float ux = fy * rz - fz * ry;
+      float uy = fz * rx - fx * rz;
+      float uz = fx * ry - fy * rx;
+      float uLen = std::sqrt(ux * ux + uy * uy + uz * uz);
+      if (uLen > 0.001f) {
+        ux /= uLen;
+        uy /= uLen;
+        uz /= uLen;
+      }
+
+      // Apply rotation to right and up vectors
+      const float cosR = std::cos(p.rotation);
+      const float sinR = std::sin(p.rotation);
+      const float rx2 = rx * cosR - ux * sinR;
+      const float ry2 = ry * cosR - uy * sinR;
+      const float rz2 = rz * cosR - uz * sinR;
+      const float ux2 = rx * sinR + ux * cosR;
+      const float uy2 = ry * sinR + uy * cosR;
+      const float uz2 = rz * sinR + uz * cosR;
+
+      // Calculate quad corners
+      const float px = p.position[0];
+      const float py = p.position[1];
+      const float pz = p.position[2];
+
+      // Four corners: bottom-left, bottom-right, top-right, top-left
+      float bl[3] = {px - rx2 * halfSize - ux2 * halfSize,
+                     py - ry2 * halfSize - uy2 * halfSize,
+                     pz - rz2 * halfSize - uz2 * halfSize};
+      float br[3] = {px + rx2 * halfSize - ux2 * halfSize,
+                     py + ry2 * halfSize - uy2 * halfSize,
+                     pz + rz2 * halfSize - uz2 * halfSize};
+      float tr[3] = {px + rx2 * halfSize + ux2 * halfSize,
+                     py + ry2 * halfSize + uy2 * halfSize,
+                     pz + rz2 * halfSize + uz2 * halfSize};
+      float tl[3] = {px - rx2 * halfSize + ux2 * halfSize,
+                     py - ry2 * halfSize + uy2 * halfSize,
+                     pz - rz2 * halfSize + uz2 * halfSize};
+
+      const float normal[3] = {fx, fy, fz};
+      const float color[4] = {p.color[0], p.color[1], p.color[2], p.color[3]};
+
+      // First triangle: bl, br, tr
+      vertices.push_back(Vertex{{bl[0], bl[1], bl[2]},
+                                {normal[0], normal[1], normal[2]},
+                                {color[0], color[1], color[2], color[3]},
+                                {0.0f, 0.0f}});
+      vertices.push_back(Vertex{{br[0], br[1], br[2]},
+                                {normal[0], normal[1], normal[2]},
+                                {color[0], color[1], color[2], color[3]},
+                                {1.0f, 0.0f}});
+      vertices.push_back(Vertex{{tr[0], tr[1], tr[2]},
+                                {normal[0], normal[1], normal[2]},
+                                {color[0], color[1], color[2], color[3]},
+                                {1.0f, 1.0f}});
+
+      // Second triangle: bl, tr, tl
+      vertices.push_back(Vertex{{bl[0], bl[1], bl[2]},
+                                {normal[0], normal[1], normal[2]},
+                                {color[0], color[1], color[2], color[3]},
+                                {0.0f, 0.0f}});
+      vertices.push_back(Vertex{{tr[0], tr[1], tr[2]},
+                                {normal[0], normal[1], normal[2]},
+                                {color[0], color[1], color[2], color[3]},
+                                {1.0f, 1.0f}});
+      vertices.push_back(Vertex{{tl[0], tl[1], tl[2]},
+                                {normal[0], normal[1], normal[2]},
+                                {color[0], color[1], color[2], color[3]},
+                                {0.0f, 1.0f}});
+    }
+  }
+
+  if (vertices.empty()) {
+    return;
+  }
+
+  constexpr size_t maxParticleVerts = 10000 * 6;
+  if (vertices.size() > maxParticleVerts) {
+    vertices.resize(maxParticleVerts);
+  }
+
+  void *data = nullptr;
+  vkMapMemory(m_context->GetDevice(), m_particleVertexMemory, 0,
+              sizeof(Vertex) * vertices.size(), 0, &data);
+  std::memcpy(data, vertices.data(), sizeof(Vertex) * vertices.size());
+  vkUnmapMemory(m_context->GetDevice(), m_particleVertexMemory);
+
+  m_particleVertexCount = static_cast<uint32_t>(vertices.size());
 }
 
 void VulkanViewport::CreateSceneResources() {
