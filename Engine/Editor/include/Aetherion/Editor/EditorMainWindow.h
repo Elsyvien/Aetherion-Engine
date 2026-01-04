@@ -4,6 +4,7 @@
 #include <memory>
 #include <cstdint>
 #include <unordered_map>
+#include <array>
 
 #include <QByteArray>
 #include <QElapsedTimer>
@@ -162,6 +163,13 @@ private:
     QAction* m_undoAction = nullptr;
     QAction* m_redoAction = nullptr;
 
+    enum class CopilotSpawnType
+    {
+        Empty,
+        Light,
+        Camera
+    };
+
     // Interactive transform state for smooth dragging
     bool m_interactiveTransformActive = false;
     std::shared_ptr<Scene::Entity> m_interactiveEntity;
@@ -197,6 +205,12 @@ private:
     void DeleteEntity(Aetherion::Core::EntityId id);
     void DuplicateEntity(Aetherion::Core::EntityId id);
     void RenameEntity(Aetherion::Core::EntityId id);
+    Core::EntityId AllocateEntityId() const;
+    std::shared_ptr<Scene::Entity> SpawnCopilotEntity(const QString& name,
+                                                      const std::array<float, 3>& position,
+                                                      CopilotSpawnType type,
+                                                      Aetherion::Core::EntityId parentId);
+    void HandleCopilotPrompt(const QString& prompt);
     void CreateEmptyEntity(Aetherion::Core::EntityId parentId);
     void CreateLightEntity(Aetherion::Core::EntityId parentId);
     void CreateCameraEntity(Aetherion::Core::EntityId parentId);
