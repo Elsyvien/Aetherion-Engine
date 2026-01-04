@@ -2551,8 +2551,8 @@ void EditorMainWindow::HandleCopilotPrompt(const QString &prompt) {
       x = static_cast<float>(i) * spacing;
     }
 
-    if (spawnType == CopilotSpawnType::Camera && z == 0.0f) {
-      z = 5.0f;
+    if (spawnType == CopilotSpawnType::Camera) {
+      z += 5.0f;
     }
 
     QString name = baseName;
