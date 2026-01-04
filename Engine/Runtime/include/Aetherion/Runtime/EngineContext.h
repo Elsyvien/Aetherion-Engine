@@ -71,12 +71,16 @@ public:
   [[nodiscard]] bool IsSimulationPaused() const noexcept {
     return m_simulationPaused;
   }
+  [[nodiscard]] bool IsSimulationStepRequested() const noexcept {
+    return m_stepOnceRequested;
+  }
   void RequestSimulationStep() noexcept { m_stepOnceRequested = true; }
   [[nodiscard]] bool ConsumeSimulationStepRequest() noexcept {
     const bool requested = m_stepOnceRequested;
     m_stepOnceRequested = false;
     return requested;
   }
+  void ClearSimulationStepRequest() noexcept { m_stepOnceRequested = false; }
 
   // EngineContext owns shared references to service singletons. Providers
   // remain alive until replaced or cleared by Set* methods or during
