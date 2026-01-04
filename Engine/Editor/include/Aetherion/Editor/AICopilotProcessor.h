@@ -14,6 +14,7 @@ namespace Aetherion::Assets {
 
 namespace Aetherion::Scene {
     class Scene;
+    class Entity; // Forward declaration for Entity
 }
 
 namespace Aetherion::Editor {

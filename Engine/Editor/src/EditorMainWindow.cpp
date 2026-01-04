@@ -65,6 +65,7 @@
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/SceneSerializer.h"
 #include "Aetherion/Scene/TransformComponent.h"
+#include "Aetherion/Scene/AIBehaviorComponent.h"
 
 namespace Aetherion::Editor {
 class EditorAuxPanel final : public QWidget {
@@ -922,6 +923,7 @@ EditorMainWindow::EditorMainWindow(
                 m_cameraPreview->SetSelectedCameraId(0);
               }
             }
+            UpdateAiHudFromSelection();
           });
   connect(m_selection, &EditorSelection::SelectionCleared, this, [this]() {
     AppendConsole(m_console, tr("Selection: entity cleared"),
@@ -937,6 +939,7 @@ EditorMainWindow::EditorMainWindow(
     if (m_cameraPreview) {
       m_cameraPreview->SetSelectedCameraId(0);
     }
+    UpdateAiHudFromSelection();
   });
 
   if (m_hierarchyPanel) {
@@ -1400,6 +1403,14 @@ void EditorMainWindow::CreateMenuBarContent() {
   focusOnSelectionAction->setShortcut(QKeySequence(Qt::Key_F));
   connect(focusOnSelectionAction, &QAction::triggered, this,
           [this] { FocusCameraOnSelection(); });
+
+  m_showAiHudAction = viewMenu->addAction(tr("Show AI HUD"));
+  m_showAiHudAction->setCheckable(true);
+  m_showAiHudAction->setChecked(m_aiHudVisible);
+  connect(m_showAiHudAction, &QAction::toggled, this, [this](bool visible) {
+    m_aiHudVisible = visible;
+    UpdateAiHudFromSelection();
+  });
 
   auto *helpMenu = menuBar()->addMenu(tr("&Help"));
   auto *aboutAction = helpMenu->addAction(tr("About Aetherion"));
@@ -2975,6 +2986,59 @@ void EditorMainWindow::DetachVulkanLogSink() {
   if (vk) {
     vk->SetLogCallback(nullptr);
   }
+
+  UpdateAiHudFromSelection();
+}
+
+void EditorMainWindow::UpdateAiHudFromSelection() {
+  if (!m_viewport) {
+    return;
+  }
+
+  if (!m_aiHudVisible) {
+    m_viewport->SetAiHudText({});
+    return;
+  }
+
+  QString text = tr("AI: --");
+  auto entity = m_selection ? m_selection->GetSelectedEntity() : nullptr;
+  if (entity) {
+    if (auto ai = entity->GetComponent<Scene::AIBehaviorComponent>()) {
+      const QString state =
+          QString::fromStdString(ai->GetCurrentState().empty()
+                                     ? std::string("Idle")
+                                     : ai->GetCurrentState());
+      const QString reason =
+          QString::fromStdString(ai->GetLastReason().empty()
+                                     ? std::string("No reason")
+                                     : ai->GetLastReason());
+      text = tr("AI: %1 | %2").arg(state, reason.left(80));
+
+      const QString historyEntry =
+          tr("%1 (%2)").arg(state, reason.left(40));
+      if (m_aiHudHistory.empty() || m_aiHudHistory.back() != historyEntry) {
+        m_aiHudHistory.push_back(historyEntry);
+        constexpr size_t kMaxHistory = 5;
+        if (m_aiHudHistory.size() > kMaxHistory) {
+          m_aiHudHistory.pop_front();
+        }
+      }
+
+      QString historyText;
+      for (const auto &entry : m_aiHudHistory) {
+        if (!historyText.isEmpty()) {
+          historyText += tr(" -> ");
+        }
+        historyText += entry;
+      }
+
+      if (!historyText.isEmpty()) {
+        text += tr(" | %1").arg(historyText);
+      }
+    }
+  }
+
+  m_viewport->SetAiHudText(text);
 }
 
 void EditorMainWindow::LoadLayout() {
@@ -3434,9 +3498,10 @@ bool EditorMainWindow::eventFilter(QObject *watched, QEvent *event) {
       (m_viewport && watched == m_viewport->surfaceWidget())) {
     if (event->type() == QEvent::MouseButtonPress) {
       QMouseEvent *me = static_cast<QMouseEvent *>(event);
+      const QPoint pos = me->position().toPoint();
       if (me->button() == Qt::LeftButton) {
-        m_dragStartMouseX = me->x();
-        m_dragStartMouseY = me->y();
+        m_dragStartMouseX = pos.x();
+        m_dragStartMouseY = pos.y();
         m_activeGizmoAxis = GizmoAxis::None;
         m_requestPickOnRelease = false;
 
@@ -3452,9 +3517,9 @@ bool EditorMainWindow::eventFilter(QObject *watched, QEvent *event) {
               origin = {world[12], world[13], world[14]};
             }
             Vec3 rayOrigin = GetCameraEye(m_viewport);
-            Vec3 rayDir =
-                GetCameraRayDir(m_viewport, me->x(), me->y(),
-                                m_viewport->width(), m_viewport->height());
+            Vec3 rayDir = GetCameraRayDir(m_viewport, pos.x(), pos.y(),
+                                          m_viewport->width(),
+                                          m_viewport->height());
 
             const float axisLen = 2.0f;
             // Heuristic threshold for picking
@@ -3504,8 +3569,9 @@ bool EditorMainWindow::eventFilter(QObject *watched, QEvent *event) {
         if (m_requestPickOnRelease && m_vulkanViewport &&
             m_vulkanViewport->IsReady()) {
           QMouseEvent *me = static_cast<QMouseEvent *>(event);
-          const int dx = std::abs(me->x() - m_dragStartMouseX);
-          const int dy = std::abs(me->y() - m_dragStartMouseY);
+          const QPoint pos = me->position().toPoint();
+          const int dx = std::abs(pos.x() - m_dragStartMouseX);
+          const int dy = std::abs(pos.y() - m_dragStartMouseY);
           if (dx <= 3 && dy <= 3) {
             QPoint pickPos = me->pos();
             if (m_viewport && m_viewport->surfaceWidget() &&

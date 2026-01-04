@@ -234,3 +234,19 @@ if(MSVC)
     target_compile_options(AetherionEditor PRIVATE /Zc:__cplusplus)
     target_compile_options(AetherionRuntime PRIVATE /Zc:__cplusplus)
 endif()
+
+# Lightweight self-test target (opt-in)
+add_executable(AetherionSelfTests
+    tests/SelfTest.cpp
+)
+target_include_directories(AetherionSelfTests
+    PRIVATE
+        Engine/Assets/include
+        Engine/Scripting/include
+        Engine/Core/include
+        Engine/ThirdParty
+)
+target_link_libraries(AetherionSelfTests
+    PRIVATE
+        AetherionRuntime
+)

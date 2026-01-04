@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <unordered_map>
 #include <array>
+#include <deque>
 
 #include <QByteArray>
 #include <QElapsedTimer>
@@ -133,6 +134,7 @@ private:
     QAction* m_showMeshPreviewAction = nullptr;
     QAction* m_showCameraPreviewAction = nullptr;
     QAction* m_showAICopilotAction = nullptr;
+    QAction* m_showAiHudAction = nullptr;
     QAction* m_playAction = nullptr;
     QAction* m_pauseAction = nullptr;
     QAction* m_stepAction = nullptr;
@@ -172,9 +174,11 @@ private:
     TransformData m_interactiveOldData;
     TransformData m_interactiveTargetData;
     TransformData m_interactiveCurrentData;
+    bool m_aiHudVisible{true};
+    std::deque<QString> m_aiHudHistory;
 
     void BeginInteractiveTransform();
-    void UpdateInteractiveTransformTarget(float dx, float dy, float dz);
+    void UpdateInteractiveTransformTarget(float dx, float dy, float dz);        
     void EndInteractiveTransform();
     void UpdateInteractiveTransform(float deltaTime);
 

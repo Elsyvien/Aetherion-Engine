@@ -7,6 +7,9 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef AETHERION_ENABLE_PYTHON
+#include <Python.h>
+#endif
 namespace Aetherion::Scripting {
 
 enum class BehaviorExecutionMode { Stub, LocalModel, RemoteService };
@@ -83,6 +86,9 @@ public:
     [[nodiscard]] bool HasPrompt(const std::string& assetId) const noexcept;
 
 private:
+    void InitializePython();
+    BehaviorDecision RunBehaviorPython(const BehaviorScript& script,
+                                       const std::string& contextJson);
     BehaviorPrompt LoadPromptFromDisk(const std::string& assetId,
                                       const std::filesystem::path& path) const;
     BehaviorScript GenerateScript(const BehaviorPrompt& prompt);
@@ -92,6 +98,7 @@ private:
 
     bool m_initialized{false};
     bool m_pythonEnabled{false};
+    bool m_pythonInitialized{false};
     std::filesystem::path m_outputRoot;
     std::unordered_map<std::string, BehaviorPrompt> m_prompts;
     std::unordered_map<std::string, BehaviorScript> m_scripts;

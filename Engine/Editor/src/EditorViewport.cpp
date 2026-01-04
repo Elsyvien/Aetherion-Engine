@@ -12,7 +12,24 @@
 #include <QLabel>
 #include <QTimer>
 #include <QWindow>
+#include <QPaintEvent>
 #include <cmath>
+
+class QPaintEngine;
+
+namespace
+{
+// Native surface that bypasses Qt's paint engine to avoid spurious paintEngine warnings.
+class NativeSurfaceWidget : public QWidget
+{
+public:
+    using QWidget::QWidget;
+
+protected:
+    QPaintEngine* paintEngine() const override { return nullptr; }
+    void paintEvent(QPaintEvent*) override {}
+};
+} // namespace
 
 namespace Aetherion::Editor
 {
@@ -31,7 +48,7 @@ EditorViewport::EditorViewport(QWidget* parent)
 
     // Use a simple native QWidget instead of QWindow+createWindowContainer.
     // This avoids positioning issues on macOS where QWindow may render at wrong location.
-    m_surface = new QWidget(this);
+    m_surface = new NativeSurfaceWidget(this);
     m_surface->setAttribute(Qt::WA_NativeWindow, true);
     m_surface->setAttribute(Qt::WA_PaintOnScreen, true);
     m_surface->setAttribute(Qt::WA_OpaquePaintEvent, true);
