@@ -20,6 +20,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
@@ -135,6 +136,34 @@ namespace {
 struct Vec3 {
   float x, y, z;
 };
+
+enum class CopilotLabel { Entity, Light, Camera, Cube };
+
+QString CopilotLabelName(CopilotLabel label) {
+  switch (label) {
+  case CopilotLabel::Light:
+    return QObject::tr("Light");
+  case CopilotLabel::Camera:
+    return QObject::tr("Camera");
+  case CopilotLabel::Cube:
+    return QObject::tr("Cube");
+  default:
+    return QObject::tr("Entity");
+  }
+}
+
+QString CopilotLabelPlural(CopilotLabel label) {
+  switch (label) {
+  case CopilotLabel::Light:
+    return QObject::tr("lights");
+  case CopilotLabel::Camera:
+    return QObject::tr("cameras");
+  case CopilotLabel::Cube:
+    return QObject::tr("cubes");
+  default:
+    return QObject::tr("entities");
+  }
+}
 Vec3 operator-(const Vec3 &a, const Vec3 &b) {
   return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
@@ -2371,6 +2400,218 @@ void EditorMainWindow::RenameEntity(Aetherion::Core::EntityId id) {
   statusBar()->showMessage(tr("Entity renamed"), 3000);
 }
 
+Core::EntityId EditorMainWindow::AllocateEntityId() const {
+  Core::EntityId newId = 1;
+  if (!m_scene) {
+    return newId;
+  }
+
+  for (const auto &entity : m_scene->GetEntities()) {
+    if (entity && entity->GetId() >= newId) {
+      newId = entity->GetId() + 1;
+    }
+  }
+
+  return newId;
+}
+
+std::shared_ptr<Scene::Entity> EditorMainWindow::SpawnCopilotEntity(
+    const QString &name, const std::array<float, 3> &position,
+    CopilotSpawnType type, Aetherion::Core::EntityId parentId) {
+  if (!m_scene) {
+    return nullptr;
+  }
+
+  Core::EntityId newId = AllocateEntityId();
+  auto newEntity = std::make_shared<Scene::Entity>(newId, name.toStdString());
+
+  auto transform = std::make_shared<Scene::TransformComponent>();
+  transform->SetPosition(position[0], position[1], position[2]);
+  transform->SetScale(1.0f, 1.0f, 1.0f);
+  if (type == CopilotSpawnType::Light) {
+    transform->SetRotationDegrees(-55.0f, 215.0f, 0.0f);
+  } else {
+    transform->SetRotationDegrees(0.0f, 0.0f, 0.0f);
+  }
+  if (parentId != 0) {
+    transform->SetParent(parentId);
+  }
+  newEntity->AddComponent(transform);
+
+  if (type == CopilotSpawnType::Light) {
+    auto light = std::make_shared<Scene::LightComponent>();
+    light->SetType(Scene::LightComponent::LightType::Directional);
+    bool hasPrimaryDirectional = false;
+    for (const auto &entity : m_scene->GetEntities()) {
+      if (entity) {
+        if (auto existingLight =
+                entity->GetComponent<Scene::LightComponent>()) {
+          if (existingLight->GetType() ==
+                  Scene::LightComponent::LightType::Directional &&
+              existingLight->IsPrimary()) {
+            hasPrimaryDirectional = true;
+            break;
+          }
+        }
+      }
+    }
+    light->SetPrimary(!hasPrimaryDirectional);
+    newEntity->AddComponent(light);
+  } else if (type == CopilotSpawnType::Camera) {
+    auto camera = std::make_shared<Scene::CameraComponent>();
+    bool hasPrimaryCamera = false;
+    for (const auto &entity : m_scene->GetEntities()) {
+      if (!entity) {
+        continue;
+      }
+      if (auto existingCamera =
+              entity->GetComponent<Scene::CameraComponent>()) {
+        if (existingCamera->IsPrimary()) {
+          hasPrimaryCamera = true;
+          break;
+        }
+      }
+    }
+    camera->SetPrimary(!hasPrimaryCamera);
+    newEntity->AddComponent(camera);
+  }
+
+  ExecuteCommand(std::make_unique<CreateEntityCommand>(m_scene, newEntity));
+  return newEntity;
+}
+
+void EditorMainWindow::HandleCopilotPrompt(const QString &prompt) {
+  if (!m_copilotPanel) {
+    return;
+  }
+
+  if (!m_scene) {
+    m_copilotPanel->AppendMessage(
+        "Copilot", tr("No active scene loaded. Create or open a scene first."));
+    return;
+  }
+
+  const QString trimmed = prompt.trimmed();
+  if (trimmed.isEmpty()) {
+    return;
+  }
+
+  const QString lowered = trimmed.toLower();
+  const bool spawnRequest = lowered.contains("spawn") ||
+                            lowered.contains("create") ||
+                            lowered.contains("add");
+  if (!spawnRequest) {
+    m_copilotPanel->AppendMessage(
+        "Copilot",
+        tr("Try a command like 'spawn a grid of 10 cubes' to create entities."));
+    return;
+  }
+
+  int count = 1;
+  QRegularExpression numberRegex(R"(\b(\d+)\b)");
+  QRegularExpressionMatchIterator matchIt = numberRegex.globalMatch(trimmed);
+  int firstMatchValue = -1;
+  int numericMatchCount = 0;
+  while (matchIt.hasNext()) {
+    const QRegularExpressionMatch m = matchIt.next();
+    bool ok = false;
+    const int value = m.captured(1).toInt(&ok);
+    if (!ok) {
+      continue;
+    }
+    if (firstMatchValue < 0) {
+      firstMatchValue = value;
+    }
+    ++numericMatchCount;
+  }
+  if (firstMatchValue > 0) {
+    count = firstMatchValue;
+  }
+  if (numericMatchCount > 1 && m_copilotPanel) {
+    m_copilotPanel->AppendMessage(
+        "Copilot",
+        tr("Multiple numbers detected in your command; using %1 as the spawn count.")
+            .arg(count));
+  }
+  count = std::clamp(count, 1, 64);
+
+  CopilotSpawnType spawnType = CopilotSpawnType::Empty;
+  CopilotLabel label = CopilotLabel::Entity;
+  if (lowered.contains("light")) {
+    spawnType = CopilotSpawnType::Light;
+    label = CopilotLabel::Light;
+  } else if (lowered.contains("camera")) {
+    spawnType = CopilotSpawnType::Camera;
+    label = CopilotLabel::Camera;
+  } else if (lowered.contains("cube")) {
+    label = CopilotLabel::Cube;
+  }
+
+  const QString baseName = CopilotLabelName(label);
+
+  const bool grid = lowered.contains("grid");
+  const float spacing = 2.0f;
+  const int gridSize =
+      grid ? static_cast<int>(std::ceil(std::sqrt(count))) : 1;
+  const float gridOffset =
+      grid ? (static_cast<float>(gridSize - 1) * spacing * 0.5f) : 0.0f;
+
+  std::shared_ptr<Scene::Entity> lastEntity;
+  Core::EntityId lastId = 0;
+  for (int i = 0; i < count; ++i) {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    if (grid) {
+      const int col = i % gridSize;
+      const int row = i / gridSize;
+      x = static_cast<float>(col) * spacing - gridOffset;
+      z = static_cast<float>(row) * spacing - gridOffset;
+    } else if (count > 1) {
+      x = static_cast<float>(i) * spacing;
+    }
+
+    if (spawnType == CopilotSpawnType::Camera) {
+      z += 5.0f;
+    }
+
+    QString name = baseName;
+    if (count > 1) {
+      name = tr("%1 %2").arg(baseName).arg(i + 1);
+    }
+
+    auto entity = SpawnCopilotEntity(name, {x, y, z}, spawnType, 0);
+    if (entity) {
+      lastEntity = entity;
+      lastId = entity->GetId();
+    }
+  }
+
+  if (lastEntity) {
+    if (m_hierarchyPanel) {
+      m_hierarchyPanel->BindScene(m_scene);
+      m_hierarchyPanel->SetSelectedEntity(lastId);
+    }
+    if (m_selection) {
+      m_selection->SelectEntity(lastEntity);
+    }
+  }
+
+  QString response;
+  const QString pluralName = CopilotLabelPlural(label);
+  if (count == 1) {
+    response = tr("Spawned 1 %1.").arg(baseName);
+  } else if (grid) {
+    response = tr("Spawned %1 %2 in a grid.").arg(count).arg(pluralName);
+  } else {
+    response = tr("Spawned %1 %2.").arg(count).arg(pluralName);
+  }
+
+  m_copilotPanel->AppendMessage("Copilot", response);
+  AppendConsole(m_console, response, ConsoleSeverity::Info);
+  statusBar()->showMessage(response, 2500);
+}
+
 void EditorMainWindow::CreateEmptyEntity(Aetherion::Core::EntityId parentId) {
   if (!m_scene) {
     statusBar()->showMessage(tr("No active scene"), 2000);
@@ -3069,15 +3310,12 @@ void EditorMainWindow::CreateDockPanels() {
             }
           });
 
-  connect(m_copilotPanel, &AICopilotPanel::PromptSubmitted, this, [this](const QString& prompt){
-      // Mock implementation for Phase 1
-      m_copilotPanel->SetProcessing(true);
-      // Simulate network delay or processing
-      QTimer::singleShot(1000, this, [this, prompt](){
-          m_copilotPanel->AppendMessage("Copilot", tr("I received your request: '%1'. (LLM connection not yet implemented)").arg(prompt));
-          m_copilotPanel->SetProcessing(false);
-      });
-  });
+  connect(m_copilotPanel, &AICopilotPanel::PromptSubmitted, this,
+          [this](const QString &prompt) {
+            m_copilotPanel->SetProcessing(true);
+            HandleCopilotPrompt(prompt);
+            m_copilotPanel->SetProcessing(false);
+          });
 
 }
 
