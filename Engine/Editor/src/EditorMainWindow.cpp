@@ -44,6 +44,7 @@
 #include "Aetherion/Editor/EditorAssetBrowser.h"
 #include "Aetherion/Editor/EditorCameraPreview.h"
 #include "Aetherion/Editor/EditorConsole.h"
+#include "Aetherion/Editor/EditorCommandPalette.h"
 #include "Aetherion/Editor/EditorHierarchyPanel.h"
 #include "Aetherion/Editor/EditorInspectorPanel.h"
 #include "Aetherion/Editor/EditorMeshPreview.h"
@@ -462,6 +463,7 @@ EditorMainWindow::EditorMainWindow(
       std::max(1, 1000 / std::max(1, m_settings.targetFps));
   m_headlessSleepMs = m_settings.headlessSleepMs;
   m_selection = new EditorSelection(this);
+  InitializeCommandPalette();
 
   setWindowTitle("Aetherion Editor");
   setWindowIcon(QApplication::windowIcon());
@@ -1106,6 +1108,27 @@ EditorMainWindow::~EditorMainWindow() {
   }
 }
 
+void EditorMainWindow::InitializeCommandPalette() {
+  if (!m_commandPalette) {
+    m_commandPalette = new EditorCommandPalette(this);
+  }
+}
+
+void EditorMainWindow::RegisterCommandAction(QAction *action,
+                                             const QString &category,
+                                             const QString &description) {
+  if (!m_commandPalette || !action) {
+    return;
+  }
+  m_commandPalette->RegisterAction(action, category, description);
+}
+
+void EditorMainWindow::OpenCommandPalette() {
+  if (m_commandPalette) {
+    m_commandPalette->ShowPalette();
+  }
+}
+
 void EditorMainWindow::CreateMenuBarContent() {
   auto *fileMenu = menuBar()->addMenu(tr("&File"));
   fileMenu->addAction(tr("New Project"), [] {});
@@ -1113,28 +1136,35 @@ void EditorMainWindow::CreateMenuBarContent() {
   auto *importGltf = fileMenu->addAction(tr("Import glTF..."));
   connect(importGltf, &QAction::triggered, this,
           &EditorMainWindow::ImportGltfAsset);
+  RegisterCommandAction(importGltf, tr("File"), tr("Import a glTF asset"));
   auto *openScene = fileMenu->addAction(tr("Open Scene..."));
   openScene->setShortcut(QKeySequence::Open);
   connect(openScene, &QAction::triggered, this, &EditorMainWindow::OpenScene);
+  RegisterCommandAction(openScene, tr("File"), tr("Open a scene file"));
   auto *saveScene = fileMenu->addAction(tr("Save Scene"));
   saveScene->setShortcut(QKeySequence::Save);
   connect(saveScene, &QAction::triggered, this, &EditorMainWindow::SaveScene);
+  RegisterCommandAction(saveScene, tr("File"), tr("Save the active scene"));
   auto *reloadScene = fileMenu->addAction(tr("Reload Scene"));
   reloadScene->setShortcut(QKeySequence::Refresh);
   connect(reloadScene, &QAction::triggered, this,
           &EditorMainWindow::ReloadScene);
+  RegisterCommandAction(reloadScene, tr("File"), tr("Reload the active scene"));
   auto *rescanAssets = fileMenu->addAction(tr("Rescan Assets"));
   rescanAssets->setShortcut(QKeySequence(tr("Ctrl+Shift+R")));
   connect(rescanAssets, &QAction::triggered, this,
           &EditorMainWindow::RescanAssets);
+  RegisterCommandAction(rescanAssets, tr("File"),
+                        tr("Rescan the asset registry"));
   fileMenu->addSeparator();
-  fileMenu->addAction(tr("Exit"), this, &QWidget::close);
+  auto *exitAction = fileMenu->addAction(tr("Exit"), this, &QWidget::close);
+  RegisterCommandAction(exitAction, tr("File"), tr("Exit the editor"));
 
   // QoL shortcuts that don't warrant extra UI.
-  auto *focusAssetFilter = new QAction(tr("Focus Asset Filter"), this);
-  focusAssetFilter->setShortcut(QKeySequence::Find);
-  addAction(focusAssetFilter);
-  connect(focusAssetFilter, &QAction::triggered, this, [this] {
+  m_focusAssetFilterAction = new QAction(tr("Focus Asset Filter"), this);
+  m_focusAssetFilterAction->setShortcut(QKeySequence::Find);
+  addAction(m_focusAssetFilterAction);
+  connect(m_focusAssetFilterAction, &QAction::triggered, this, [this] {
     if (m_assetBrowserDock) {
       m_assetBrowserDock->setVisible(true);
       m_assetBrowserDock->raise();
@@ -1143,6 +1173,8 @@ void EditorMainWindow::CreateMenuBarContent() {
       m_assetBrowser->FocusFilter();
     }
   });
+  RegisterCommandAction(m_focusAssetFilterAction, tr("Navigation"),
+                        tr("Focus the asset browser filter"));
 
   auto *editMenu = menuBar()->addMenu(tr("&Edit"));
   m_undoAction = editMenu->addAction(tr("Undo"));
@@ -1153,12 +1185,24 @@ void EditorMainWindow::CreateMenuBarContent() {
   m_redoAction->setShortcut(QKeySequence::Redo);
   connect(m_redoAction, &QAction::triggered, this, &EditorMainWindow::Redo);
 
+  RegisterCommandAction(m_undoAction, tr("Edit"), tr("Undo the last action"));
+  RegisterCommandAction(m_redoAction, tr("Edit"), tr("Redo the last action"));
   UpdateUndoRedoState();
+  editMenu->addSeparator();
+
+  m_commandPaletteAction = editMenu->addAction(tr("Command Palette"));
+  m_commandPaletteAction->setShortcut(QKeySequence(tr("Ctrl+Shift+P")));
+  connect(m_commandPaletteAction, &QAction::triggered, this,
+          &EditorMainWindow::OpenCommandPalette);
+  RegisterCommandAction(m_commandPaletteAction, tr("Edit"),
+                        tr("Search and run editor commands"));
   editMenu->addSeparator();
 
   auto *preferences = editMenu->addAction(tr("Preferences"));
   connect(preferences, &QAction::triggered, this,
           &EditorMainWindow::OpenSettingsDialog);
+  RegisterCommandAction(preferences, tr("Edit"),
+                        tr("Open editor preferences"));
   m_validationMenuAction =
       editMenu->addAction(tr("Enable Vulkan Validation Layers"));
   m_validationMenuAction->setCheckable(true);
@@ -1171,6 +1215,8 @@ void EditorMainWindow::CreateMenuBarContent() {
             m_settings.validationEnabled = enabled;
             ApplySettings(m_settings, true);
           });
+  RegisterCommandAction(m_validationMenuAction, tr("Edit"),
+                        tr("Toggle Vulkan validation layers"));
 
   m_loggingMenuAction = editMenu->addAction(tr("Verbose Rendering Logs"));
   m_loggingMenuAction->setCheckable(true);
@@ -1182,6 +1228,8 @@ void EditorMainWindow::CreateMenuBarContent() {
     m_settings.verboseLogging = enabled;
     ApplySettings(m_settings, true);
   });
+  RegisterCommandAction(m_loggingMenuAction, tr("Edit"),
+                        tr("Toggle verbose rendering logs"));
 
   auto *viewMenu = menuBar()->addMenu(tr("&View"));
 
@@ -1198,6 +1246,8 @@ void EditorMainWindow::CreateMenuBarContent() {
               }
             }
           });
+  RegisterCommandAction(m_showHierarchyAction, tr("View"),
+                        tr("Toggle the hierarchy panel"));
 
   m_showInspectorAction = viewMenu->addAction(tr("Show Inspector"));
   m_showInspectorAction->setCheckable(true);
@@ -1212,6 +1262,8 @@ void EditorMainWindow::CreateMenuBarContent() {
               }
             }
           });
+  RegisterCommandAction(m_showInspectorAction, tr("View"),
+                        tr("Toggle the inspector panel"));
 
   m_showAssetBrowserAction = viewMenu->addAction(tr("Show Asset Browser"));
   m_showAssetBrowserAction->setCheckable(true);
@@ -1226,6 +1278,8 @@ void EditorMainWindow::CreateMenuBarContent() {
               }
             }
           });
+  RegisterCommandAction(m_showAssetBrowserAction, tr("View"),
+                        tr("Toggle the asset browser panel"));
 
   m_showConsoleAction = viewMenu->addAction(tr("Show Console"));
   m_showConsoleAction->setCheckable(true);
@@ -1239,6 +1293,8 @@ void EditorMainWindow::CreateMenuBarContent() {
       }
     }
   });
+  RegisterCommandAction(m_showConsoleAction, tr("View"),
+                        tr("Toggle the console panel"));
 
   m_showMeshPreviewAction = viewMenu->addAction(tr("Show Mesh Preview"));
   m_showMeshPreviewAction->setCheckable(true);
@@ -1253,6 +1309,8 @@ void EditorMainWindow::CreateMenuBarContent() {
               }
             }
           });
+  RegisterCommandAction(m_showMeshPreviewAction, tr("View"),
+                        tr("Toggle the mesh preview panel"));
 
   m_showCameraPreviewAction = viewMenu->addAction(tr("Show Camera Preview"));
   m_showCameraPreviewAction->setCheckable(true);
@@ -1267,6 +1325,8 @@ void EditorMainWindow::CreateMenuBarContent() {
               }
             }
           });
+  RegisterCommandAction(m_showCameraPreviewAction, tr("View"),
+                        tr("Toggle the camera preview panel"));
 
   m_showAICopilotAction = viewMenu->addAction(tr("Show AI Copilot"));
   m_showAICopilotAction->setCheckable(true);
@@ -1281,9 +1341,11 @@ void EditorMainWindow::CreateMenuBarContent() {
               }
             }
           });
+  RegisterCommandAction(m_showAICopilotAction, tr("View"),
+                        tr("Toggle the AI copilot panel"));
 
   viewMenu->addSeparator();
-  viewMenu->addAction(tr("Save Layout As..."), [this] {
+  auto *saveLayoutAction = viewMenu->addAction(tr("Save Layout As..."), [this] {
     bool ok = false;
     const QString name = QInputDialog::getText(
         this, tr("Save Layout"), tr("Layout name:"), QLineEdit::Normal, QString(),
@@ -1326,7 +1388,9 @@ void EditorMainWindow::CreateMenuBarContent() {
     settings.sync();
     statusBar()->showMessage(tr("Layout preset saved"), 2000);
   });
-  viewMenu->addAction(tr("Load Layout..."), [this] {
+  RegisterCommandAction(saveLayoutAction, tr("View"),
+                        tr("Save the current layout preset"));
+  auto *loadLayoutAction = viewMenu->addAction(tr("Load Layout..."), [this] {
     QSettings settings("Aetherion", "Editor");
     QStringList presets =
         settings.value("layout/presetNames").toStringList();
@@ -1361,7 +1425,9 @@ void EditorMainWindow::CreateMenuBarContent() {
     SaveLayout();
     statusBar()->showMessage(tr("Layout preset loaded"), 2000);
   });
-  viewMenu->addAction(tr("Reset Layout"), [this] {
+  RegisterCommandAction(loadLayoutAction, tr("View"),
+                        tr("Load a saved layout preset"));
+  auto *resetLayoutAction = viewMenu->addAction(tr("Reset Layout"), [this] {
     if (!m_defaultLayoutGeometry.isEmpty()) {
       restoreGeometry(m_defaultLayoutGeometry);
       m_defaultLayoutGeometry = saveGeometry();
@@ -1371,6 +1437,8 @@ void EditorMainWindow::CreateMenuBarContent() {
     SaveLayout();
     statusBar()->showMessage(tr("Layout reset"), 2000);
   });
+  RegisterCommandAction(resetLayoutAction, tr("View"),
+                        tr("Reset the layout to defaults"));
   viewMenu->addSeparator();
 
   auto *fullscreenAction = viewMenu->addAction(tr("Toggle Fullscreen"));        
@@ -1386,6 +1454,8 @@ void EditorMainWindow::CreateMenuBarContent() {
             }
             fullscreenAction->setChecked(isFullScreen());
           });
+  RegisterCommandAction(fullscreenAction, tr("View"),
+                        tr("Toggle fullscreen mode"));
 
   auto *resetCameraAction = viewMenu->addAction(tr("Reset Camera"));
   resetCameraAction->setShortcut(QKeySequence(Qt::Key_Home));
@@ -1398,11 +1468,15 @@ void EditorMainWindow::CreateMenuBarContent() {
     }
     statusBar()->showMessage(tr("Camera reset"), 2000);
   });
+  RegisterCommandAction(resetCameraAction, tr("View"),
+                        tr("Reset the editor camera"));
 
   auto *focusOnSelectionAction = viewMenu->addAction(tr("Focus on Selection"));
   focusOnSelectionAction->setShortcut(QKeySequence(Qt::Key_F));
   connect(focusOnSelectionAction, &QAction::triggered, this,
           [this] { FocusCameraOnSelection(); });
+  RegisterCommandAction(focusOnSelectionAction, tr("View"),
+                        tr("Frame the selected entity"));
 
   m_showAiHudAction = viewMenu->addAction(tr("Show AI HUD"));
   m_showAiHudAction->setCheckable(true);
@@ -1411,6 +1485,8 @@ void EditorMainWindow::CreateMenuBarContent() {
     m_aiHudVisible = visible;
     UpdateAiHudFromSelection();
   });
+  RegisterCommandAction(m_showAiHudAction, tr("View"),
+                        tr("Toggle the AI HUD overlay"));
 
   auto *helpMenu = menuBar()->addMenu(tr("&Help"));
   auto *aboutAction = helpMenu->addAction(tr("About Aetherion"));
@@ -1427,6 +1503,8 @@ void EditorMainWindow::CreateMenuBarContent() {
         tr("\nRunning on: %1").arg(QSysInfo::prettyProductName());
     QMessageBox::about(this, tr("About Aetherion"), text);
   });
+  RegisterCommandAction(aboutAction, tr("Help"),
+                        tr("Show information about Aetherion"));
 }
 
 void EditorMainWindow::CreateToolBarContent() {
@@ -1453,6 +1531,14 @@ void EditorMainWindow::CreateToolBarContent() {
   connect(m_resetAction, &QAction::triggered, this,
           [this] { ResetPlaySession(); });
 
+  RegisterCommandAction(m_playAction, tr("Playback"),
+                        tr("Start or stop play mode"));
+  RegisterCommandAction(m_pauseAction, tr("Playback"), tr("Pause playback"));
+  RegisterCommandAction(m_stepAction, tr("Playback"),
+                        tr("Step the simulation once"));
+  RegisterCommandAction(m_resetAction, tr("Playback"),
+                        tr("Reset the play session"));
+
   toolBar->addSeparator();
 
   m_modeActionGroup = new QActionGroup(toolBar);
@@ -1476,6 +1562,13 @@ void EditorMainWindow::CreateToolBarContent() {
           [this] { ActivateModeTab(1); });
   connect(m_modeUILayoutAction, &QAction::triggered, this,
           [this] { ActivateModeTab(2); });
+
+  RegisterCommandAction(m_modeEditAction, tr("Mode"),
+                        tr("Switch to edit mode"));
+  RegisterCommandAction(m_modePlaytestAction, tr("Mode"),
+                        tr("Switch to playtest mode"));
+  RegisterCommandAction(m_modeUILayoutAction, tr("Mode"),
+                        tr("Switch to UI layout mode"));
 
   toolBar->addSeparator();
 
@@ -1509,6 +1602,15 @@ void EditorMainWindow::CreateToolBarContent() {
   m_snapToggleAction->setCheckable(true);
   m_snapToggleAction->setChecked(true);
   m_snapToggleAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_S));
+
+  RegisterCommandAction(m_gizmoTranslateAction, tr("Gizmo"),
+                        tr("Activate translate gizmo"));
+  RegisterCommandAction(m_gizmoRotateAction, tr("Gizmo"),
+                        tr("Activate rotate gizmo"));
+  RegisterCommandAction(m_gizmoScaleAction, tr("Gizmo"),
+                        tr("Activate scale gizmo"));
+  RegisterCommandAction(m_snapToggleAction, tr("Gizmo"),
+                        tr("Toggle snap for transforms"));
 
   ActivateModeTab(0);
   m_gizmoTranslateAction->setChecked(true);
