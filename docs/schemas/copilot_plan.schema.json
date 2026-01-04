@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Aetherion Copilot Plan",
+  "type": "object",
+  "required": ["steps"],
+  "additionalProperties": false,
+  "properties": {
+    "summary": { "type": "string" },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" }
+    }
+  },
+  "$defs": {
+    "vec3": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "spawnArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["entity", "cube", "light", "camera"]
+        },
+        "count": { "type": "integer", "minimum": 1 },
+        "grid": { "type": "boolean" },
+        "spacing": { "type": "number" },
+        "origin": { "$ref": "#/$defs/vec3" }
+      }
+    },
+    "moveArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": [
+            "up",
+            "down",
+            "left",
+            "right",
+            "forward",
+            "back"
+          ]
+        },
+        "distance": { "type": "number" },
+        "offset": { "$ref": "#/$defs/vec3" }
+      }
+    },
+    "parentArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target_id": { "type": ["integer", "string"] }
+      }
+    },
+    "emptyArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "step": {
+      "type": "object",
+      "required": ["tool"],
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "type": "string",
+          "enum": [
+            "spawn_entity",
+            "move_selection",
+            "delete_selection",
+            "duplicate_selection",
+            "parent_selection",
+            "focus_selection"
+          ]
+        },
+        "args": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "tool": { "const": "spawn_entity" } } },
+          "then": { "properties": { "args": { "$ref": "#/$defs/spawnArgs" } } }
+        },
+        {
+          "if": { "properties": { "tool": { "const": "move_selection" } } },
+          "then": { "properties": { "args": { "$ref": "#/$defs/moveArgs" } } }
+        },
+        {
+          "if": { "properties": { "tool": { "const": "parent_selection" } } },
+          "then": { "properties": { "args": { "$ref": "#/$defs/parentArgs" } } }
+        },
+        {
+          "if": { "properties": { "tool": { "const": "delete_selection" } } },
+          "then": { "properties": { "args": { "$ref": "#/$defs/emptyArgs" } } }
+        },
+        {
+          "if": { "properties": { "tool": { "const": "duplicate_selection" } } },
+          "then": { "properties": { "args": { "$ref": "#/$defs/emptyArgs" } } }
+        },
+        {
+          "if": { "properties": { "tool": { "const": "focus_selection" } } },
+          "then": { "properties": { "args": { "$ref": "#/$defs/emptyArgs" } } }
+        }
+      ]
+    }
+  }
+}
