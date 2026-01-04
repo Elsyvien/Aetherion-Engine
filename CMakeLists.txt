@@ -195,6 +195,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorConsole.cpp
     Engine/Editor/src/EditorCameraPreview.cpp
     Engine/Editor/src/EditorMeshPreview.cpp
+    Engine/Editor/src/EditorCommandPalette.cpp
     Engine/Editor/src/AICopilotPanel.cpp
     Engine/Editor/src/AICopilotProcessor.cpp
     Engine/Editor/src/EditorSettings.cpp
@@ -215,6 +216,7 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/EditorConsole.h
         Engine/Editor/include/Aetherion/Editor/EditorCameraPreview.h
         Engine/Editor/include/Aetherion/Editor/EditorMeshPreview.h
+        Engine/Editor/include/Aetherion/Editor/EditorCommandPalette.h
         Engine/Editor/include/Aetherion/Editor/AICopilotPanel.h
         Engine/Editor/include/Aetherion/Editor/AICopilotProcessor.h
         Engine/Editor/include/Aetherion/Editor/EditorSettings.h

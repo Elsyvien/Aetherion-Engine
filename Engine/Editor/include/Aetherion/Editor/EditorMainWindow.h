@@ -52,6 +52,7 @@ class EditorCameraPreview;
 class EditorConsole;
 class EditorSelection;
 class EditorAuxPanel;
+class EditorCommandPalette;
 class AICopilotPanel;
 class AICopilotProcessor;
 
@@ -138,6 +139,8 @@ private:
     QAction* m_showBookmarksAction = nullptr;
     QAction* m_showAICopilotAction = nullptr;
     QAction* m_showAiHudAction = nullptr;
+    QAction* m_commandPaletteAction = nullptr;
+    QAction* m_focusAssetFilterAction = nullptr;
     QAction* m_playAction = nullptr;
     QAction* m_pauseAction = nullptr;
     QAction* m_stepAction = nullptr;
@@ -162,6 +165,7 @@ private:
     QByteArray m_defaultLayoutState;
     QByteArray m_defaultLayoutGeometry;
     EditorAuxPanel* m_auxPanel = nullptr;
+    EditorCommandPalette* m_commandPalette = nullptr;
     QString m_selectedAssetId;
     std::uint64_t m_assetChangeSerial{0};
     bool m_assetWatcherDirty{true};
@@ -203,6 +207,11 @@ private:
     void CreateMenuBarContent();
     void CreateToolBarContent();
     void CreateDockPanels();
+    void InitializeCommandPalette();
+    void RegisterCommandAction(QAction* action,
+                               const QString& category,
+                               const QString& description = QString());
+    void OpenCommandPalette();
     void ConfigureStatusBar();
     void UpdateWindowTitle();
     void SetSceneDirty(bool dirty);
