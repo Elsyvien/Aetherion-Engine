@@ -1,6 +1,7 @@
 #include "Aetherion/Scene/Scene.h"
 
 #include "Aetherion/Runtime/EngineContext.h"
+#include "Aetherion/Scene/Component.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/System.h"
 #include "Aetherion/Scene/TransformComponent.h"
@@ -40,7 +41,21 @@ void Scene::AddEntity(std::shared_ptr<Entity> entity)
 
     // TODO: Route through ECS world to ensure deterministic ordering and ownership.
     m_entityMap[id] = entity.get();
+    entity->BindScene(this);
     m_entities.push_back(std::move(entity));
+
+    if (id >= m_nextEntityId)
+    {
+        m_nextEntityId = id + 1;
+    }
+}
+
+std::shared_ptr<Entity> Scene::CreateEntity(std::string name)
+{
+    const Core::EntityId id = m_nextEntityId++;
+    auto entity = std::make_shared<Entity>(id, std::move(name));
+    AddEntity(entity);
+    return entity;
 }
 
 void Scene::RemoveEntity(Core::EntityId id)
@@ -89,6 +104,7 @@ void Scene::RemoveEntity(Core::EntityId id)
         }
     }
 
+    entityPtr->BindScene(nullptr);
     m_entityMap.erase(it);
 
     // Remove the entity from the list
@@ -219,5 +235,85 @@ void Scene::BindContext(Runtime::EngineContext& context)
 {
     m_context = &context;
     // TODO: Use context to resolve services for systems and entities.
+}
+
+void Scene::Tick(float deltaTime, bool playing, bool paused, bool stepRequested)
+{
+    if (playing && !m_playing)
+    {
+        BeginPlay();
+    }
+    else if (!playing && m_playing)
+    {
+        EndPlay();
+    }
+
+    if (!m_playing)
+    {
+        return;
+    }
+
+    if (paused && !stepRequested)
+    {
+        return;
+    }
+
+    UpdateComponents(deltaTime);
+}
+
+void Scene::BeginPlay()
+{
+    m_playing = true;
+    for (const auto& entity : m_entities)
+    {
+        if (!entity)
+        {
+            continue;
+        }
+        for (const auto& component : entity->GetComponents())
+        {
+            if (component)
+            {
+                component->BeginPlay();
+            }
+        }
+    }
+}
+
+void Scene::EndPlay()
+{
+    for (const auto& entity : m_entities)
+    {
+        if (!entity)
+        {
+            continue;
+        }
+        for (const auto& component : entity->GetComponents())
+        {
+            if (component)
+            {
+                component->EndPlay();
+            }
+        }
+    }
+    m_playing = false;
+}
+
+void Scene::UpdateComponents(float deltaTime)
+{
+    for (const auto& entity : m_entities)
+    {
+        if (!entity)
+        {
+            continue;
+        }
+        for (const auto& component : entity->GetComponents())
+        {
+            if (component)
+            {
+                component->Update(deltaTime);
+            }
+        }
+    }
 }
 } // namespace Aetherion::Scene

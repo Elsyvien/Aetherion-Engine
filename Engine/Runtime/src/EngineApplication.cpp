@@ -373,7 +373,7 @@ public:
     }
 
     if (context.IsSimulationPaused()) {
-      const bool stepRequested = context.ConsumeSimulationStepRequest();
+      const bool stepRequested = context.IsSimulationStepRequested();
       if (!stepRequested) {
         return;
       }
@@ -514,6 +514,17 @@ public:
     ConfigureSceneSystems();
 
     if (auto scene = m_scene.lock()) {
+      const bool playing = context.IsSimulationPlaying();
+      const bool paused = context.IsSimulationPaused();
+      const bool stepRequested = context.IsSimulationStepRequested();
+      scene->Tick(deltaTime, playing, paused, stepRequested);
+
+      const bool shouldUpdate =
+          playing && (!paused || stepRequested);
+      if (!shouldUpdate) {
+        return;
+      }
+
       for (const auto &system : scene->GetSystems()) {
         if (system) {
           system->Update(*scene, deltaTime);
@@ -1070,6 +1081,8 @@ void EngineApplication::Tick() {
   if (m_runtimeSystems.empty()) {
     UpdateSceneSystems(deltaTime);
   }
+
+  m_context->ClearSimulationStepRequest();
 }
 
 void EngineApplication::RegisterSystem(std::shared_ptr<IRuntimeSystem> system) {
@@ -1096,7 +1109,7 @@ void EngineApplication::SetSimulationPlaying(bool playing) {
   if (m_context) {
     m_context->SetSimulationState(m_simulationPlaying, m_simulationPaused);
     if (!m_simulationPlaying) {
-      (void)m_context->ConsumeSimulationStepRequest();
+      m_context->ClearSimulationStepRequest();
     }
   }
 }
@@ -1169,6 +1182,14 @@ void EngineApplication::UpdateSceneSystems(float deltaTime) {
     return;
   }
 
+  const bool playing =
+      m_context ? m_context->IsSimulationPlaying() : false;
+  const bool paused =
+      m_context ? m_context->IsSimulationPaused() : false;
+  const bool stepRequested =
+      m_context ? m_context->IsSimulationStepRequested() : false;
+  m_activeScene->Tick(deltaTime, playing, paused, stepRequested);
+
   if (!m_sceneSystemsConfigured && m_context) {
     for (const auto &system : m_activeScene->GetSystems()) {
       if (system) {
@@ -1176,6 +1197,11 @@ void EngineApplication::UpdateSceneSystems(float deltaTime) {
       }
     }
     m_sceneSystemsConfigured = true;
+  }
+
+  const bool shouldUpdate = playing && (!paused || stepRequested);
+  if (!shouldUpdate) {
+    return;
   }
 
   for (const auto &system : m_activeScene->GetSystems()) {

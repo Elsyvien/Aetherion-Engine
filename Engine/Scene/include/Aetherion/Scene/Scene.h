@@ -28,6 +28,7 @@ public:
     Scene& operator=(const Scene&) = delete;
 
     void AddEntity(std::shared_ptr<Entity> entity);
+    std::shared_ptr<Entity> CreateEntity(std::string name = {});
     void RemoveEntity(Core::EntityId id);
     [[nodiscard]] const std::vector<std::shared_ptr<Entity>>& GetEntities() const noexcept;
     [[nodiscard]] std::shared_ptr<Entity> FindEntityById(Core::EntityId id) const noexcept;
@@ -42,13 +43,21 @@ public:
     void SetName(std::string name);
 
     void BindContext(Runtime::EngineContext& context);
+    void Tick(float deltaTime, bool playing, bool paused, bool stepRequested);
+    [[nodiscard]] bool IsPlaying() const noexcept { return m_playing; }
 
     // TODO: Replace collections with ECS registries and scheduler integration.
 private:
+    void BeginPlay();
+    void EndPlay();
+    void UpdateComponents(float deltaTime);
+
     std::string m_name;
     Runtime::EngineContext* m_context = nullptr;
     std::vector<std::shared_ptr<Entity>> m_entities;
     std::unordered_map<Core::EntityId, Entity*> m_entityMap;
     std::vector<std::shared_ptr<System>> m_systems;
+    Core::EntityId m_nextEntityId{1};
+    bool m_playing{false};
 };
 } // namespace Aetherion::Scene
