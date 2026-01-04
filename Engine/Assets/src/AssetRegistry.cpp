@@ -85,6 +85,10 @@ AssetRegistry::MeshImportSettings DefaultMeshImportSettings() {
   return AssetRegistry::MeshImportSettings{};
 }
 
+AssetRegistry::TextureImportSettings DefaultTextureImportSettings() {
+  return AssetRegistry::TextureImportSettings{};
+}
+
 float SanitizeImportScale(float value) {
   if (!std::isfinite(value) || value <= 0.0f) {
     return 1.0f;
@@ -165,6 +169,57 @@ void WriteMeshImportSettingsToJson(
     import["optimize"] = settings.optimize;
   }
   import["optimize"] = settings.optimize;
+}
+
+AssetRegistry::TextureImportSettings
+ReadTextureImportSettingsFromJson(const Json &root) {
+  auto settings = DefaultTextureImportSettings();
+  const auto importIt = root.find("import");
+  if (importIt == root.end() || !importIt->is_object()) {
+    return settings;
+  }
+
+  const Json &import = *importIt;
+  if (import.contains("srgb") && import["srgb"].is_boolean()) {
+    settings.srgb = import["srgb"].get<bool>();
+  }
+  if (import.contains("generateMipmaps") &&
+      import["generateMipmaps"].is_boolean()) {
+    settings.generateMipmaps = import["generateMipmaps"].get<bool>();
+  }
+  if (import.contains("flipVertical") && import["flipVertical"].is_boolean()) {
+    settings.flipVertical = import["flipVertical"].get<bool>();
+  }
+  if (import.contains("isNormalMap") && import["isNormalMap"].is_boolean()) {
+    settings.isNormalMap = import["isNormalMap"].get<bool>();
+  }
+
+  return settings;
+}
+
+void WriteTextureImportSettingsToJson(
+    Json &root, const AssetRegistry::TextureImportSettings &settings,
+    bool overwrite) {
+  if (!root.contains("import") || !root["import"].is_object()) {
+    root["import"] = Json::object();
+  }
+
+  Json &import = root["import"];
+  if (overwrite || !import.contains("srgb") || !import["srgb"].is_boolean()) {
+    import["srgb"] = settings.srgb;
+  }
+  if (overwrite || !import.contains("generateMipmaps") ||
+      !import["generateMipmaps"].is_boolean()) {
+    import["generateMipmaps"] = settings.generateMipmaps;
+  }
+  if (overwrite || !import.contains("flipVertical") ||
+      !import["flipVertical"].is_boolean()) {
+    import["flipVertical"] = settings.flipVertical;
+  }
+  if (overwrite || !import.contains("isNormalMap") ||
+      !import["isNormalMap"].is_boolean()) {
+    import["isNormalMap"] = settings.isNormalMap;
+  }
 }
 
 bool LoadMaterialJson(const std::filesystem::path &path,
@@ -264,6 +319,60 @@ bool ReadMetadataFile(const std::filesystem::path &metaPath, std::string &outId,
   }
 }
 
+std::vector<std::string> ReadDependenciesFromMetadata(
+    const std::filesystem::path &metaPath) {
+  Json root;
+  if (!LoadMetadataJson(metaPath, root)) {
+    return {};
+  }
+
+  auto it = root.find("dependencies");
+  if (it == root.end() || !it->is_array()) {
+    return {};
+  }
+
+  std::vector<std::string> deps;
+  for (const auto &entry : *it) {
+    if (entry.is_string()) {
+      deps.push_back(entry.get<std::string>());
+    }
+  }
+  return deps;
+}
+
+bool WriteDependenciesToMetadata(const std::filesystem::path &metaPath,
+                                 const std::vector<std::string> &deps) {
+  Json root;
+  if (!LoadMetadataJson(metaPath, root) || !root.is_object()) {
+    root = Json::object();
+  }
+
+  root["dependencies"] = Json::array();
+  for (const auto &dep : deps) {
+    if (!dep.empty()) {
+      root["dependencies"].push_back(dep);
+    }
+  }
+
+  return WriteMetadataJson(metaPath, root);
+}
+
+std::vector<std::string> CollectMaterialDependencies(const Material &material) {
+  std::vector<std::string> deps;
+  auto add = [&deps](const std::string &id) {
+    if (!id.empty()) {
+      deps.push_back(id);
+    }
+  };
+
+  add(material.GetAlbedoMapId());
+  add(material.GetNormalMapId());
+  add(material.GetMetallicRoughnessMapId());
+  add(material.GetEmissiveMapId());
+  add(material.GetOcclusionMapId());
+  return deps;
+}
+
 void WriteMetadataFile(const std::filesystem::path &metaPath,
                        const std::string &id, AssetRegistry::AssetType type,
                        const std::string &source) {
@@ -276,9 +385,15 @@ void WriteMetadataFile(const std::filesystem::path &metaPath,
   root["id"] = id;
   root["type"] = AssetRegistry::AssetTypeToString(type);
   root["source"] = source;
+  if (!root.contains("dependencies") || !root["dependencies"].is_array()) {
+    root["dependencies"] = Json::array();
+  }
 
   if (type == AssetRegistry::AssetType::Mesh) {
     WriteMeshImportSettingsToJson(root, DefaultMeshImportSettings(), false);
+  } else if (type == AssetRegistry::AssetType::Texture) {
+    WriteTextureImportSettingsToJson(root, DefaultTextureImportSettings(),
+                                     false);
   }
 
   WriteMetadataJson(metaPath, root);
@@ -1251,11 +1366,14 @@ void AssetRegistry::Scan(const std::string &rootPath) {
   for (const auto &entry : m_entries) {
     previousTypes.emplace(entry.id, entry.type);
   }
+  std::unordered_map<std::string, std::vector<std::string>>
+      previousDependencies = m_assetDependencies;
 
   m_placeholderAssets.clear();
   m_entries.clear();
   m_entryLookup.clear();
   m_pathToId.clear();
+  m_assetDependencies.clear();
 
   std::error_code ec;
   std::filesystem::path nextRoot = std::filesystem::absolute(rootPath, ec);
@@ -1279,6 +1397,7 @@ void AssetRegistry::Scan(const std::string &rootPath) {
 
   std::unordered_map<std::string, FileState> nextStates;
   std::unordered_map<std::string, AssetType> nextTypes;
+  std::unordered_map<std::string, std::vector<std::string>> nextDependencies;
 
   if (std::filesystem::exists(m_rootPath, ec)) {
     const auto options =
@@ -1359,6 +1478,7 @@ void AssetRegistry::Scan(const std::string &rootPath) {
       state.metaTime = SafeWriteTime(metaPath);
       nextStates.emplace(assetId, state);
       nextTypes.emplace(assetId, type);
+      nextDependencies.emplace(assetId, ReadDependenciesFromMetadata(metaPath));
     }
   }
 
@@ -1454,6 +1574,9 @@ void AssetRegistry::Scan(const std::string &rootPath) {
         Material material;
         if (LoadMaterialJson(entry.path, material)) {
           m_materials[entry.id] = material;
+          const auto deps = CollectMaterialDependencies(material);
+          nextDependencies[entry.id] = deps;
+          WriteDependenciesToMetadata(BuildMetadataPath(entry.path), deps);
         }
       } else {
         // Reload if modified
@@ -1462,10 +1585,44 @@ void AssetRegistry::Scan(const std::string &rootPath) {
         Material material;
         if (LoadMaterialJson(entry.path, material)) {
           m_materials[entry.id] = material;
+          const auto deps = CollectMaterialDependencies(material);
+          nextDependencies[entry.id] = deps;
+          WriteDependenciesToMetadata(BuildMetadataPath(entry.path), deps);
         }
       }
     }
   }
+
+  std::unordered_set<std::string> changedIds;
+  changedIds.reserve(scanChanges.size());
+  for (const auto &change : scanChanges) {
+    changedIds.insert(change.id);
+  }
+
+  std::unordered_map<std::string, std::vector<std::string>> reverseDeps;
+  for (const auto &[assetId, deps] : nextDependencies) {
+    for (const auto &dep : deps) {
+      if (!dep.empty()) {
+        reverseDeps[dep].push_back(assetId);
+      }
+    }
+  }
+
+  for (const auto &change : scanChanges) {
+    auto it = reverseDeps.find(change.id);
+    if (it == reverseDeps.end()) {
+      continue;
+    }
+    for (const auto &dependent : it->second) {
+      if (dependent.empty() || changedIds.find(dependent) != changedIds.end()) {
+        continue;
+      }
+      recordChange(dependent, nextTypes[dependent], AssetChange::Kind::Modified);
+      changedIds.insert(dependent);
+    }
+  }
+
+  m_assetDependencies = std::move(nextDependencies);
 
   const size_t maxChanges = 2048;
   if (m_changeLog.size() > maxChanges) {
@@ -1935,6 +2092,7 @@ AssetRegistry::ImportGltf(const std::string &gltfPath, bool forceReimport) {
     }
 
     m_materials[matId] = cached;
+    m_assetDependencies[matId] = CollectMaterialDependencies(cached);
     mesh.materialIds.push_back(matId);
     result.materials.push_back(matId);
     const std::string &albedoId = cached.GetAlbedoMapId();
@@ -1948,6 +2106,10 @@ AssetRegistry::ImportGltf(const std::string &gltfPath, bool forceReimport) {
   cgltf_free(data);
 
   m_meshes[meshId] = mesh;
+  std::vector<std::string> deps = mesh.textureIds;
+  deps.insert(deps.end(), mesh.materialIds.begin(), mesh.materialIds.end());
+  m_assetDependencies[meshId] = deps;
+  WriteDependenciesToMetadata(BuildMetadataPath(source), deps);
 
   result.success = true;
   result.id = meshId;
@@ -2023,6 +2185,9 @@ Material *AssetRegistry::CreateMaterial(const std::string &name) {
   // Write initial .mat file
   if (WriteMaterialToJson(path, newMat)) {
     m_materials[id] = newMat;
+    const auto deps = CollectMaterialDependencies(newMat);
+    WriteDependenciesToMetadata(BuildMetadataPath(path), deps);
+    m_assetDependencies[id] = deps;
 
     // Register asset entry
     AssetEntry entry;
@@ -2051,7 +2216,13 @@ bool AssetRegistry::SaveMaterial(const std::string &assetId) {
     return false;
   }
 
-  return WriteMaterialToJson(entry->path, it->second);
+  if (!WriteMaterialToJson(entry->path, it->second)) {
+    return false;
+  }
+  const auto deps = CollectMaterialDependencies(it->second);
+  WriteDependenciesToMetadata(BuildMetadataPath(entry->path), deps);
+  m_assetDependencies[assetId] = deps;
+  return true;
 }
 
 AssetRegistry::MeshImportSettings
@@ -2127,6 +2298,83 @@ bool AssetRegistry::SetMeshImportSettings(const std::string &assetId,
   root["type"] = AssetTypeToString(type);
   root["source"] = sourceLabel;
   WriteMeshImportSettingsToJson(root, settings, true);
+
+  return WriteMetadataJson(metaPath, root);
+}
+
+AssetRegistry::TextureImportSettings
+AssetRegistry::GetTextureImportSettings(const std::string &assetId) const {
+  auto settings = DefaultTextureImportSettings();
+  if (assetId.empty()) {
+    return settings;
+  }
+
+  const AssetEntry *entry = FindEntry(assetId);
+  std::filesystem::path assetPath;
+  AssetType type = AssetType::Other;
+  if (entry) {
+    assetPath = entry->path;
+    type = entry->type;
+  } else {
+    assetPath = std::filesystem::path(assetId);
+    if (!assetPath.is_absolute() && !m_rootPath.empty()) {
+      assetPath = m_rootPath / assetPath;
+    }
+    type = ClassifyAssetType(assetPath);
+  }
+
+  if (type != AssetType::Texture) {
+    return settings;
+  }
+
+  std::error_code ec;
+  const std::filesystem::path metaPath = BuildMetadataPath(assetPath);
+  if (!std::filesystem::exists(metaPath, ec)) {
+    return settings;
+  }
+
+  Json root;
+  if (!LoadMetadataJson(metaPath, root)) {
+    return settings;
+  }
+
+  return ReadTextureImportSettingsFromJson(root);
+}
+
+bool AssetRegistry::SetTextureImportSettings(
+    const std::string &assetId, const TextureImportSettings &settings) {
+  if (assetId.empty()) {
+    return false;
+  }
+
+  const AssetEntry *entry = FindEntry(assetId);
+  if (!entry) {
+    return false;
+  }
+
+  const std::filesystem::path assetPath = entry->path;
+  const AssetType type = entry->type;
+  const std::string id = entry->id;
+
+  if (type != AssetType::Texture || assetPath.empty()) {
+    return false;
+  }
+
+  const std::filesystem::path rootPath =
+      m_rootPath.empty() ? assetPath.parent_path() : m_rootPath;
+  const std::string sourceLabel = BuildSourceLabel(assetPath, rootPath);
+  const std::filesystem::path metaPath = BuildMetadataPath(assetPath);
+
+  Json root;
+  if (!LoadMetadataJson(metaPath, root) || !root.is_object()) {
+    root = Json::object();
+  }
+
+  root["version"] = 1;
+  root["id"] = id;
+  root["type"] = AssetTypeToString(type);
+  root["source"] = sourceLabel;
+  WriteTextureImportSettingsToJson(root, settings, true);
 
   return WriteMetadataJson(metaPath, root);
 }
@@ -2211,6 +2459,58 @@ bool AssetRegistry::ReimportMeshAsset(const std::string &assetId,
   return success;
 }
 
+bool AssetRegistry::ReimportTextureAsset(const std::string &assetId,
+                                         std::string *outMessage) {
+  if (assetId.empty()) {
+    if (outMessage) {
+      *outMessage = "Invalid asset id";
+    }
+    return false;
+  }
+
+  const AssetEntry *entry = FindEntry(assetId);
+  if (!entry || entry->type != AssetType::Texture) {
+    if (outMessage) {
+      *outMessage = "Asset is not a texture";
+    }
+    return false;
+  }
+
+  std::filesystem::path sourcePath = entry->path;
+  std::error_code ec;
+  if (sourcePath.empty() || !std::filesystem::exists(sourcePath, ec)) {
+    if (outMessage) {
+      *outMessage = "Texture source not found";
+    }
+    return false;
+  }
+
+  CachedTexture tex{};
+  tex.id = entry->id;
+  tex.path = sourcePath;
+  m_textures[entry->id] = tex;
+
+  AssetChange change{};
+  change.id = entry->id;
+  change.type = AssetType::Texture;
+  change.kind = AssetChange::Kind::Modified;
+  change.serial = ++m_changeSerial;
+  m_changeLog.push_back(change);
+
+  const size_t maxChanges = 2048;
+  if (m_changeLog.size() > maxChanges) {
+    m_changeLog.erase(
+        m_changeLog.begin(),
+        m_changeLog.begin() +
+            static_cast<std::ptrdiff_t>(m_changeLog.size() - maxChanges));
+  }
+
+  if (outMessage) {
+    *outMessage = "Texture reimported";
+  }
+  return true;
+}
+
 std::uint64_t AssetRegistry::GetChangeSerial() const noexcept {
   return m_changeSerial;
 }
@@ -2223,6 +2523,15 @@ void AssetRegistry::GetChangesSince(
       out.push_back(change);
     }
   }
+}
+
+const std::vector<std::string> *
+AssetRegistry::GetAssetDependencies(const std::string &assetId) const noexcept {
+  auto it = m_assetDependencies.find(assetId);
+  if (it == m_assetDependencies.end()) {
+    return nullptr;
+  }
+  return &it->second;
 }
 
 std::filesystem::path

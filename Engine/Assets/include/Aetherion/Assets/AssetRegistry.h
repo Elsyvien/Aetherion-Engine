@@ -69,6 +69,13 @@ public:
     bool optimize{false};
   };
 
+  struct TextureImportSettings {
+    bool srgb{true};
+    bool generateMipmaps{true};
+    bool flipVertical{false};
+    bool isNormalMap{false};
+  };
+
   struct GltfImportResult {
     bool success{false};
     std::string id;
@@ -91,9 +98,17 @@ public:
                              const MeshImportSettings &settings);
   bool ReimportMeshAsset(const std::string &assetId,
                          std::string *outMessage = nullptr);
+  [[nodiscard]] TextureImportSettings
+  GetTextureImportSettings(const std::string &assetId) const;
+  bool SetTextureImportSettings(const std::string &assetId,
+                                const TextureImportSettings &settings);
+  bool ReimportTextureAsset(const std::string &assetId,
+                            std::string *outMessage = nullptr);
   [[nodiscard]] const MeshData *
   GetMeshData(const std::string &assetId) const noexcept;
   [[nodiscard]] const MeshData *LoadMeshData(const std::string &assetId);
+  [[nodiscard]] const std::vector<std::string> *
+  GetAssetDependencies(const std::string &assetId) const noexcept;
 
   struct AssetChange {
     enum class Kind { Added, Modified, Removed, Moved, Metadata };
@@ -123,6 +138,7 @@ private:
   std::vector<AssetEntry> m_entries;
   std::unordered_map<std::string, size_t> m_entryLookup;
   std::unordered_map<std::string, std::string> m_pathToId;
+  std::unordered_map<std::string, std::vector<std::string>> m_assetDependencies;
 
   struct FileState {
     std::filesystem::path path;
