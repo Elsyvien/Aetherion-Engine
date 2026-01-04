@@ -97,8 +97,12 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/CameraComponent.cpp
     Engine/Scene/src/System.cpp
     Engine/Scene/src/SceneSerializer.cpp
+    Engine/Scene/src/AnimatorComponent.cpp
+    Engine/Scene/src/AnimationSystem.cpp
     Engine/Assets/src/AssetRegistry.cpp
     Engine/Assets/src/AssetGenerator.cpp
+    Engine/Assets/src/Animation.cpp
+    Engine/Assets/src/AnimationLoader.cpp
     Engine/Assets/src/LLMClient.cpp
     Engine/Assets/src/LLMAssetGenerator.cpp
     Engine/Platform/src/PlatformAbstraction.cpp
@@ -119,6 +123,7 @@ set(RUNTIME_SOURCES
     Engine/Scripting/src/NullScriptEngine.cpp
     Engine/Scene/src/ScriptComponent.cpp
     Engine/Scripting/src/ScriptingPlaceholder.cpp
+    Engine/Scripting/src/LogicCopilot.cpp
     Engine/Runtime/src/SystemScheduler.cpp
 )
 
@@ -208,6 +213,8 @@ set(EDITOR_SOURCES
     Engine/Editor/src/AICopilotProcessor.cpp
     Engine/Editor/src/EditorAssetGenerationPanel.cpp
     Engine/Editor/src/EditorStatisticsPanel.cpp
+    Engine/Editor/src/EditorAnimationPanel.cpp
+    Engine/Editor/src/EditorLogicCopilotPanel.cpp
     Engine/Editor/src/EditorSettings.cpp
     Engine/Editor/src/EditorSettingsDialog.cpp
     Engine/Editor/resources/AetherionEditor.qrc
@@ -231,6 +238,8 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/AICopilotProcessor.h
         Engine/Editor/include/Aetherion/Editor/EditorAssetGenerationPanel.h
         Engine/Editor/include/Aetherion/Editor/EditorStatisticsPanel.h
+        Engine/Editor/include/Aetherion/Editor/EditorAnimationPanel.h
+        Engine/Editor/include/Aetherion/Editor/EditorLogicCopilotPanel.h
         Engine/Editor/include/Aetherion/Editor/EditorSettings.h
         Engine/Editor/include/Aetherion/Editor/EditorSettingsDialog.h
 )

@@ -34,6 +34,57 @@ std::string SanitizeFileStem(const std::string& name) {
     }
     return sanitized;
 }
+
+#ifdef AETHERION_ENABLE_PYTHON
+PyObject* JsonToPyObject(const nlohmann::json& value) {
+    if (value.is_object()) {
+        PyObject* dict = PyDict_New();
+        for (auto it = value.begin(); it != value.end(); ++it) {
+            PyObject* child = JsonToPyObject(it.value());
+            if (!child) {
+                child = Py_None;
+                Py_INCREF(child);
+            }
+            PyDict_SetItemString(dict, it.key().c_str(), child);
+            Py_DECREF(child);
+        }
+        return dict;
+    }
+    if (value.is_array()) {
+        PyObject* list = PyList_New(static_cast<Py_ssize_t>(value.size()));
+        Py_ssize_t index = 0;
+        for (const auto& item : value) {
+            PyObject* child = JsonToPyObject(item);
+            if (!child) {
+                child = Py_None;
+                Py_INCREF(child);
+            }
+            PyList_SetItem(list, index++, child);
+        }
+        return list;
+    }
+    if (value.is_string()) {
+        return PyUnicode_FromString(value.get<std::string>().c_str());
+    }
+    if (value.is_boolean()) {
+        return PyBool_FromLong(value.get<bool>() ? 1 : 0);
+    }
+    if (value.is_number_integer()) {
+        return PyLong_FromLongLong(value.get<long long>());
+    }
+    if (value.is_number_unsigned()) {
+        return PyLong_FromUnsignedLongLong(value.get<unsigned long long>());
+    }
+    if (value.is_number_float()) {
+        return PyFloat_FromDouble(value.get<double>());
+    }
+    if (value.is_null()) {
+        Py_INCREF(Py_None);
+        return Py_None;
+    }
+    return PyUnicode_FromString(value.dump().c_str());
+}
+#endif
 } // namespace
 
 namespace Aetherion::Scripting {
@@ -264,11 +315,18 @@ BehaviorDecision ScriptingRuntime::RunBehaviorPython(
 
     PyObject* updateFunc = PyDict_GetItemString(globals, "update");
     if (updateFunc && PyCallable_Check(updateFunc)) {
-        PyObject* ctxDict = PyDict_New();
-        PyDict_SetItemString(ctxDict, "context", PyUnicode_FromString(contextJson.c_str()));
+        PyObject* contextObj = nullptr;
+        try {
+            const auto parsed = nlohmann::json::parse(contextJson);
+            contextObj = JsonToPyObject(parsed);
+        } catch (...) {
+        }
+        if (!contextObj) {
+            contextObj = PyUnicode_FromString(contextJson.c_str());
+        }
         PyObject* result =
-            PyObject_CallFunctionObjArgs(updateFunc, Py_None, ctxDict, nullptr);
-        Py_DECREF(ctxDict);
+            PyObject_CallFunctionObjArgs(updateFunc, Py_None, contextObj, nullptr);
+        Py_DECREF(contextObj);
         if (result && PyDict_Check(result)) {
             PyObject* stateObj = PyDict_GetItemString(result, "state");
             PyObject* reasonObj = PyDict_GetItemString(result, "reason");
@@ -359,7 +417,7 @@ BehaviorScript PromptToScriptGenerator::Generate(
     builder << "    Stub behavior generated from PROMPT.\n";
     builder << "    Replace with model-generated logic or edit the prompt to regenerate.\n";
     builder << "    \"\"\"\n";
-    builder << "    return {\"state\": \"Idle\", \"actions\": []}\n";
+    builder << "    return {\"state\": \"Idle\", \"reason\": \"Stub behavior\", \"actions\": []}\n";
 
     script.code = builder.str();
     script.diagnostics = "Generated stub behavior script";

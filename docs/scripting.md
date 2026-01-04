@@ -6,28 +6,25 @@ Files:
 
 ## Current State
 
-`ScriptingRuntimeStub` is a placeholder with Initialize/Shutdown stubs.
-No scripting runtime is wired yet.
+`ScriptingRuntimeStub` supports prompt-to-script generation and optional Python
+execution when built with `AETHERION_ENABLE_PYTHON=ON`.
 
 ---
 
 ## Python Runtime Plan
 
-The scripting subsystem will embed Python via pybind11 to enable rapid
-iteration and AI-assisted behavior authoring.
+The scripting subsystem embeds Python (C API today; pybind11 later) to enable
+rapid iteration and AI-assisted behavior authoring.
 
 ### Phase 1: Minimal Embedding
 
 **Goal**: Python interpreter running inside the engine.
 
-1. **Add pybind11 dependency** via CMake FetchContent or submodule.
-2. **Initialize Python** in `ScriptingRuntime::Initialize()`:
-   ```cpp
-   py::scoped_interpreter guard{};
-   ```
-3. **Expose logging** so Python scripts can use `aetherion.log()`.
-4. **Execute scripts** from file path or string.
-5. **Shutdown** releases the interpreter.
+1. **Enable Python** via `-DAETHERION_ENABLE_PYTHON=ON`.
+2. **Initialize Python** in `ScriptingRuntime` (lazy on first execution).
+3. **Execute scripts** from generated files or in-memory strings.
+4. **Expose runtime context** as a Python dict.
+5. **Shutdown** releases script caches.
 
 ### Phase 2: ECS API Surface
 
@@ -44,12 +41,12 @@ iteration and AI-assisted behavior authoring.
 
 ### Phase 3: Behavior Scripts
 
-**Goal**: Component-attached scripts with lifecycle hooks.
+**Goal**: Component-attached scripts with decision hooks.
 
-- `on_start()` – called once when entity enters scene.
-- `on_update(dt)` – called each tick.
-- `on_destroy()` – called before entity removal.
-- `on_collision(other)` – called on physics contact.
+- `update(entity, context)` – called on decision tick.
+  - `entity`: reserved for future bindings (currently `None`).
+  - `context`: dict parsed from JSON (personality, knowledge, context).
+  - return `{ "state": "...", "reason": "..." }`.
 
 ### Phase 4: Hot Reload
 
@@ -69,9 +66,9 @@ iteration and AI-assisted behavior authoring.
 - Guardrails: static analysis, sandbox execution, test coverage.
 
 ### Implementation Checklist
-- [ ] pybind11 integrated in CMake
-- [ ] Python interpreter lifecycle
-- [ ] Basic logging and script execution
+- [ ] pybind11 integrated in CMake (optional)
+- [x] Python interpreter lifecycle
+- [x] Basic script execution
 - [ ] Entity/component bindings
 - [ ] Behavior script hooks
 - [ ] Hot reload

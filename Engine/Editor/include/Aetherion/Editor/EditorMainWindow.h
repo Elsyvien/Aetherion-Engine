@@ -57,6 +57,8 @@ class EditorAssetGenerationPanel;
 class EditorStatisticsPanel;
 class AICopilotPanel;
 class AICopilotProcessor;
+class EditorAnimationPanel;
+class EditorLogicCopilotPanel;
 
 class EditorMainWindow : public QMainWindow
 {
@@ -142,6 +144,8 @@ private:
     QAction* m_showAICopilotAction = nullptr;
     QAction* m_showAssetGenAction = nullptr;
     QAction* m_showStatsAction = nullptr;
+    QAction* m_showAnimationPanelAction = nullptr;
+    QAction* m_showLogicCopilotAction = nullptr;
     QAction* m_showAiHudAction = nullptr;
     QAction* m_commandPaletteAction = nullptr;
     QAction* m_focusAssetFilterAction = nullptr;
@@ -157,6 +161,8 @@ private:
     EditorCameraPreview* m_cameraPreview = nullptr;
     AICopilotPanel* m_copilotPanel = nullptr;
     EditorStatisticsPanel* m_statsPanel = nullptr;
+    EditorAnimationPanel* m_animationPanel = nullptr;
+    EditorLogicCopilotPanel* m_logicCopilotPanel = nullptr;
     QDockWidget* m_hierarchyDock = nullptr;
     QDockWidget* m_inspectorDock = nullptr;
     QDockWidget* m_assetBrowserDock = nullptr;
@@ -166,6 +172,8 @@ private:
     QDockWidget* m_copilotDock = nullptr;
     QDockWidget* m_assetGenDock = nullptr;
     QDockWidget* m_statsDock = nullptr;
+    QDockWidget* m_animationDock = nullptr;
+    QDockWidget* m_logicCopilotDock = nullptr;
     QDockWidget* m_bookmarksDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorAssetGenerationPanel* m_assetGenPanel = nullptr;

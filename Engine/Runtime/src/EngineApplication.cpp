@@ -953,6 +953,9 @@ void EngineApplication::Initialize(bool enableValidationLayers,
   m_context->SetProjectName(projectName);
   DebugPrint("Project name: " + projectName);
   DebugPrint("Assets root: " + assetsRoot.string());
+  if (const auto scripting = m_context->GetScriptingRuntime()) {
+    scripting->SetOutputRoot(assetsRoot / ".aetherion" / "scripting_cache");
+  }
   if (const auto assets = m_context->GetAssetRegistry()) {
     assets->Scan(assetsRoot.string());
     DebugPrint("Asset scan complete: " + assets->GetRootPath().string() + " (" +
@@ -1071,6 +1074,9 @@ void EngineApplication::Tick() {
 
   ProcessInput();
   PumpEvents();
+  if (const auto scripting = m_context->GetScriptingRuntime()) {
+    scripting->TickHotReload();
+  }
 
   UpdateRuntimeSystems(deltaTime);
   if (m_runtimeSystems.empty()) {
