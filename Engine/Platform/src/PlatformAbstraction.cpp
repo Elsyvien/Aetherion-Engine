@@ -165,7 +165,7 @@ void PlatformAbstractionLayer::Initialize(const WindowDescriptor &descriptor) {
 #endif
 
   // Create main window
-  m_mainWindow = CreateWindow(descriptor);
+  m_mainWindow = MakeWindow(descriptor);
   m_initialized = true;
 }
 
@@ -179,7 +179,7 @@ void PlatformAbstractionLayer::Shutdown() {
 }
 
 std::unique_ptr<IWindow>
-PlatformAbstractionLayer::CreateWindow(const WindowDescriptor &descriptor) {
+PlatformAbstractionLayer::MakeWindow(const WindowDescriptor &descriptor) {
   // TODO: Integrate GLFW, SDL, or native Win32/X11/Cocoa for real windows
   // For now, return a stub implementation
   return std::make_unique<StubWindow>(descriptor);

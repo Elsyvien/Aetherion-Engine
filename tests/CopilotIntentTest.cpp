@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 
 #include "Aetherion/Editor/AICopilotProcessor.h"
+#include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
 

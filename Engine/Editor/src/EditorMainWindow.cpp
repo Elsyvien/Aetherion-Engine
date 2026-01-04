@@ -18,9 +18,11 @@
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
+#include <QListWidget>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QProcess>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QSettings>
 #include <QSplitter>

@@ -271,7 +271,8 @@ public:
   /// @brief Create a new window
   /// @param descriptor Window settings
   /// @return Window instance or nullptr on failure
-  [[nodiscard]] std::unique_ptr<IWindow> CreateWindow(
+  /// @note Named MakeWindow to avoid Windows CreateWindow macro conflict
+  [[nodiscard]] std::unique_ptr<IWindow> MakeWindow(
       const WindowDescriptor &descriptor);
 
   /// @brief Get the main/primary window
