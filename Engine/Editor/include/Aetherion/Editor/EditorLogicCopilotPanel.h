@@ -1,6 +1,6 @@
 #pragma once
 
-#include <QDockWidget>
+#include <QWidget>
 #include <QTextEdit>
 #include <QLineEdit>
 #include <QPushButton>
@@ -8,8 +8,10 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QProgressBar>
-#include <QSplitter>
 #include <QPlainTextEdit>
+#include <QTabWidget>
+#include <QVBoxLayout>
+#include <QGroupBox>
 
 #include <memory>
 #include <string>
@@ -28,10 +30,10 @@ namespace Aetherion::Scripting
 namespace Aetherion::Editor
 {
 
-/// @brief Qt dock widget for the Logic Copilot - NL-to-C++ code generation
+/// @brief Widget panel for the Logic Copilot - NL-to-C++ code generation
 /// Allows users to describe game logic in natural language and generates
 /// ECS components, systems, and behaviors.
-class EditorLogicCopilotPanel : public QDockWidget
+class EditorLogicCopilotPanel : public QWidget
 {
     Q_OBJECT
 

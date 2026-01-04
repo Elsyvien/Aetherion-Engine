@@ -44,6 +44,7 @@
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
+#include "Aetherion/Scene/ParticleEmitterComponent.h"
 #include "Aetherion/Scene/RigidbodyComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/SceneSerializer.h"
@@ -612,6 +613,7 @@ private:
     view->camera = Rendering::RenderCamera{};
     view->cameras.clear();
     view->colliders.clear();
+    view->particleEmitters.clear();
 
     auto scene = m_scene.lock();
     if (!scene) {
@@ -836,6 +838,51 @@ private:
         view->colliders.push_back(renderCollider);
       }
 
+      // Collect particle emitters for rendering
+      auto particleEmitter =
+          entity->GetComponent<Scene::ParticleEmitterComponent>();
+      if (particleEmitter && transform) {
+        if (!hasWorld) {
+          world = GetWorldMatrix(*scene, entity->GetId());
+          hasWorld = true;
+        }
+
+        const auto &particles = particleEmitter->GetParticles();
+        if (particleEmitter->GetActiveParticleCount() > 0) {
+          Rendering::RenderParticleEmitter renderEmitter{};
+          renderEmitter.entityId = entity->GetId();
+          renderEmitter.worldPosition[0] = world[12];
+          renderEmitter.worldPosition[1] = world[13];
+          renderEmitter.worldPosition[2] = world[14];
+          renderEmitter.textureAssetId = particleEmitter->GetTextureAssetId();
+          renderEmitter.blendMode =
+              static_cast<Rendering::RenderParticleBlendMode>(
+                  particleEmitter->GetBlendMode());
+
+          for (const auto &p : particles) {
+            if (!p.alive)
+              continue;
+            Rendering::RenderParticle rp{};
+            // Transform particle position to world space
+            rp.position[0] = world[12] + p.position[0];
+            rp.position[1] = world[13] + p.position[1];
+            rp.position[2] = world[14] + p.position[2];
+            rp.size = p.size;
+            rp.color[0] = p.color[0];
+            rp.color[1] = p.color[1];
+            rp.color[2] = p.color[2];
+            rp.color[3] = p.color[3];
+            rp.rotation = p.rotation * 3.14159265359f / 180.0f; // deg to rad
+            rp.age = p.lifetime > 0.0f ? p.age / p.lifetime : 0.0f;
+            renderEmitter.particles.push_back(rp);
+          }
+
+          if (!renderEmitter.particles.empty()) {
+            view->particleEmitters.push_back(std::move(renderEmitter));
+          }
+        }
+      }
+
       if (!transform || !mesh || !mesh->IsVisible()) {
         continue;
       }
@@ -928,7 +975,8 @@ void EngineApplication::Initialize(bool enableValidationLayers,
   m_context->SetScriptingRuntime(
       std::make_shared<Scripting::ScriptingRuntime>());
   if (const auto scripting = m_context->GetScriptingRuntime()) {
-    scripting->SetErrorSink([this](const std::string &msg) { DebugPrint(msg); });
+    scripting->SetErrorSink(
+        [this](const std::string &msg) { DebugPrint(msg); });
 #ifdef AETHERION_ENABLE_PYTHON
     scripting->EnablePythonBridge(true);
 #endif

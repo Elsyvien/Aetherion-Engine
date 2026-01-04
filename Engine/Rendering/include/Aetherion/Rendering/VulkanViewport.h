@@ -99,6 +99,8 @@ private:
   static constexpr uint32_t kMaxFramesInFlight = 2;
   static constexpr uint32_t kMaxTextureDescriptors = 128;
   static constexpr uint32_t kMaxLights = 8;
+  static constexpr uint32_t kShadowCascadeCount = 4;
+  static constexpr uint32_t kShadowMapResolution = 2048;
   struct InstancePushConstants {
     float model[16]{};
     float color[4]{};
@@ -130,6 +132,33 @@ private:
     std::string meshId;
     std::string materialId;
     std::string textureId; // Deprecated, kept for immediate compile fix
+  };
+
+  struct InstanceData {
+    float model[16]{};
+    float color[4]{};
+    uint32_t ids[4]{};
+    float bounds[4]{};
+  };
+
+  struct DrawBatch {
+    std::string meshId;
+    std::string materialId;
+    uint32_t inputOffset{0};
+    uint32_t inputCount{0};
+    uint32_t outputOffset{0};
+    uint32_t commandIndex{0};
+  };
+
+  struct ShadowUniform {
+    float lightViewProj[16]{};
+  };
+
+  struct CullPushConstants {
+    uint32_t inputOffset{0};
+    uint32_t inputCount{0};
+    uint32_t outputOffset{0};
+    uint32_t commandIndex{0};
   };
 
   struct GpuMesh {
@@ -212,18 +241,32 @@ private:
   VkRenderPass m_sceneRenderPass{VK_NULL_HANDLE};
   VkRenderPass m_postProcessRenderPass{VK_NULL_HANDLE};
   VkRenderPass m_pickingRenderPass{VK_NULL_HANDLE};
+  VkRenderPass m_shadowRenderPass{VK_NULL_HANDLE};
 
   VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
   VkDescriptorSetLayout m_textureDescriptorSetLayout{VK_NULL_HANDLE};
   VkDescriptorSetLayout m_postProcessDescriptorSetLayout{VK_NULL_HANDLE};
+  VkDescriptorSetLayout m_shadowDescriptorSetLayout{VK_NULL_HANDLE};
+  VkDescriptorSetLayout m_shadowSampleDescriptorSetLayout{VK_NULL_HANDLE};
+  VkDescriptorSetLayout m_cullDescriptorSetLayout{VK_NULL_HANDLE};
   std::array<VkDescriptorPool, kMaxFramesInFlight> m_descriptorPools{};
+  VkDescriptorPool m_cullDescriptorPool{VK_NULL_HANDLE};
+  VkDescriptorPool m_shadowDescriptorPool{VK_NULL_HANDLE};
   std::vector<VkDescriptorPool> m_textureDescriptorPools;
   size_t m_activeTextureDescriptorPool{0};
   std::array<VkDescriptorSet, kMaxFramesInFlight> m_descriptorSets{};
   std::array<VkDescriptorSet, kMaxFramesInFlight> m_postProcessDescriptorSets{};
+  std::array<VkDescriptorSet, kMaxFramesInFlight> m_cullDescriptorSets{};
+  std::array<VkDescriptorSet, kMaxFramesInFlight>
+      m_shadowSamplerDescriptorSets{};
+  std::array<std::array<VkDescriptorSet, kShadowCascadeCount>,
+             kMaxFramesInFlight>
+      m_shadowCascadeDescriptorSets{};
 
   VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
   VkPipelineLayout m_postProcessPipelineLayout{VK_NULL_HANDLE};
+  VkPipelineLayout m_shadowPipelineLayout{VK_NULL_HANDLE};
+  VkPipelineLayout m_cullPipelineLayout{VK_NULL_HANDLE};
   VkPipeline m_pipeline{VK_NULL_HANDLE};
 
   std::vector<VkDescriptorPool> m_materialDescriptorPools;
@@ -234,10 +277,14 @@ private:
   VkPipeline m_pickingPipelineUint{VK_NULL_HANDLE};
   VkPipeline m_postProcessPipeline{VK_NULL_HANDLE};
   VkPipeline m_postProcessPipelineUint{VK_NULL_HANDLE};
+  VkPipeline m_shadowPipeline{VK_NULL_HANDLE};
+  VkPipeline m_cullPipeline{VK_NULL_HANDLE};
 
   std::vector<VkFramebuffer> m_framebuffers;
   std::array<VkFramebuffer, kMaxFramesInFlight> m_sceneFramebuffers{};
   std::array<VkFramebuffer, kMaxFramesInFlight> m_pickingFramebuffers{};
+  std::array<std::array<VkFramebuffer, kShadowCascadeCount>, kMaxFramesInFlight>
+      m_shadowFramebuffers{};
 
   std::array<VkImage, kMaxFramesInFlight> m_sceneColorImages{};
   std::array<VkDeviceMemory, kMaxFramesInFlight> m_sceneColorMemories{};
@@ -255,8 +302,37 @@ private:
   std::array<VkBuffer, kMaxFramesInFlight> m_pickingReadbackBuffers{};
   std::array<VkDeviceMemory, kMaxFramesInFlight> m_pickingReadbackMemories{};
 
+  std::array<VkImage, kMaxFramesInFlight> m_shadowImages{};
+  std::array<VkDeviceMemory, kMaxFramesInFlight> m_shadowMemories{};
+  std::array<VkImageView, kMaxFramesInFlight> m_shadowArrayViews{};
+  std::array<std::array<VkImageView, kShadowCascadeCount>, kMaxFramesInFlight>
+      m_shadowCascadeViews{};
+
+  std::array<VkImage, kMaxFramesInFlight> m_taaHistoryImages{};
+  std::array<VkDeviceMemory, kMaxFramesInFlight> m_taaHistoryMemories{};
+  std::array<VkImageView, kMaxFramesInFlight> m_taaHistoryViews{};
+  std::array<bool, kMaxFramesInFlight> m_taaHistoryValid{};
+  bool m_taaEnabledForFrame{false};
+  bool m_shadowEnabledForFrame{false};
+  uint32_t m_taaJitterIndex{0};
+
   VkCommandPool m_commandPool{VK_NULL_HANDLE};
   std::vector<VkCommandBuffer> m_commandBuffers;
+
+  VkBuffer m_instanceInputBuffer{VK_NULL_HANDLE};
+  VkDeviceMemory m_instanceInputMemory{VK_NULL_HANDLE};
+  void *m_instanceInputMapped{nullptr};
+  VkBuffer m_instanceOutputBuffer{VK_NULL_HANDLE};
+  VkDeviceMemory m_instanceOutputMemory{VK_NULL_HANDLE};
+  VkBuffer m_instanceFallbackBuffer{VK_NULL_HANDLE};
+  VkDeviceMemory m_instanceFallbackMemory{VK_NULL_HANDLE};
+  VkBuffer m_indirectCommandBuffer{VK_NULL_HANDLE};
+  VkDeviceMemory m_indirectCommandMemory{VK_NULL_HANDLE};
+  void *m_indirectCommandMapped{nullptr};
+  size_t m_instanceCapacity{0};
+  size_t m_batchCapacity{0};
+  std::vector<InstanceData> m_instanceStaging;
+  std::vector<DrawBatch> m_drawBatches;
 
   VkBuffer m_vertexBuffer{VK_NULL_HANDLE};
   VkDeviceMemory m_vertexMemory{VK_NULL_HANDLE};
@@ -276,8 +352,12 @@ private:
   VkBuffer m_colliderVertexBuffer{VK_NULL_HANDLE};
   VkDeviceMemory m_colliderVertexMemory{VK_NULL_HANDLE};
   uint32_t m_colliderVertexCount{0};
+  VkBuffer m_particleVertexBuffer{VK_NULL_HANDLE};
+  VkDeviceMemory m_particleVertexMemory{VK_NULL_HANDLE};
+  uint32_t m_particleVertexCount{0};
   VkSampler m_textureSampler{VK_NULL_HANDLE};
   VkSampler m_postProcessSampler{VK_NULL_HANDLE};
+  VkSampler m_shadowSampler{VK_NULL_HANDLE};
   GpuTexture m_defaultAlbedoTexture{};
   GpuTexture m_defaultNormalTexture{};
   GpuTexture m_defaultMetallicRoughnessTexture{};
@@ -287,6 +367,13 @@ private:
   std::array<VkBuffer, kMaxFramesInFlight> m_uniformBuffers{};
   std::array<VkDeviceMemory, kMaxFramesInFlight> m_uniformMemories{};
   std::array<void *, kMaxFramesInFlight> m_uniformMapped{};
+  std::array<std::array<VkBuffer, kShadowCascadeCount>, kMaxFramesInFlight>
+      m_shadowUniformBuffers{};
+  std::array<std::array<VkDeviceMemory, kShadowCascadeCount>,
+             kMaxFramesInFlight>
+      m_shadowUniformMemories{};
+  std::array<std::array<void *, kShadowCascadeCount>, kMaxFramesInFlight>
+      m_shadowUniformMapped{};
   uint32_t m_frameIndex{0};
   std::vector<VkSemaphore> m_imageAvailable;
   // Must be per-swapchain-image (present may outlive per-frame fences).
@@ -317,6 +404,7 @@ private:
   void CreateLineBuffers();
   void CreateSceneResources();
   void CreatePickingResources();
+  void CreateShadowResources();
   void CreateUniformBuffers();
   void CreateDescriptorPoolAndSets();
   void CreateTextureDescriptorPool();
@@ -327,26 +415,35 @@ private:
   void CreatePipeline();
   void CreateFramebuffers();
   void UpdatePostProcessDescriptorSets();
+  void UpdateShadowDescriptorSets();
+  void UpdateCullDescriptorSets();
+  void CreateInstanceBuffers(size_t instanceCount, size_t batchCount);
 
   void CreateCommandPoolAndBuffers();
   void RecordCommandBuffer(uint32_t imageIndex,
                            const std::vector<DrawInstance> &instances);
+  void RecordShadowPass(VkCommandBuffer cb);
+  void DispatchCullingPass(VkCommandBuffer cb);
   void RecordOpaquePass(VkCommandBuffer cb,
                         const std::vector<DrawInstance> &instances);
   void RecordPickingPass(VkCommandBuffer cb,
                          const std::vector<DrawInstance> &instances);
   void RecordPostProcessPass(VkCommandBuffer cb, uint32_t imageIndex);
+  void CopyTaaHistory(VkCommandBuffer cb, uint32_t imageIndex);
   void RecordOverlayPass(VkCommandBuffer cb);
   void UpdateUniformBuffer(uint32_t frameIndex, const RenderView &view);
+  void PrepareInstanceData(const std::vector<DrawInstance> &instances);
   void UpdateSelectionBuffer(const std::vector<DrawInstance> &instances,
                              const RenderView &view);
   void UpdateLightGizmoBuffer(const RenderView &view);
   void UpdateColliderBuffer(const RenderView &view);
+  void UpdateParticleBuffer(const RenderView &view);
   void DestroyMeshCache();
   void DestroyTextureCache();
   void DestroyMaterialCache();
   void DestroySceneResources();
   void DestroyPickingResources();
+  void DestroyShadowResources();
   void ProcessDeferredDeletions();
   void EnqueueDeletion(std::function<void()> &&callback,
                        uint32_t frames = kMaxFramesInFlight);
@@ -372,8 +469,8 @@ private:
   [[nodiscard]] const GpuMesh *ResolveMesh(const std::string &assetId);
   [[nodiscard]] const GpuTexture *ResolveTexture(const std::string &assetId,
                                                  TextureUsage usage);
-  [[nodiscard]] const GpuMaterial *ResolveMaterial(const std::string &assetId); 
-  GpuMaterial CreateMaterialResources(const Assets::Material &material);        
+  [[nodiscard]] const GpuMaterial *ResolveMaterial(const std::string &assetId);
+  GpuMaterial CreateMaterialResources(const Assets::Material &material);
   GpuTexture CreateTextureFromPixels(const unsigned char *pixels,
                                      uint32_t width, uint32_t height,
                                      bool srgb);

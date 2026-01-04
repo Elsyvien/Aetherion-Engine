@@ -449,14 +449,14 @@ std::string LogicCopilot::CallLLM(const std::string& systemPrompt, const std::st
     req.maxTokens = 4096;
     req.temperature = 0.2f; // Low temperature for more deterministic code
     
-    Assets::LLMTextResponse resp = m_impl->llmClient->CompleteText(req);
+    Assets::LLMTextResponse resp = m_impl->llmClient->GenerateText(req);
     
     if (!resp.success)
     {
         return "";
     }
     
-    return resp.text;
+    return resp.content;
 }
 
 std::string LogicCopilot::BuildSystemPrompt(const std::string& systemType)

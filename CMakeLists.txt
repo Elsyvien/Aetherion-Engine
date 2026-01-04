@@ -117,6 +117,7 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/AudioSourceComponent.cpp
     Engine/Scene/src/AudioListenerComponent.cpp
     Engine/Scene/src/AIBehaviorComponent.cpp
+    Engine/Scene/src/ParticleEmitterComponent.cpp
     Engine/Audio/src/AudioEngine.cpp
     Engine/Audio/src/AudioSystem.cpp
     Engine/Scripting/src/ScriptingSystem.cpp
@@ -141,6 +142,11 @@ set(AETHERION_SHADER_SOURCES
     ${AETHERION_SHADER_DIR}/viewport_postprocess.vert
     ${AETHERION_SHADER_DIR}/viewport_postprocess.frag
     ${AETHERION_SHADER_DIR}/viewport_postprocess_uint.frag
+    ${AETHERION_SHADER_DIR}/viewport_shadow.vert
+    ${AETHERION_SHADER_DIR}/viewport_shadow.frag
+    ${AETHERION_SHADER_DIR}/viewport_cull.comp
+    ${AETHERION_SHADER_DIR}/viewport_particle.vert
+    ${AETHERION_SHADER_DIR}/viewport_particle.frag
 )
 
 set(AETHERION_SHADER_SPV
@@ -151,6 +157,11 @@ set(AETHERION_SHADER_SPV
     ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess.vert.spv
     ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess.frag.spv
     ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess_uint.frag.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_shadow.vert.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_shadow.frag.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_cull.comp.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_particle.vert.spv
+    ${AETHERION_SHADER_OUT_DIR}/viewport_particle.frag.spv
 )
 
 add_custom_command(
@@ -161,7 +172,12 @@ add_custom_command(
     COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_picking_uint.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_picking_uint.frag.spv  
     COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_postprocess.vert -o ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess.vert.spv  
     COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_postprocess.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess.frag.spv  
-    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_postprocess_uint.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess_uint.frag.spv  
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_postprocess_uint.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_postprocess_uint.frag.spv
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_shadow.vert -o ${AETHERION_SHADER_OUT_DIR}/viewport_shadow.vert.spv
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_shadow.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_shadow.frag.spv
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_cull.comp -o ${AETHERION_SHADER_OUT_DIR}/viewport_cull.comp.spv
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_particle.vert -o ${AETHERION_SHADER_OUT_DIR}/viewport_particle.vert.spv
+    COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} -V ${AETHERION_SHADER_DIR}/viewport_particle.frag -o ${AETHERION_SHADER_OUT_DIR}/viewport_particle.frag.spv
     DEPENDS ${AETHERION_SHADER_SOURCES}
     VERBATIM
 )
@@ -217,6 +233,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorLogicCopilotPanel.cpp
     Engine/Editor/src/EditorSettings.cpp
     Engine/Editor/src/EditorSettingsDialog.cpp
+    Engine/Editor/src/TabPanelManager.cpp
     Engine/Editor/resources/AetherionEditor.qrc
 )
 
@@ -242,6 +259,7 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/EditorLogicCopilotPanel.h
         Engine/Editor/include/Aetherion/Editor/EditorSettings.h
         Engine/Editor/include/Aetherion/Editor/EditorSettingsDialog.h
+        Engine/Editor/include/Aetherion/Editor/TabPanelManager.h
 )
 target_include_directories(AetherionEditor
     PRIVATE

@@ -1,0 +1,117 @@
+#version 450
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+const uint kMaxLights = 8u;
+const uint kShadowCascadeCount = 4u;
+
+struct LightUniform
+{
+    vec4 position;
+    vec4 direction;
+    vec4 color;
+    vec4 spot;
+};
+
+layout(set = 0, binding = 0) uniform FrameUBO
+{
+    mat4 uViewProj;
+    vec4 uLightDir;
+    vec4 uLightColor;
+    vec4 uAmbientColor;
+    vec4 uCameraPos;
+    vec4 uFrameParams;
+    vec4 uMaterialParams;
+    vec4 uLightCounts;
+    LightUniform uLights[kMaxLights];
+    mat4 uShadowMatrices[kShadowCascadeCount];
+    vec4 uShadowSplits;
+    vec4 uShadowParams;
+    vec4 uPostParams;
+    vec4 uFrustumPlanes[6];
+} ubo;
+
+struct DrawCommand
+{
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint firstInstance;
+};
+
+struct InstanceData
+{
+    mat4 model;
+    vec4 color;
+    uint entityId;
+    uint flags;
+    vec2 pad;
+    vec4 boundingSphere; // xyz = center, w = radius (mesh space)
+};
+
+layout(std430, set = 1, binding = 0) readonly buffer InputInstances
+{
+    InstanceData instances[];
+} inData;
+
+layout(std430, set = 1, binding = 1) buffer OutputInstances
+{
+    InstanceData instances[];
+} outData;
+
+layout(std430, set = 1, binding = 2) buffer DrawCmdBuffer
+{
+    DrawCommand commands[];
+} drawCmd;
+
+layout(push_constant) uniform CullPC
+{
+    uint uInputOffset;
+    uint uInputCount;
+    uint uOutputOffset;
+    uint uCommandIndex;
+} pc;
+
+bool IsVisible(vec4 boundingSphere, mat4 model)
+{
+    vec3 center = (model * vec4(boundingSphere.xyz, 1.0)).xyz;
+    float radius = boundingSphere.w;
+
+    float scaleX = length(model[0].xyz);
+    float scaleY = length(model[1].xyz);
+    float scaleZ = length(model[2].xyz);
+    float maxScale = max(scaleX, max(scaleY, scaleZ));
+    radius *= maxScale;
+
+    for (int i = 0; i < 6; ++i)
+    {
+        float distance =
+            dot(ubo.uFrustumPlanes[i].xyz, center) + ubo.uFrustumPlanes[i].w;
+        if (distance < -radius)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void main()
+{
+    uint localIdx = gl_GlobalInvocationID.x;
+    if (localIdx >= pc.uInputCount)
+    {
+        return;
+    }
+
+    uint idx = pc.uInputOffset + localIdx;
+    InstanceData instance = inData.instances[idx];
+
+    if (IsVisible(instance.boundingSphere, instance.model))
+    {
+        uint outIdx =
+            atomicAdd(drawCmd.commands[pc.uCommandIndex].instanceCount, 1);
+        outData.instances[pc.uOutputOffset + outIdx] = instance;
+    }
+}

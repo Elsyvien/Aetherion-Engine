@@ -14,9 +14,10 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSpinBox>
 #include <QStringList>
-#include <QVBoxLayout>
 #include <QTextEdit>
+#include <QVBoxLayout>
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -25,13 +26,14 @@
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Editor/Commands/ComponentCommands.h"
 #include "Aetherion/Editor/Commands/TransformCommand.h"
+#include "Aetherion/Scene/AIBehaviorComponent.h"
 #include "Aetherion/Scene/AudioSourceComponent.h"
 #include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/ColliderComponent.h"
 #include "Aetherion/Scene/Entity.h"
-#include "Aetherion/Scene/AIBehaviorComponent.h"
 #include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
+#include "Aetherion/Scene/ParticleEmitterComponent.h"
 #include "Aetherion/Scene/RigidbodyComponent.h"
 #include "Aetherion/Scene/TransformComponent.h"
 #include <QToolButton>
@@ -514,11 +516,13 @@ void EditorInspectorPanel::RebuildUi() {
   auto camera = m_entity->GetComponent<Scene::CameraComponent>();
   auto rigidbody = m_entity->GetComponent<Scene::RigidbodyComponent>();
   auto collider = m_entity->GetComponent<Scene::ColliderComponent>();
-  auto audioSource = m_entity->GetComponent<Scene::AudioSourceComponent>();     
+  auto audioSource = m_entity->GetComponent<Scene::AudioSourceComponent>();
   auto aiBehavior = m_entity->GetComponent<Scene::AIBehaviorComponent>();
+  auto particleEmitter =
+      m_entity->GetComponent<Scene::ParticleEmitterComponent>();
 
-  if (!transform && !mesh && !light && !camera && !rigidbody && !collider &&    
-      !audioSource && !aiBehavior) {
+  if (!transform && !mesh && !light && !camera && !rigidbody && !collider &&
+      !audioSource && !aiBehavior && !particleEmitter) {
     auto *noEditable =
         new QLabel(tr("No editable components on selected entity."), m_content);
     noEditable->setAlignment(Qt::AlignTop | Qt::AlignLeft);
@@ -1338,14 +1342,19 @@ void EditorInspectorPanel::RebuildUi() {
     form->setSpacing(6);
 
     m_aiMode = new QComboBox(m_content);
-    m_aiMode->addItem(tr("Stub"),
-                      static_cast<int>(Scene::AIBehaviorComponent::ExecutionMode::Stub));
-    m_aiMode->addItem(tr("Local Model"),
-                      static_cast<int>(Scene::AIBehaviorComponent::ExecutionMode::LocalModel));
-    m_aiMode->addItem(tr("Remote Service"),
-                      static_cast<int>(Scene::AIBehaviorComponent::ExecutionMode::RemoteService));
-    const int modeIdx = m_aiMode->findData(
-        static_cast<int>(aiBehavior->GetExecutionMode()));
+    m_aiMode->addItem(
+        tr("Stub"),
+        static_cast<int>(Scene::AIBehaviorComponent::ExecutionMode::Stub));
+    m_aiMode->addItem(
+        tr("Local Model"),
+        static_cast<int>(
+            Scene::AIBehaviorComponent::ExecutionMode::LocalModel));
+    m_aiMode->addItem(
+        tr("Remote Service"),
+        static_cast<int>(
+            Scene::AIBehaviorComponent::ExecutionMode::RemoteService));
+    const int modeIdx =
+        m_aiMode->findData(static_cast<int>(aiBehavior->GetExecutionMode()));
     if (modeIdx >= 0) {
       m_aiMode->setCurrentIndex(modeIdx);
     }
@@ -1416,20 +1425,21 @@ void EditorInspectorPanel::RebuildUi() {
       aiBehavior->SetPersonality(m_aiPersonality->text().toStdString());
       aiBehavior->SetKnowledgeBase(m_aiKnowledge->text().toStdString());
       aiBehavior->SetContext(m_aiContext->toPlainText().toStdString());
-      aiBehavior->SetInlinePrompt(m_aiInlinePrompt->toPlainText().toStdString());
+      aiBehavior->SetInlinePrompt(
+          m_aiInlinePrompt->toPlainText().toStdString());
       aiBehavior->SetDecisionInterval(
           static_cast<float>(m_aiDecisionInterval->value()));
       emit sceneModified();
     };
 
-    connect(m_aiMode, qOverload<int>(&QComboBox::currentIndexChanged), this,
-            [aiBehavior, this](int idx) {
-              const int value = m_aiMode->itemData(idx).toInt();
-              aiBehavior->SetExecutionMode(
-                  static_cast<Scene::AIBehaviorComponent::ExecutionMode>(
-                      value));
-              emit sceneModified();
-            });
+    connect(
+        m_aiMode, qOverload<int>(&QComboBox::currentIndexChanged), this,
+        [aiBehavior, this](int idx) {
+          const int value = m_aiMode->itemData(idx).toInt();
+          aiBehavior->SetExecutionMode(
+              static_cast<Scene::AIBehaviorComponent::ExecutionMode>(value));
+          emit sceneModified();
+        });
     connect(m_aiPromptAsset, qOverload<int>(&QComboBox::currentIndexChanged),
             this, [aiBehavior, this](int idx) {
               const QString id = m_aiPromptAsset->itemData(idx).toString();
@@ -1444,13 +1454,212 @@ void EditorInspectorPanel::RebuildUi() {
             [updateBehavior]() { updateBehavior(); });
     connect(m_aiInlinePrompt, &QTextEdit::textChanged, this,
             [updateBehavior]() { updateBehavior(); });
-    connect(
-        m_aiDecisionInterval, qOverload<double>(&QDoubleSpinBox::valueChanged),
-        this, [updateBehavior](double) { updateBehavior(); });
+    connect(m_aiDecisionInterval,
+            qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+            [updateBehavior](double) { updateBehavior(); });
 
     formHost->setLayout(form);
     m_contentLayout->addWidget(
         makeComponentHeader(tr("AI Behavior"), aiBehavior, formHost));
+  }
+
+  // Particle Emitter Component UI
+  if (particleEmitter) {
+    auto *formHost = new QWidget(m_content);
+    auto *form = new QFormLayout(formHost);
+    form->setLabelAlignment(Qt::AlignLeft);
+    form->setSpacing(6);
+
+    // Preset selector
+    auto *presetCombo = new QComboBox(m_content);
+    presetCombo->addItem(tr("(Custom)"), QString());
+    presetCombo->addItem(tr("Fire"), "fire");
+    presetCombo->addItem(tr("Smoke"), "smoke");
+    presetCombo->addItem(tr("Sparks"), "sparks");
+    presetCombo->addItem(tr("Rain"), "rain");
+    presetCombo->addItem(tr("Snow"), "snow");
+    presetCombo->addItem(tr("Magic"), "magic");
+    form->addRow(tr("Preset"), presetCombo);
+
+    // Playback controls
+    auto *playbackRow = new QWidget(m_content);
+    auto *playbackLayout = new QHBoxLayout(playbackRow);
+    playbackLayout->setContentsMargins(0, 0, 0, 0);
+    auto *playBtn = new QPushButton(tr("Play"), playbackRow);
+    auto *stopBtn = new QPushButton(tr("Stop"), playbackRow);
+    auto *burstBtn = new QPushButton(tr("Burst 10"), playbackRow);
+    playbackLayout->addWidget(playBtn);
+    playbackLayout->addWidget(stopBtn);
+    playbackLayout->addWidget(burstBtn);
+    form->addRow(tr("Playback"), playbackRow);
+
+    // Status label
+    auto *statusLabel =
+        new QLabel(particleEmitter->IsPlaying() ? tr("Playing") : tr("Stopped"),
+                   m_content);
+    form->addRow(tr("Status"), statusLabel);
+
+    // Emission settings
+    auto *emissionRate = makeSpin(0.0, 1000.0, 1.0);
+    emissionRate->setValue(particleEmitter->GetEmissionRate());
+    form->addRow(tr("Emission Rate"), emissionRate);
+
+    auto *maxParticles = new QSpinBox(m_content);
+    maxParticles->setRange(1, 100000);
+    maxParticles->setValue(
+        static_cast<int>(particleEmitter->GetMaxParticles()));
+    form->addRow(tr("Max Particles"), maxParticles);
+
+    auto *looping = new QCheckBox(m_content);
+    looping->setChecked(particleEmitter->IsLooping());
+    form->addRow(tr("Looping"), looping);
+
+    auto *playOnAwake = new QCheckBox(m_content);
+    playOnAwake->setChecked(particleEmitter->GetPlayOnAwake());
+    form->addRow(tr("Play on Awake"), playOnAwake);
+
+    // Lifetime
+    auto *minLifetime = makeSpin(0.01, 60.0, 0.1);
+    minLifetime->setValue(particleEmitter->GetMinLifetime());
+    auto *maxLifetime = makeSpin(0.01, 60.0, 0.1);
+    maxLifetime->setValue(particleEmitter->GetMaxLifetime());
+    form->addRow(tr("Lifetime Min"), minLifetime);
+    form->addRow(tr("Lifetime Max"), maxLifetime);
+
+    // Speed
+    auto *minSpeed = makeSpin(0.0, 100.0, 0.1);
+    minSpeed->setValue(particleEmitter->GetMinSpeed());
+    auto *maxSpeed = makeSpin(0.0, 100.0, 0.1);
+    maxSpeed->setValue(particleEmitter->GetMaxSpeed());
+    form->addRow(tr("Speed Min"), minSpeed);
+    form->addRow(tr("Speed Max"), maxSpeed);
+
+    // Size
+    auto *startSize = makeSpin(0.001, 10.0, 0.01);
+    startSize->setValue(particleEmitter->GetStartSize());
+    auto *endSize = makeSpin(0.0, 10.0, 0.01);
+    endSize->setValue(particleEmitter->GetEndSize());
+    form->addRow(tr("Start Size"), startSize);
+    form->addRow(tr("End Size"), endSize);
+
+    // Gravity
+    auto *gravity = makeSpin(-10.0, 10.0, 0.1);
+    gravity->setValue(particleEmitter->GetGravityMultiplier());
+    form->addRow(tr("Gravity"), gravity);
+
+    // Blend mode
+    auto *blendMode = new QComboBox(m_content);
+    blendMode->addItem(tr("Alpha"), 0);
+    blendMode->addItem(tr("Additive"), 1);
+    blendMode->setCurrentIndex(
+        static_cast<int>(particleEmitter->GetBlendMode()));
+    form->addRow(tr("Blend Mode"), blendMode);
+
+    // AI Integration - Prompt Hint
+    auto *promptHint = new QLineEdit(
+        QString::fromStdString(particleEmitter->GetPromptHint()), m_content);
+    promptHint->setPlaceholderText(tr("e.g., 'campfire', 'magic sparkles'"));
+    form->addRow(tr("AI Hint"), promptHint);
+
+    // Active particle count label
+    auto *particleCount = new QLabel(
+        tr("%1 active").arg(particleEmitter->GetActiveParticleCount()),
+        m_content);
+    form->addRow(tr("Particles"), particleCount);
+
+    // Connect preset
+    connect(presetCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [this, particleEmitter, presetCombo, emissionRate, minLifetime,
+             maxLifetime, minSpeed, maxSpeed, startSize, endSize, gravity,
+             blendMode](int idx) {
+              const QString preset = presetCombo->itemData(idx).toString();
+              if (!preset.isEmpty()) {
+                particleEmitter->SetPreset(preset.toStdString());
+                // Update UI to reflect new values
+                emissionRate->setValue(particleEmitter->GetEmissionRate());
+                minLifetime->setValue(particleEmitter->GetMinLifetime());
+                maxLifetime->setValue(particleEmitter->GetMaxLifetime());
+                minSpeed->setValue(particleEmitter->GetMinSpeed());
+                maxSpeed->setValue(particleEmitter->GetMaxSpeed());
+                startSize->setValue(particleEmitter->GetStartSize());
+                endSize->setValue(particleEmitter->GetEndSize());
+                gravity->setValue(particleEmitter->GetGravityMultiplier());
+                blendMode->setCurrentIndex(
+                    static_cast<int>(particleEmitter->GetBlendMode()));
+                emit sceneModified();
+              }
+            });
+
+    // Connect playback buttons
+    connect(playBtn, &QPushButton::clicked, this,
+            [particleEmitter, statusLabel]() {
+              particleEmitter->Play();
+              statusLabel->setText(tr("Playing"));
+            });
+    connect(stopBtn, &QPushButton::clicked, this,
+            [particleEmitter, statusLabel]() {
+              particleEmitter->Stop();
+              statusLabel->setText(tr("Stopped"));
+            });
+    connect(burstBtn, &QPushButton::clicked, this,
+            [particleEmitter]() { particleEmitter->Burst(10); });
+
+    // Connect property changes
+    auto updateEmitter = [this, particleEmitter, emissionRate, maxParticles,
+                          looping, playOnAwake, minLifetime, maxLifetime,
+                          minSpeed, maxSpeed, startSize, endSize, gravity,
+                          blendMode, promptHint]() {
+      particleEmitter->SetEmissionRate(
+          static_cast<float>(emissionRate->value()));
+      particleEmitter->SetMaxParticles(
+          static_cast<uint32_t>(maxParticles->value()));
+      particleEmitter->SetLooping(looping->isChecked());
+      particleEmitter->SetPlayOnAwake(playOnAwake->isChecked());
+      particleEmitter->SetLifetimeRange(
+          static_cast<float>(minLifetime->value()),
+          static_cast<float>(maxLifetime->value()));
+      particleEmitter->SetSpeedRange(static_cast<float>(minSpeed->value()),
+                                     static_cast<float>(maxSpeed->value()));
+      particleEmitter->SetSizeRange(static_cast<float>(startSize->value()),
+                                    static_cast<float>(endSize->value()));
+      particleEmitter->SetGravityMultiplier(
+          static_cast<float>(gravity->value()));
+      particleEmitter->SetBlendMode(
+          static_cast<Scene::ParticleBlendMode>(blendMode->currentIndex()));
+      particleEmitter->SetPromptHint(promptHint->text().toStdString());
+      emit sceneModified();
+    };
+
+    connect(emissionRate, qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this, [updateEmitter](double) { updateEmitter(); });
+    connect(maxParticles, qOverload<int>(&QSpinBox::valueChanged), this,
+            [updateEmitter](int) { updateEmitter(); });
+    connect(looping, &QCheckBox::toggled, this,
+            [updateEmitter](bool) { updateEmitter(); });
+    connect(playOnAwake, &QCheckBox::toggled, this,
+            [updateEmitter](bool) { updateEmitter(); });
+    connect(minLifetime, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+            [updateEmitter](double) { updateEmitter(); });
+    connect(maxLifetime, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+            [updateEmitter](double) { updateEmitter(); });
+    connect(minSpeed, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+            [updateEmitter](double) { updateEmitter(); });
+    connect(maxSpeed, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+            [updateEmitter](double) { updateEmitter(); });
+    connect(startSize, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+            [updateEmitter](double) { updateEmitter(); });
+    connect(endSize, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+            [updateEmitter](double) { updateEmitter(); });
+    connect(gravity, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+            [updateEmitter](double) { updateEmitter(); });
+    connect(blendMode, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [updateEmitter](int) { updateEmitter(); });
+    connect(promptHint, &QLineEdit::editingFinished, this,
+            [updateEmitter]() { updateEmitter(); });
+
+    formHost->setLayout(form);
+    m_contentLayout->addWidget(
+        makeComponentHeader(tr("Particle Emitter"), particleEmitter, formHost));
   }
 
   // Collider Component UI
@@ -1699,6 +1908,14 @@ void EditorInspectorPanel::RebuildUi() {
     if (!m_entity->GetComponent<Scene::AIBehaviorComponent>()) {
       menu.addAction(tr("AI Behavior"), [this] {
         auto comp = std::make_shared<Scene::AIBehaviorComponent>();
+        if (m_commandExecutor)
+          m_commandExecutor(
+              std::make_unique<AddComponentCommand>(m_entity, comp));
+      });
+    }
+    if (!m_entity->GetComponent<Scene::ParticleEmitterComponent>()) {
+      menu.addAction(tr("Particle Emitter"), [this] {
+        auto comp = std::make_shared<Scene::ParticleEmitterComponent>();
         if (m_commandExecutor)
           m_commandExecutor(
               std::make_unique<AddComponentCommand>(m_entity, comp));

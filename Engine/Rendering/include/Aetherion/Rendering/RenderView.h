@@ -92,6 +92,42 @@ struct RenderCollider {
   bool isStatic{false};
 };
 
+struct RenderPostProcessSettings {
+  bool enableBloom{true};
+  float bloomThreshold{1.1f};
+  float bloomIntensity{0.35f};
+  bool enableTaa{true};
+  float taaBlend{0.1f};
+  float exposure{1.0f};
+};
+
+struct RenderShadowSettings {
+  bool enableShadows{true};
+  float shadowBias{0.0015f};
+  float shadowStrength{1.0f};
+};
+
+/// @brief Single particle for GPU rendering
+struct RenderParticle {
+  float position[3]{0.0f, 0.0f, 0.0f};
+  float size{1.0f};
+  float color[4]{1.0f, 1.0f, 1.0f, 1.0f}; // RGBA
+  float rotation{0.0f};
+  float age{0.0f}; // Normalized 0-1
+};
+
+/// @brief Particle blend mode for rendering
+enum class RenderParticleBlendMode : uint32_t { Alpha = 0, Additive = 1 };
+
+/// @brief Particle emitter data for rendering
+struct RenderParticleEmitter {
+  Core::EntityId entityId{0};
+  float worldPosition[3]{0.0f, 0.0f, 0.0f};
+  std::vector<RenderParticle> particles;
+  std::string textureAssetId;
+  RenderParticleBlendMode blendMode{RenderParticleBlendMode::Alpha};
+};
+
 struct RenderView {
   std::vector<RenderInstance> instances;
   std::vector<RenderBatch> batches;
@@ -106,7 +142,11 @@ struct RenderView {
   std::vector<RenderCamera> cameras;
   std::vector<RenderCollider> colliders;
   std::vector<RenderMaterial> materials;
+  RenderPostProcessSettings postProcess{};
+  RenderShadowSettings shadows{};
+  std::vector<RenderParticleEmitter> particleEmitters;
   bool showEditorIcons{false};
   bool showColliders{true};
+  bool showParticles{true};
 };
 } // namespace Aetherion::Rendering
