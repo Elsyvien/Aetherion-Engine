@@ -1067,7 +1067,11 @@ void VulkanViewport::DestroyTextureCache() {
     texture = {};
   };
 
-  destroyTexture(m_defaultTexture);
+  destroyTexture(m_defaultAlbedoTexture);
+  destroyTexture(m_defaultNormalTexture);
+  destroyTexture(m_defaultMetallicRoughnessTexture);
+  destroyTexture(m_defaultEmissiveTexture);
+  destroyTexture(m_defaultOcclusionTexture);
 
   for (auto &entry : m_textureCache) {
     destroyTexture(entry.second);
@@ -2696,7 +2700,16 @@ void VulkanViewport::CreateLineBuffers() {
     }
 
     const unsigned char white[4] = {255, 255, 255, 255};
-    m_defaultTexture = CreateTextureFromPixels(white, 1, 1);
+    const unsigned char normal[4] = {128, 128, 255, 255};
+    const unsigned char metallicRoughness[4] = {0, 255, 0, 255};
+    const unsigned char black[4] = {0, 0, 0, 255};
+
+    m_defaultAlbedoTexture = CreateTextureFromPixels(white, 1, 1, true);
+    m_defaultNormalTexture = CreateTextureFromPixels(normal, 1, 1, false);
+    m_defaultMetallicRoughnessTexture =
+        CreateTextureFromPixels(metallicRoughness, 1, 1, false);
+    m_defaultEmissiveTexture = CreateTextureFromPixels(black, 1, 1, false);
+    m_defaultOcclusionTexture = CreateTextureFromPixels(white, 1, 1, false);
   }
 
   void VulkanViewport::CreatePipeline() {
@@ -5307,7 +5320,7 @@ void VulkanViewport::CreateLineBuffers() {
   }
 
   VulkanViewport::GpuTexture VulkanViewport::CreateTextureFromPixels(
-      const unsigned char *pixels, uint32_t width, uint32_t height) {
+      const unsigned char *pixels, uint32_t width, uint32_t height, bool srgb) {
     VkDevice device = m_context->GetDevice();
     VkPhysicalDevice gpu = m_context->GetPhysicalDevice();
 
@@ -5330,7 +5343,8 @@ void VulkanViewport::CreateLineBuffers() {
     texture.width = width;
     texture.height = height;
 
-    const VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+    const VkFormat format =
+        srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
     CreateImage(gpu, device, width, height, format, VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.image,
@@ -5399,13 +5413,29 @@ void VulkanViewport::CreateLineBuffers() {
   }
 
   const VulkanViewport::GpuTexture *VulkanViewport::ResolveTexture(
-      const std::string &assetId) {
+      const std::string &assetId, TextureUsage usage) {
     if (!m_context || !m_context->IsInitialized()) {
       return nullptr;
     }
 
+    const auto defaultTextureFor = [this](TextureUsage use) {
+      switch (use) {
+      case TextureUsage::Albedo:
+        return &m_defaultAlbedoTexture;
+      case TextureUsage::Normal:
+        return &m_defaultNormalTexture;
+      case TextureUsage::MetallicRoughness:
+        return &m_defaultMetallicRoughnessTexture;
+      case TextureUsage::Emissive:
+        return &m_defaultEmissiveTexture;
+      case TextureUsage::Occlusion:
+        return &m_defaultOcclusionTexture;
+      }
+      return &m_defaultAlbedoTexture;
+    };
+
     if (assetId.empty()) {
-      return &m_defaultTexture;
+      return defaultTextureFor(usage);
     }
 
     auto cached = m_textureCache.find(assetId);
@@ -5414,7 +5444,7 @@ void VulkanViewport::CreateLineBuffers() {
     }
 
     if (!m_assetRegistry) {
-      return &m_defaultTexture;
+      return defaultTextureFor(usage);
     }
 
     std::filesystem::path sourcePath;
@@ -5437,7 +5467,7 @@ void VulkanViewport::CreateLineBuffers() {
                        "VulkanViewport: texture asset not found '" + assetId +
                            "'");
       }
-      return &m_defaultTexture;
+      return defaultTextureFor(usage);
     }
 
     int width = 0;
@@ -5454,20 +5484,26 @@ void VulkanViewport::CreateLineBuffers() {
       if (pixels) {
         stbi_image_free(pixels);
       }
-      return &m_defaultTexture;
+      return defaultTextureFor(usage);
+    }
+
+    bool srgb = true;
+    if (m_assetRegistry) {
+      const auto settings = m_assetRegistry->GetTextureImportSettings(assetId);
+      srgb = settings.srgb && !settings.isNormalMap;
     }
 
     GpuTexture texture{};
     try {
       texture = CreateTextureFromPixels(pixels, static_cast<uint32_t>(width),
-                                        static_cast<uint32_t>(height));
+                                        static_cast<uint32_t>(height), srgb);
     } catch (const std::exception &ex) {
       if (m_context) {
         m_context->Log(LogSeverity::Error,
-                       std::string("Texture upload failed: ") + ex.what());
+                       std::string("Texture upload failed: ") + ex.what());     
       }
       stbi_image_free(pixels);
-      return &m_defaultTexture;
+      return defaultTextureFor(usage);
     }
     stbi_image_free(pixels);
 
@@ -5554,11 +5590,12 @@ void VulkanViewport::CreateLineBuffers() {
       vkUnmapMemory(device, result.uniformMemory);
     }
 
-    auto resolveTextureInfo = [this](const std::string &id) {
+    auto resolveTextureInfo = [this](const std::string &id,
+                                     TextureUsage usage) {
       VkDescriptorImageInfo info{};
-      const GpuTexture *tex = ResolveTexture(id);
+      const GpuTexture *tex = ResolveTexture(id, usage);
       if (!tex || tex->view == VK_NULL_HANDLE || tex->sampler == VK_NULL_HANDLE) {
-        tex = &m_defaultTexture;
+        tex = ResolveTexture("", usage);
       }
       info.sampler = tex ? tex->sampler : VK_NULL_HANDLE;
       info.imageView = tex ? tex->view : VK_NULL_HANDLE;
@@ -5567,11 +5604,12 @@ void VulkanViewport::CreateLineBuffers() {
     };
 
     std::array<VkDescriptorImageInfo, 5> imageInfos = {
-        resolveTextureInfo(material.GetAlbedoMapId()),
-        resolveTextureInfo(material.GetNormalMapId()),
-        resolveTextureInfo(material.GetMetallicRoughnessMapId()),
-        resolveTextureInfo(material.GetEmissiveMapId()),
-        resolveTextureInfo(material.GetOcclusionMapId()),
+        resolveTextureInfo(material.GetAlbedoMapId(), TextureUsage::Albedo),
+        resolveTextureInfo(material.GetNormalMapId(), TextureUsage::Normal),
+        resolveTextureInfo(material.GetMetallicRoughnessMapId(),
+                           TextureUsage::MetallicRoughness),
+        resolveTextureInfo(material.GetEmissiveMapId(), TextureUsage::Emissive),
+        resolveTextureInfo(material.GetOcclusionMapId(), TextureUsage::Occlusion),
     };
 
     VkDescriptorBufferInfo bufferInfo{};

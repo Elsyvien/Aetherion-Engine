@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <mutex>
 
 #include "nlohmann/json.hpp"
 
@@ -187,8 +188,11 @@ BehaviorDecision ScriptingRuntime::RunBehavior(const std::string& assetId,
         return decision;
     }
 
-    // Stub: Inspect context for simple state hints; real implementation would
-    // dispatch into embedded Python via pybind11.
+    if (m_pythonEnabled) {
+        return RunBehaviorPython(it->second, contextJson);
+    }
+
+    // Stub: Inspect context for simple state hints
     if (contextJson.find("attack") != std::string::npos) {
         decision.state = "Attack";
         decision.reason = "Context mentioned attack";
@@ -199,6 +203,110 @@ BehaviorDecision ScriptingRuntime::RunBehavior(const std::string& assetId,
         decision.state = "Idle";
     }
     return decision;
+}
+
+void ScriptingRuntime::InitializePython() {
+#ifdef AETHERION_ENABLE_PYTHON
+    static std::once_flag once;
+    std::call_once(once, []() { Py_Initialize(); });
+    m_pythonInitialized = Py_IsInitialized();
+#else
+    m_pythonInitialized = false;
+#endif
+}
+
+BehaviorDecision ScriptingRuntime::RunBehaviorPython(
+    const BehaviorScript& script, const std::string& contextJson) {
+    BehaviorDecision decision{};
+    decision.reason = "Python bridge disabled";
+
+#ifdef AETHERION_ENABLE_PYTHON
+    if (!m_pythonInitialized) {
+        InitializePython();
+    }
+    if (!m_pythonInitialized) {
+        decision.success = false;
+        decision.reason = "Python initialization failed";
+        return decision;
+    }
+
+    PyGILState_STATE gil = PyGILState_Ensure();
+    PyObject* globals = PyDict_New();
+    PyDict_SetItemString(globals, "__builtins__", PyEval_GetBuiltins());
+
+    std::string code = script.code;
+    if (!script.generatedPath.empty()) {
+        std::ifstream input(script.generatedPath);
+        if (input.is_open()) {
+            std::stringstream buffer;
+            buffer << input.rdbuf();
+            code = buffer.str();
+        }
+    }
+
+    decision.state = "Idle";
+    decision.reason = "Python execution ok";
+
+    PyObject* runResult =
+        PyRun_StringFlags(code.c_str(), Py_file_input, globals, globals, nullptr);
+    if (!runResult) {
+        if (m_errorSink) {
+            m_errorSink("[ScriptingRuntime] Python execution failed");
+        }
+        PyErr_Print();
+        decision.success = false;
+        decision.reason = "Python execution failed";
+        Py_DECREF(globals);
+        PyGILState_Release(gil);
+        return decision;
+    }
+    Py_DECREF(runResult);
+
+    PyObject* updateFunc = PyDict_GetItemString(globals, "update");
+    if (updateFunc && PyCallable_Check(updateFunc)) {
+        PyObject* ctxDict = PyDict_New();
+        PyDict_SetItemString(ctxDict, "context", PyUnicode_FromString(contextJson.c_str()));
+        PyObject* result =
+            PyObject_CallFunctionObjArgs(updateFunc, Py_None, ctxDict, nullptr);
+        Py_DECREF(ctxDict);
+        if (result && PyDict_Check(result)) {
+            PyObject* stateObj = PyDict_GetItemString(result, "state");
+            PyObject* reasonObj = PyDict_GetItemString(result, "reason");
+            if (stateObj && PyUnicode_Check(stateObj)) {
+                decision.state = PyUnicode_AsUTF8(stateObj);
+            }
+            if (reasonObj && PyUnicode_Check(reasonObj)) {
+                decision.reason = PyUnicode_AsUTF8(reasonObj);
+            }
+            Py_DECREF(result);
+        } else {
+            decision.success = false;
+            decision.reason = "update() did not return a dict";
+            if (m_errorSink) {
+                m_errorSink("[ScriptingRuntime] update() did not return a dict");
+            }
+            if (result) {
+                Py_DECREF(result);
+            }
+        }
+    } else {
+        decision.success = false;
+        decision.reason = "No update() function found in script";
+        if (m_errorSink) {
+            m_errorSink("[ScriptingRuntime] No update() in behavior script");
+        }
+    }
+
+    Py_DECREF(globals);
+    PyGILState_Release(gil);
+    return decision;
+#else
+    (void)script;
+    (void)contextJson;
+    decision.success = false;
+    decision.reason = "Python bridge not compiled";
+    return decision;
+#endif
 }
 
 bool ScriptingRuntime::HasPrompt(const std::string& assetId) const noexcept {

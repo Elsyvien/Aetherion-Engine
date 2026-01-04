@@ -20,6 +20,8 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 include(CMake/ProjectOptions.cmake OPTIONAL)
 
+option(AETHERION_ENABLE_PYTHON "Enable embedded Python scripting runtime" OFF)
+
 # Platform-specific Qt configuration
 if(WIN32)
     # Windows: Add Qt installation paths
@@ -70,6 +72,9 @@ endif()
 
 find_package(Qt6 6.2 COMPONENTS Widgets REQUIRED)
 find_package(Vulkan REQUIRED)
+if(AETHERION_ENABLE_PYTHON)
+    find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+endif()
 
 # Jolt Physics
 set(PHYSICS_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/Engine/ThirdParty/JoltPhysics)
@@ -171,6 +176,11 @@ target_link_libraries(AetherionRuntime
     PUBLIC
         Vulkan::Vulkan
         Jolt
+        $<$<BOOL:${AETHERION_ENABLE_PYTHON}>:Python3::Python>
+)
+target_compile_definitions(AetherionRuntime
+    PUBLIC
+        $<$<BOOL:${AETHERION_ENABLE_PYTHON}>:AETHERION_ENABLE_PYTHON=1>
 )
 
 set(EDITOR_SOURCES
@@ -249,4 +259,23 @@ target_include_directories(AetherionSelfTests
 target_link_libraries(AetherionSelfTests
     PRIVATE
         AetherionRuntime
+)
+
+add_executable(AetherionCopilotTest
+    tests/CopilotIntentTest.cpp
+    Engine/Editor/src/AICopilotProcessor.cpp
+)
+target_include_directories(AetherionCopilotTest
+    PRIVATE
+        Engine/Editor/include
+        Engine/Scene/include
+        Engine/Core/include
+        Engine/Runtime/include
+        Engine/Assets/include
+        Engine/ThirdParty
+)
+target_link_libraries(AetherionCopilotTest
+    PRIVATE
+        AetherionRuntime
+        Qt6::Widgets
 )

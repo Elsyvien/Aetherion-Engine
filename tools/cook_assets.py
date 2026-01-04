@@ -81,6 +81,13 @@ def main() -> int:
 
         if not meta:
             write_metadata(meta_path, asset_id, asset_type, source)
+        if asset_type == "Texture":
+            import_data = meta.get("import") if isinstance(meta, dict) else None
+            if not isinstance(import_data, dict) or not isinstance(import_data.get("srgb"), bool):
+                print(
+                    f"Warning: texture '{relative.as_posix()}' missing import.srgb "
+                    "color space flag; add it to avoid incorrect sampling."
+                )
 
         manifest_entries.append({
             "id": asset_id,

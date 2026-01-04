@@ -26,6 +26,7 @@ struct CopilotResult {
     std::vector<Core::EntityId> createdEntityIds;
     std::vector<QString> previewActions;
     bool dryRun{false};
+    bool requestFocus{false};
 };
 
 class AICopilotProcessor {

@@ -929,6 +929,9 @@ void EngineApplication::Initialize(bool enableValidationLayers,
       std::make_shared<Scripting::ScriptingRuntime>());
   if (const auto scripting = m_context->GetScriptingRuntime()) {
     scripting->SetErrorSink([this](const std::string &msg) { DebugPrint(msg); });
+#ifdef AETHERION_ENABLE_PYTHON
+    scripting->EnablePythonBridge(true);
+#endif
   }
 
   const std::filesystem::path resolvedAssetsRoot = ResolveAssetsRoot();

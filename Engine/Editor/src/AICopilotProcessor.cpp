@@ -81,6 +81,9 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
     const bool moveRequest = lowered.contains("move") ||
                              lowered.contains("offset") ||
                              lowered.contains("translate");
+    const bool focusRequest = lowered.contains("focus") ||
+                              lowered.contains("frame");
+    const bool parentRequest = lowered.contains("parent");
 
     if (deleteRequest && m_selectedEntity) {
         if (result.dryRun) {
@@ -207,6 +210,52 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
                                   .arg(offset[2]);
             return result;
         }
+    }
+
+    if (parentRequest && m_selectedEntity) {
+        Core::EntityId targetId = 0;
+        QRegularExpression numberRegex(R"(\b(\d+)\b)");
+        auto matchIt = numberRegex.globalMatch(trimmed);
+        if (matchIt.hasNext()) {
+            targetId = matchIt.next().captured(1).toLongLong();
+        }
+
+        if (lowered.contains("world") || lowered.contains("root")) {
+            targetId = 0;
+        }
+
+        if (targetId == 0 && !result.dryRun) {
+            m_scene->SetParent(m_selectedEntity->GetId(), 0);
+            result.response = "Detached selection to world.";
+            return result;
+        }
+
+        if (targetId != 0) {
+            if (result.dryRun) {
+                result.previewActions.push_back(
+                    QString("Would parent '%1' to entity id %2")
+                        .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                        .arg(targetId));
+                result.response = "Dry-run: parent selection.";
+                return result;
+            }
+            const bool ok = m_scene->SetParent(m_selectedEntity->GetId(), targetId);
+            if (ok) {
+                result.response =
+                    QString("Parented '%1' to entity %2.")
+                        .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                        .arg(targetId);
+            } else {
+                result.response = "Parent operation failed (check target id).";
+            }
+            return result;
+        }
+    }
+
+    if (focusRequest && m_selectedEntity) {
+        result.requestFocus = true;
+        result.response = "Focusing camera on selection.";
+        return result;
     }
 
     if (!spawnRequest) {

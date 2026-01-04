@@ -2,5 +2,8 @@
   "version": 1,
   "id": "58e8622c-ac1b-41d9-bd4d-e67e2aa1b463",
   "type": "Texture",
-  "source": "textures/noise.png"
+  "source": "textures/noise.png",
+  "import": {
+    "srgb": false
+  }
 }

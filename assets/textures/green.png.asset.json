@@ -2,5 +2,8 @@
   "version": 1,
   "id": "a554f34c-5d87-4757-88df-13abe75f8cb6",
   "type": "Texture",
-  "source": "textures/green.png"
+  "source": "textures/green.png",
+  "import": {
+    "srgb": true
+  }
 }

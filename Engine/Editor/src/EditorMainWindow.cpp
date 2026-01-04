@@ -2466,6 +2466,12 @@ void EditorMainWindow::HandleCopilotPrompt(const QString &prompt) {
     }
   }
 
+  if (result.requestFocus) {
+    FocusCameraOnSelection();
+  }
+
+  UpdateAiHudFromSelection();
+
   m_copilotPanel->SetProcessing(false);
 }
 

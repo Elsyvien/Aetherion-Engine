@@ -278,7 +278,11 @@ private:
   uint32_t m_colliderVertexCount{0};
   VkSampler m_textureSampler{VK_NULL_HANDLE};
   VkSampler m_postProcessSampler{VK_NULL_HANDLE};
-  GpuTexture m_defaultTexture{};
+  GpuTexture m_defaultAlbedoTexture{};
+  GpuTexture m_defaultNormalTexture{};
+  GpuTexture m_defaultMetallicRoughnessTexture{};
+  GpuTexture m_defaultEmissiveTexture{};
+  GpuTexture m_defaultOcclusionTexture{};
   GpuMaterial m_defaultMaterial{};
   std::array<VkBuffer, kMaxFramesInFlight> m_uniformBuffers{};
   std::array<VkDeviceMemory, kMaxFramesInFlight> m_uniformMemories{};
@@ -357,12 +361,22 @@ private:
   [[nodiscard]] std::vector<DrawInstance>
   InstancesFromView(const RenderView &view, float timeSeconds) const;
 
+  enum class TextureUsage {
+    Albedo,
+    Normal,
+    MetallicRoughness,
+    Emissive,
+    Occlusion,
+  };
+
   [[nodiscard]] const GpuMesh *ResolveMesh(const std::string &assetId);
-  [[nodiscard]] const GpuTexture *ResolveTexture(const std::string &assetId);   
+  [[nodiscard]] const GpuTexture *ResolveTexture(const std::string &assetId,
+                                                 TextureUsage usage);
   [[nodiscard]] const GpuMaterial *ResolveMaterial(const std::string &assetId); 
-  GpuMaterial CreateMaterialResources(const Assets::Material &material);
+  GpuMaterial CreateMaterialResources(const Assets::Material &material);        
   GpuTexture CreateTextureFromPixels(const unsigned char *pixels,
-                                     uint32_t width, uint32_t height);
+                                     uint32_t width, uint32_t height,
+                                     bool srgb);
   void TransitionImageLayout(VkImage image, VkFormat format,
                              VkImageLayout oldLayout, VkImageLayout newLayout);
   void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);

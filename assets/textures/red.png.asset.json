@@ -2,5 +2,8 @@
   "version": 1,
   "id": "259a9242-278d-46e8-9633-028a4dc19260",
   "type": "Texture",
-  "source": "textures/red.png"
+  "source": "textures/red.png",
+  "import": {
+    "srgb": true
+  }
 }
