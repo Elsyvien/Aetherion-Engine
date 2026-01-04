@@ -11,6 +11,7 @@ This repo contains a working editor application, a runtime library, Vulkan rende
 - [Feature Plan & Roadmap](docs/feature-plan.md)
 - [AI Native Roadmap](docs/AI_NATIVE_ROADMAP.md)
 - [Asset Pipeline](docs/asset-pipeline.md)
+- [Agentic Copilot Workflow](docs/agentic-workflow.md)
 
 ## Layout
 
