@@ -136,6 +136,34 @@ namespace {
 struct Vec3 {
   float x, y, z;
 };
+
+enum class CopilotLabel { Entity, Light, Camera, Cube };
+
+QString CopilotLabelName(CopilotLabel label) {
+  switch (label) {
+  case CopilotLabel::Light:
+    return QObject::tr("Light");
+  case CopilotLabel::Camera:
+    return QObject::tr("Camera");
+  case CopilotLabel::Cube:
+    return QObject::tr("Cube");
+  default:
+    return QObject::tr("Entity");
+  }
+}
+
+QString CopilotLabelPlural(CopilotLabel label) {
+  switch (label) {
+  case CopilotLabel::Light:
+    return QObject::tr("lights");
+  case CopilotLabel::Camera:
+    return QObject::tr("cameras");
+  case CopilotLabel::Cube:
+    return QObject::tr("cubes");
+  default:
+    return QObject::tr("entities");
+  }
+}
 Vec3 operator-(const Vec3 &a, const Vec3 &b) {
   return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
@@ -2488,16 +2516,18 @@ void EditorMainWindow::HandleCopilotPrompt(const QString &prompt) {
   count = std::clamp(count, 1, 64);
 
   CopilotSpawnType spawnType = CopilotSpawnType::Empty;
-  QString baseName = tr("Entity");
+  CopilotLabel label = CopilotLabel::Entity;
   if (lowered.contains("light")) {
     spawnType = CopilotSpawnType::Light;
-    baseName = tr("Light");
+    label = CopilotLabel::Light;
   } else if (lowered.contains("camera")) {
     spawnType = CopilotSpawnType::Camera;
-    baseName = tr("Camera");
+    label = CopilotLabel::Camera;
   } else if (lowered.contains("cube")) {
-    baseName = tr("Cube");
+    label = CopilotLabel::Cube;
   }
+
+  const QString baseName = CopilotLabelName(label);
 
   const bool grid = lowered.contains("grid");
   const float spacing = 2.0f;
@@ -2548,18 +2578,7 @@ void EditorMainWindow::HandleCopilotPrompt(const QString &prompt) {
   }
 
   QString response;
-  QString pluralName;
-  if (baseName == tr("Entity")) {
-    pluralName = tr("entities");
-  } else if (baseName == tr("Light")) {
-    pluralName = tr("lights");
-  } else if (baseName == tr("Camera")) {
-    pluralName = tr("cameras");
-  } else if (baseName == tr("Cube")) {
-    pluralName = tr("cubes");
-  } else {
-    pluralName = baseName.toLower() + tr("s");
-  }
+  const QString pluralName = CopilotLabelPlural(label);
   if (count == 1) {
     response = tr("Spawned 1 %1.").arg(baseName);
   } else if (grid) {
