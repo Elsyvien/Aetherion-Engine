@@ -139,6 +139,53 @@ public:
   GetVirtualAssets() const noexcept;
   [[nodiscard]] bool IsVirtualAsset(const std::string &assetId) const noexcept;
 
+  // Generative asset support
+  enum class GenerativeAssetStatus {
+    Pending,
+    Generating,
+    Ready,
+    Failed
+  };
+
+  struct GenerativeAssetInfo {
+    std::string assetId;
+    std::string prompt;
+    AssetType type{AssetType::Other};
+    GenerativeAssetStatus status{GenerativeAssetStatus::Pending};
+    std::string statusMessage;
+    std::filesystem::path outputPath;
+    float progress{0.0f};
+    std::uint64_t requestedTime{0};
+    std::uint64_t completedTime{0};
+  };
+
+  /// @brief Request generation of a new asset from a prompt
+  /// @return Asset ID that can be used for tracking
+  std::string RequestGenerativeAsset(const std::string &prompt, AssetType type,
+                                     const std::string &suggestedName = {});
+
+  /// @brief Update the status of a generative asset
+  void UpdateGenerativeAssetStatus(const std::string &assetId,
+                                   GenerativeAssetStatus status,
+                                   const std::string &message = {},
+                                   const std::filesystem::path &outputPath = {});
+
+  /// @brief Mark a generative asset as ready with its generated file
+  void FinalizeGenerativeAsset(const std::string &assetId,
+                               const std::filesystem::path &generatedPath);
+
+  /// @brief Get info about a generative asset
+  [[nodiscard]] const GenerativeAssetInfo *
+  GetGenerativeAssetInfo(const std::string &assetId) const noexcept;
+
+  /// @brief Get all generative assets
+  [[nodiscard]] const std::unordered_map<std::string, GenerativeAssetInfo> &
+  GetGenerativeAssets() const noexcept;
+
+  /// @brief Get generative assets filtered by status
+  [[nodiscard]] std::vector<std::string>
+  GetGenerativeAssetsByStatus(GenerativeAssetStatus status) const;
+
   // TODO: Replace string identifiers with strong asset handles/UUIDs.
   // TODO: Add import pipeline hooks and metadata caching.
 private:
@@ -148,6 +195,7 @@ private:
   std::unordered_map<std::string, Material> m_materials;
   std::unordered_map<std::string, MeshData> m_meshData;
   std::unordered_map<std::string, VirtualAsset> m_virtualAssets;
+  std::unordered_map<std::string, GenerativeAssetInfo> m_generativeAssets;
   std::filesystem::path m_rootPath;
   std::vector<AssetEntry> m_entries;
   std::unordered_map<std::string, size_t> m_entryLookup;

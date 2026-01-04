@@ -1,6 +1,7 @@
 #include "Aetherion/Editor/EditorMainWindow.h"
 #include "Aetherion/Editor/AICopilotPanel.h"
 #include "Aetherion/Editor/AICopilotProcessor.h"
+#include "Aetherion/Editor/EditorAssetGenerationPanel.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -1365,6 +1366,22 @@ void EditorMainWindow::CreateMenuBarContent() {
           });
   RegisterCommandAction(m_showAICopilotAction, tr("View"),
                         tr("Toggle the AI copilot panel"));
+
+  m_showAssetGenAction = viewMenu->addAction(tr("Show Asset Generation"));
+  m_showAssetGenAction->setCheckable(true);
+  m_showAssetGenAction->setChecked(false);
+  m_showAssetGenAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_8));
+  connect(m_showAssetGenAction, &QAction::triggered, this,
+          [this](bool checked) {
+            if (m_assetGenDock) {
+              m_assetGenDock->setVisible(checked);
+              if (checked) {
+                m_assetGenDock->raise();
+              }
+            }
+          });
+  RegisterCommandAction(m_showAssetGenAction, tr("View"),
+                        tr("Toggle the asset generation panel"));
 
   viewMenu->addSeparator();
   auto *saveLayoutAction = viewMenu->addAction(tr("Save Layout As..."), [this] {
@@ -3591,6 +3608,43 @@ void EditorMainWindow::CreateDockPanels() {
             m_copilotPanel->SetProcessing(true);
             HandleCopilotPrompt(prompt);
             m_copilotPanel->SetProcessing(false);
+          });
+
+  // Asset Generation panel
+  m_assetGenPanel = new EditorAssetGenerationPanel(this);
+  m_assetGenPanel->setObjectName("AssetGenerationDock");
+  m_assetGenPanel->setAttribute(Qt::WA_NativeWindow, true);
+  m_assetGenDock = m_assetGenPanel;
+  if (m_runtimeApp) {
+    auto context = m_runtimeApp->GetContext();
+    if (context) {
+      m_assetGenPanel->SetAssetRegistry(context->GetAssetRegistry());
+    }
+  }
+  addDockWidget(Qt::RightDockWidgetArea, m_assetGenPanel);
+  tabifyDockWidget(copilotDock, m_assetGenPanel);
+  copilotDock->raise();
+  connect(m_assetGenPanel, &QDockWidget::visibilityChanged, this,
+          [this](bool visible) {
+            if (m_showAssetGenAction) {
+              m_showAssetGenAction->blockSignals(true);
+              m_showAssetGenAction->setChecked(visible);
+              m_showAssetGenAction->blockSignals(false);
+            }
+          });
+  connect(m_assetGenPanel, &EditorAssetGenerationPanel::requestAssetBrowserRefresh,
+          this, &EditorMainWindow::RefreshAssetBrowser);
+  connect(m_assetGenPanel, &EditorAssetGenerationPanel::assetGenerated,
+          this, [this](const QString &assetId, const QString &path) {
+            if (m_console) {
+              m_console->AppendMessage(QString("Generated asset: %1 -> %2").arg(assetId, path), ConsoleSeverity::Info);
+            }
+          });
+  connect(m_assetGenPanel, &EditorAssetGenerationPanel::generationFailed,
+          this, [this](const QString &assetId, const QString &error) {
+            if (m_console) {
+              m_console->AppendMessage(QString("Generation failed: %1 - %2").arg(assetId, error), ConsoleSeverity::Error);
+            }
           });
 
 }

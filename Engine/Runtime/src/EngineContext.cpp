@@ -6,6 +6,7 @@
 #include "Aetherion/Rendering/RenderView.h"
 #include "Aetherion/Rendering/VulkanContext.h"
 #include "Aetherion/Scripting/ScriptingPlaceholder.h"
+#include "Aetherion/Scripting/ScriptEngine.h"
 #include <utility>
 
 namespace Aetherion::Runtime {
@@ -77,6 +78,16 @@ void EngineContext::SetScriptingRuntime(
 std::shared_ptr<Scripting::ScriptingRuntime>
 EngineContext::GetScriptingRuntime() const noexcept {
   return m_scriptingRuntime;
+}
+
+void EngineContext::SetScriptEngine(
+    std::shared_ptr<Scripting::ScriptEngine> engine) {
+  m_scriptEngine = std::move(engine);
+}
+
+std::shared_ptr<Scripting::ScriptEngine>
+EngineContext::GetScriptEngine() const noexcept {
+  return m_scriptEngine;
 }
 
 void EngineContext::SetSimulationState(bool playing, bool paused) noexcept {

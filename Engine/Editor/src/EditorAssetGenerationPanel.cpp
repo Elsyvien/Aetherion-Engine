@@ -1,0 +1,480 @@
+#include "Aetherion/Editor/EditorAssetGenerationPanel.h"
+
+#include <QComboBox>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QMessageBox>
+#include <QProgressBar>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QSpinBox>
+#include <QSplitter>
+#include <QTextEdit>
+#include <QTimer>
+#include <QVBoxLayout>
+
+#include "Aetherion/Assets/AssetGenerator.h"
+#include "Aetherion/Assets/AssetRegistry.h"
+
+namespace Aetherion::Editor {
+
+EditorAssetGenerationPanel::EditorAssetGenerationPanel(QWidget *parent)
+    : QDockWidget(tr("Asset Generation"), parent) {
+    setObjectName("AssetGenerationPanel");
+    setAllowedAreas(Qt::AllDockWidgetAreas);
+    
+    m_generationQueue = std::make_shared<Assets::GenerationQueue>();
+    
+    setupUI();
+    
+    // Setup progress callback
+    m_generationQueue->SetProgressCallback(
+        [this](const std::string &requestId, float progress,
+               const std::string &message) {
+            QMetaObject::invokeMethod(
+                this, [this, requestId, progress, message]() {
+                    onProgressUpdate(QString::fromStdString(requestId),
+                                   progress, QString::fromStdString(message));
+                },
+                Qt::QueuedConnection);
+        });
+    
+    // Setup timer for processing queue
+    m_processTimer = new QTimer(this);
+    connect(m_processTimer, &QTimer::timeout, this,
+            &EditorAssetGenerationPanel::processQueue);
+    m_processTimer->start(100);  // Process every 100ms
+}
+
+EditorAssetGenerationPanel::~EditorAssetGenerationPanel() = default;
+
+void EditorAssetGenerationPanel::SetAssetRegistry(
+    std::shared_ptr<Assets::AssetRegistry> registry) {
+    m_assetRegistry = std::move(registry);
+    
+    if (m_assetRegistry && m_generationQueue) {
+        // Set output directory to assets/_generated
+        auto rootPath = m_assetRegistry->GetRootPath();
+        if (!rootPath.empty()) {
+            m_generationQueue->SetOutputDirectory(rootPath / "_generated");
+        }
+    }
+}
+
+void EditorAssetGenerationPanel::setupUI() {
+    m_centralWidget = new QWidget(this);
+    m_mainLayout = new QVBoxLayout(m_centralWidget);
+    m_mainLayout->setContentsMargins(8, 8, 8, 8);
+    m_mainLayout->setSpacing(8);
+    
+    // =========================================================================
+    // Prompt Section
+    // =========================================================================
+    auto *promptGroup = new QGroupBox(tr("Generation Prompt"), m_centralWidget);
+    auto *promptLayout = new QVBoxLayout(promptGroup);
+    
+    m_promptEdit = new QTextEdit(promptGroup);
+    m_promptEdit->setPlaceholderText(
+        tr("Describe the asset you want to generate...\n\n"
+           "Examples:\n"
+           "• red brick wall texture with noise\n"
+           "• blue gradient background\n"
+           "• checkerboard pattern in green and white"));
+    m_promptEdit->setMaximumHeight(120);
+    promptLayout->addWidget(m_promptEdit);
+    
+    auto *promptOptionsLayout = new QHBoxLayout();
+    
+    auto *typeLabel = new QLabel(tr("Type:"), promptGroup);
+    m_assetTypeCombo = new QComboBox(promptGroup);
+    m_assetTypeCombo->addItem(tr("Texture"), "texture");
+    m_assetTypeCombo->addItem(tr("Mesh"), "mesh");
+    m_assetTypeCombo->addItem(tr("Audio"), "audio");
+    m_assetTypeCombo->addItem(tr("Script"), "script");
+    connect(m_assetTypeCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, &EditorAssetGenerationPanel::onAssetTypeChanged);
+    
+    auto *nameLabel = new QLabel(tr("Name:"), promptGroup);
+    m_nameEdit = new QLineEdit(promptGroup);
+    m_nameEdit->setPlaceholderText(tr("(auto-generated)"));
+    
+    promptOptionsLayout->addWidget(typeLabel);
+    promptOptionsLayout->addWidget(m_assetTypeCombo);
+    promptOptionsLayout->addSpacing(16);
+    promptOptionsLayout->addWidget(nameLabel);
+    promptOptionsLayout->addWidget(m_nameEdit, 1);
+    
+    promptLayout->addLayout(promptOptionsLayout);
+    m_mainLayout->addWidget(promptGroup);
+    
+    // =========================================================================
+    // Parameters Section
+    // =========================================================================
+    auto *paramsGroup = new QGroupBox(tr("Parameters"), m_centralWidget);
+    auto *paramsLayout = new QFormLayout(paramsGroup);
+    
+    auto *sizeLayout = new QHBoxLayout();
+    m_widthSpin = new QSpinBox(paramsGroup);
+    m_widthSpin->setRange(32, 4096);
+    m_widthSpin->setValue(256);
+    m_widthSpin->setSuffix(" px");
+    
+    auto *xLabel = new QLabel("×", paramsGroup);
+    
+    m_heightSpin = new QSpinBox(paramsGroup);
+    m_heightSpin->setRange(32, 4096);
+    m_heightSpin->setValue(256);
+    m_heightSpin->setSuffix(" px");
+    
+    sizeLayout->addWidget(m_widthSpin);
+    sizeLayout->addWidget(xLabel);
+    sizeLayout->addWidget(m_heightSpin);
+    sizeLayout->addStretch();
+    
+    paramsLayout->addRow(tr("Size:"), sizeLayout);
+    
+    m_formatCombo = new QComboBox(paramsGroup);
+    m_formatCombo->addItem("BMP", "bmp");
+    m_formatCombo->addItem("PPM", "ppm");
+    paramsLayout->addRow(tr("Format:"), m_formatCombo);
+    
+    m_mainLayout->addWidget(paramsGroup);
+    
+    // =========================================================================
+    // Control Buttons
+    // =========================================================================
+    auto *buttonLayout = new QHBoxLayout();
+    
+    m_generateBtn = new QPushButton(tr("🎨 Generate"), m_centralWidget);
+    m_generateBtn->setStyleSheet(
+        "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; "
+        "padding: 8px 16px; border-radius: 4px; }"
+        "QPushButton:hover { background-color: #45a049; }"
+        "QPushButton:disabled { background-color: #888; }");
+    connect(m_generateBtn, &QPushButton::clicked, this,
+            &EditorAssetGenerationPanel::startGeneration);
+    
+    m_cancelBtn = new QPushButton(tr("Cancel"), m_centralWidget);
+    m_cancelBtn->setEnabled(false);
+    connect(m_cancelBtn, &QPushButton::clicked, this,
+            &EditorAssetGenerationPanel::cancelSelected);
+    
+    m_retryBtn = new QPushButton(tr("Retry"), m_centralWidget);
+    m_retryBtn->setEnabled(false);
+    connect(m_retryBtn, &QPushButton::clicked, this,
+            &EditorAssetGenerationPanel::retrySelected);
+    
+    buttonLayout->addWidget(m_generateBtn);
+    buttonLayout->addWidget(m_cancelBtn);
+    buttonLayout->addWidget(m_retryBtn);
+    buttonLayout->addStretch();
+    
+    m_mainLayout->addLayout(buttonLayout);
+    
+    // =========================================================================
+    // Progress Section
+    // =========================================================================
+    auto *progressGroup = new QGroupBox(tr("Current Generation"), m_centralWidget);
+    auto *progressLayout = new QVBoxLayout(progressGroup);
+    
+    m_progressBar = new QProgressBar(progressGroup);
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(0);
+    m_progressBar->setTextVisible(true);
+    progressLayout->addWidget(m_progressBar);
+    
+    m_statusLabel = new QLabel(tr("Ready"), progressGroup);
+    m_statusLabel->setStyleSheet("color: #888;");
+    progressLayout->addWidget(m_statusLabel);
+    
+    m_mainLayout->addWidget(progressGroup);
+    
+    // =========================================================================
+    // History Section
+    // =========================================================================
+    auto *historyGroup = new QGroupBox(tr("Generation History"), m_centralWidget);
+    auto *historyLayout = new QVBoxLayout(historyGroup);
+    
+    m_historyList = new QListWidget(historyGroup);
+    m_historyList->setAlternatingRowColors(true);
+    m_historyList->setMaximumHeight(150);
+    connect(m_historyList, &QListWidget::itemClicked, this,
+            &EditorAssetGenerationPanel::onHistoryItemSelected);
+    historyLayout->addWidget(m_historyList);
+    
+    m_clearHistoryBtn = new QPushButton(tr("Clear History"), historyGroup);
+    connect(m_clearHistoryBtn, &QPushButton::clicked, this,
+            &EditorAssetGenerationPanel::clearHistory);
+    historyLayout->addWidget(m_clearHistoryBtn);
+    
+    m_mainLayout->addWidget(historyGroup);
+    
+    // =========================================================================
+    // Details Section
+    // =========================================================================
+    auto *detailsGroup = new QGroupBox(tr("Details"), m_centralWidget);
+    auto *detailsLayout = new QVBoxLayout(detailsGroup);
+    
+    m_detailsLabel = new QLabel(tr("Select a generation from history to see details."),
+                               detailsGroup);
+    m_detailsLabel->setWordWrap(true);
+    m_detailsLabel->setStyleSheet("color: #888;");
+    detailsLayout->addWidget(m_detailsLabel);
+    
+    m_mainLayout->addWidget(detailsGroup);
+    
+    // Stretch at bottom
+    m_mainLayout->addStretch();
+    
+    setWidget(m_centralWidget);
+}
+
+void EditorAssetGenerationPanel::startGeneration() {
+    QString prompt = m_promptEdit->toPlainText().trimmed();
+    if (prompt.isEmpty()) {
+        QMessageBox::warning(this, tr("Empty Prompt"),
+                            tr("Please enter a description of the asset to generate."));
+        return;
+    }
+    
+    Assets::GenerationRequest request;
+    request.prompt = prompt.toStdString();
+    request.assetType = getAssetTypeString(m_assetTypeCombo->currentIndex());
+    request.targetId = m_nameEdit->text().toStdString();
+    request.width = m_widthSpin->value();
+    request.height = m_heightSpin->value();
+    request.format = m_formatCombo->currentData().toString().toStdString();
+    
+    auto callback = [this](const Assets::GenerationResult &result) {
+        QMetaObject::invokeMethod(
+            this, [this, result]() {
+                onGenerationComplete(
+                    QString::fromStdString(result.assetId),
+                    result.success,
+                    QString::fromStdString(result.message));
+            },
+            Qt::QueuedConnection);
+    };
+    
+    std::string requestId = m_generationQueue->QueueRequest(
+        std::move(request), callback);
+    
+    m_currentRequestId = requestId;
+    m_progressBar->setValue(0);
+    m_statusLabel->setText(tr("Queued: %1").arg(QString::fromStdString(requestId)));
+    m_statusLabel->setStyleSheet("color: #2196F3;");
+    
+    // Add to history
+    auto *item = new QListWidgetItem(
+        QString("⏳ %1 (%2)")
+            .arg(prompt.left(40))
+            .arg(getAssetTypeName(m_assetTypeCombo->currentIndex())));
+    item->setData(Qt::UserRole, QString::fromStdString(requestId));
+    m_historyList->insertItem(0, item);
+    m_requestItems[requestId] = item;
+    
+    // Register with asset registry if available
+    if (m_assetRegistry) {
+        Assets::AssetRegistry::AssetType type = Assets::AssetRegistry::AssetType::Other;
+        if (request.assetType == "texture") {
+            type = Assets::AssetRegistry::AssetType::Texture;
+        } else if (request.assetType == "mesh") {
+            type = Assets::AssetRegistry::AssetType::Mesh;
+        } else if (request.assetType == "audio") {
+            type = Assets::AssetRegistry::AssetType::Audio;
+        } else if (request.assetType == "script") {
+            type = Assets::AssetRegistry::AssetType::Script;
+        }
+        
+        m_assetRegistry->RequestGenerativeAsset(prompt.toStdString(), type,
+                                                request.targetId);
+    }
+    
+    updateButtonStates();
+}
+
+void EditorAssetGenerationPanel::cancelSelected() {
+    if (m_historyList->currentItem()) {
+        QString requestId = m_historyList->currentItem()->data(Qt::UserRole).toString();
+        if (m_generationQueue->CancelRequest(requestId.toStdString())) {
+            m_historyList->currentItem()->setText(
+                "❌ " + m_historyList->currentItem()->text().mid(2));
+            m_statusLabel->setText(tr("Cancelled"));
+            m_statusLabel->setStyleSheet("color: #FF9800;");
+        }
+    }
+    updateButtonStates();
+}
+
+void EditorAssetGenerationPanel::retrySelected() {
+    if (m_historyList->currentItem()) {
+        QString requestId = m_historyList->currentItem()->data(Qt::UserRole).toString();
+        if (m_generationQueue->RetryRequest(requestId.toStdString())) {
+            m_historyList->currentItem()->setText(
+                "🔄 " + m_historyList->currentItem()->text().mid(2));
+            m_statusLabel->setText(tr("Retrying..."));
+            m_statusLabel->setStyleSheet("color: #2196F3;");
+        }
+    }
+    updateButtonStates();
+}
+
+void EditorAssetGenerationPanel::clearHistory() {
+    m_generationQueue->ClearHistory();
+    m_historyList->clear();
+    m_requestItems.clear();
+    m_detailsLabel->setText(tr("Select a generation from history to see details."));
+    updateButtonStates();
+}
+
+void EditorAssetGenerationPanel::processQueue() {
+    m_generationQueue->ProcessNext();
+}
+
+void EditorAssetGenerationPanel::onAssetTypeChanged(int index) {
+    // Enable/disable size parameters based on asset type
+    bool isTexture = (index == 0);
+    m_widthSpin->setEnabled(isTexture);
+    m_heightSpin->setEnabled(isTexture);
+    m_formatCombo->setEnabled(isTexture);
+}
+
+void EditorAssetGenerationPanel::onHistoryItemSelected(QListWidgetItem *item) {
+    if (!item) return;
+    
+    QString requestId = item->data(Qt::UserRole).toString();
+    auto state = m_generationQueue->GetRequestState(requestId.toStdString());
+    
+    if (state) {
+        QString details;
+        details += tr("<b>Request ID:</b> %1<br>").arg(requestId);
+        details += tr("<b>Status:</b> %1<br>")
+            .arg(QString::fromStdString(state->statusMessage));
+        details += tr("<b>Progress:</b> %1%<br>")
+            .arg(static_cast<int>(state->progress * 100));
+        
+        if (state->result) {
+            details += tr("<b>Output:</b> %1<br>")
+                .arg(QString::fromStdString(
+                    state->result->outputPath.filename().string()));
+            details += tr("<b>Generation Time:</b> %1 ms<br>")
+                .arg(state->result->generationTimeMs);
+        }
+        
+        m_detailsLabel->setText(details);
+    }
+    
+    updateButtonStates();
+}
+
+void EditorAssetGenerationPanel::onProgressUpdate(const QString &requestId,
+                                                  float progress,
+                                                  const QString &message) {
+    if (requestId.toStdString() == m_currentRequestId) {
+        m_progressBar->setValue(static_cast<int>(progress * 100));
+        m_statusLabel->setText(message);
+        m_statusLabel->setStyleSheet("color: #2196F3;");
+    }
+    
+    // Update history item
+    auto it = m_requestItems.find(requestId.toStdString());
+    if (it != m_requestItems.end()) {
+        QString text = it->second->text();
+        if (text.startsWith("⏳")) {
+            it->second->setText("🔄" + text.mid(1));
+        }
+    }
+}
+
+void EditorAssetGenerationPanel::onGenerationComplete(const QString &requestId,
+                                                      bool success,
+                                                      const QString &message) {
+    auto it = m_requestItems.find(requestId.toStdString());
+    if (it != m_requestItems.end()) {
+        QString text = it->second->text();
+        QString prefix = success ? "✅" : "❌";
+        if (text.length() > 1) {
+            it->second->setText(prefix + text.mid(1));
+        }
+    }
+    
+    if (requestId.toStdString() == m_currentRequestId) {
+        m_progressBar->setValue(success ? 100 : 0);
+        m_statusLabel->setText(message);
+        m_statusLabel->setStyleSheet(success ? "color: #4CAF50;" : "color: #F44336;");
+    }
+    
+    if (success) {
+        emit assetGenerated(requestId, message);
+        emit requestAssetBrowserRefresh();
+        
+        // Update asset registry
+        if (m_assetRegistry) {
+            auto state = m_generationQueue->GetRequestState(requestId.toStdString());
+            if (state && state->result) {
+                m_assetRegistry->FinalizeGenerativeAsset(
+                    state->result->assetId, state->result->outputPath);
+            }
+        }
+    } else {
+        emit generationFailed(requestId, message);
+    }
+    
+    updateButtonStates();
+    updateSelectedDetails();
+}
+
+void EditorAssetGenerationPanel::updateHistoryList() {
+    // History is updated incrementally, no need to rebuild
+}
+
+void EditorAssetGenerationPanel::updateSelectedDetails() {
+    if (m_historyList->currentItem()) {
+        onHistoryItemSelected(m_historyList->currentItem());
+    }
+}
+
+void EditorAssetGenerationPanel::updateButtonStates() {
+    bool hasSelection = (m_historyList->currentItem() != nullptr);
+    bool canCancel = false;
+    bool canRetry = false;
+    
+    if (hasSelection) {
+        QString requestId = m_historyList->currentItem()->data(Qt::UserRole).toString();
+        auto state = m_generationQueue->GetRequestState(requestId.toStdString());
+        if (state) {
+            canCancel = (state->status == Assets::GenerationStatus::Pending);
+            canRetry = (state->status == Assets::GenerationStatus::Failed);
+        }
+    }
+    
+    m_cancelBtn->setEnabled(canCancel);
+    m_retryBtn->setEnabled(canRetry);
+    m_clearHistoryBtn->setEnabled(m_historyList->count() > 0);
+}
+
+QString EditorAssetGenerationPanel::getAssetTypeName(int index) const {
+    switch (index) {
+        case 0: return tr("Texture");
+        case 1: return tr("Mesh");
+        case 2: return tr("Audio");
+        case 3: return tr("Script");
+        default: return tr("Unknown");
+    }
+}
+
+std::string EditorAssetGenerationPanel::getAssetTypeString(int index) const {
+    switch (index) {
+        case 0: return "texture";
+        case 1: return "mesh";
+        case 2: return "audio";
+        case 3: return "script";
+        default: return "other";
+    }
+}
+
+} // namespace Aetherion::Editor

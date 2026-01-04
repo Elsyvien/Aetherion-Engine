@@ -53,6 +53,7 @@ class EditorConsole;
 class EditorSelection;
 class EditorAuxPanel;
 class EditorCommandPalette;
+class EditorAssetGenerationPanel;
 class AICopilotPanel;
 class AICopilotProcessor;
 
@@ -138,6 +139,7 @@ private:
     QAction* m_showCameraPreviewAction = nullptr;
     QAction* m_showBookmarksAction = nullptr;
     QAction* m_showAICopilotAction = nullptr;
+    QAction* m_showAssetGenAction = nullptr;
     QAction* m_showAiHudAction = nullptr;
     QAction* m_commandPaletteAction = nullptr;
     QAction* m_focusAssetFilterAction = nullptr;
@@ -159,8 +161,10 @@ private:
     QDockWidget* m_meshPreviewDock = nullptr;
     QDockWidget* m_cameraPreviewDock = nullptr;
     QDockWidget* m_copilotDock = nullptr;
+    QDockWidget* m_assetGenDock = nullptr;
     QDockWidget* m_bookmarksDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
+    EditorAssetGenerationPanel* m_assetGenPanel = nullptr;
     EditorConsole* m_console = nullptr;
     QByteArray m_defaultLayoutState;
     QByteArray m_defaultLayoutGeometry;

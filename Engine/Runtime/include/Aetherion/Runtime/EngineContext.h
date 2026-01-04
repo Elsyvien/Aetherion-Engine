@@ -25,6 +25,7 @@ class AudioEngine;
 
 namespace Aetherion::Scripting {
 class ScriptingRuntime;
+class ScriptEngine;
 }
 
 namespace Aetherion::Runtime {
@@ -64,6 +65,10 @@ public:
   [[nodiscard]] std::shared_ptr<Scripting::ScriptingRuntime>
   GetScriptingRuntime() const noexcept;
 
+  void SetScriptEngine(std::shared_ptr<Scripting::ScriptEngine> engine);
+  [[nodiscard]] std::shared_ptr<Scripting::ScriptEngine>
+  GetScriptEngine() const noexcept;
+
   /// @brief Get the global event bus for inter-system communication
   [[nodiscard]] Core::EventBus &GetEventBus() noexcept { return m_eventBus; }
   [[nodiscard]] const Core::EventBus &GetEventBus() const noexcept {
@@ -100,6 +105,7 @@ private:
   std::shared_ptr<Physics::PhysicsWorld> m_physicsSystem;
   std::shared_ptr<Audio::AudioEngine> m_audioSystem;
   std::shared_ptr<Scripting::ScriptingRuntime> m_scriptingRuntime;
+  std::shared_ptr<Scripting::ScriptEngine> m_scriptEngine;
   Core::EventBus m_eventBus;
   bool m_simulationPlaying{false};
   bool m_simulationPaused{false};

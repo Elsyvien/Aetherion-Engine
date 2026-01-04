@@ -2655,6 +2655,168 @@ bool AssetRegistry::IsVirtualAsset(const std::string &assetId) const noexcept {
   return m_virtualAssets.find(assetId) != m_virtualAssets.end();
 }
 
+std::string AssetRegistry::RequestGenerativeAsset(const std::string &prompt,
+                                                  AssetType type,
+                                                  const std::string &suggestedName) {
+  using Clock = std::chrono::steady_clock;
+  
+  // Generate a stable ID based on prompt hash
+  std::string name = suggestedName.empty() ? SanitizeName(prompt.substr(0, 32)) : suggestedName;
+  std::size_t hash = std::hash<std::string>{}(prompt);
+  
+  std::ostringstream ss;
+  ss << "gen_" << name << "_" << std::hex << std::setw(8) << std::setfill('0') << (hash & 0xFFFFFFFF);
+  std::string assetId = ss.str();
+  
+  // Check if already exists
+  if (m_generativeAssets.find(assetId) != m_generativeAssets.end()) {
+    return assetId;
+  }
+  
+  GenerativeAssetInfo info;
+  info.assetId = assetId;
+  info.prompt = prompt;
+  info.type = type;
+  info.status = GenerativeAssetStatus::Pending;
+  info.statusMessage = "Queued for generation";
+  info.requestedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+      Clock::now().time_since_epoch()).count();
+  
+  m_generativeAssets[assetId] = info;
+  
+  // Also register as a virtual asset
+  std::string uri = std::string("generate://") + AssetTypeToString(type) + "/" + name;
+  RegisterVirtualAsset(uri, type);
+  
+  // Record change
+  AssetChange change{};
+  change.id = assetId;
+  change.type = type;
+  change.kind = AssetChange::Kind::Added;
+  change.serial = ++m_changeSerial;
+  m_changeLog.push_back(change);
+  
+  return assetId;
+}
+
+void AssetRegistry::UpdateGenerativeAssetStatus(const std::string &assetId,
+                                                GenerativeAssetStatus status,
+                                                const std::string &message,
+                                                const std::filesystem::path &outputPath) {
+  auto it = m_generativeAssets.find(assetId);
+  if (it == m_generativeAssets.end()) {
+    return;
+  }
+  
+  it->second.status = status;
+  if (!message.empty()) {
+    it->second.statusMessage = message;
+  }
+  if (!outputPath.empty()) {
+    it->second.outputPath = outputPath;
+  }
+  
+  // Update virtual asset status too
+  std::string uri = std::string("generate://") + AssetTypeToString(it->second.type) + "/" + 
+                    SanitizeName(it->second.prompt.substr(0, 32));
+  std::string virtualId = StableVirtualId(uri);
+  
+  auto vit = m_virtualAssets.find(virtualId);
+  if (vit != m_virtualAssets.end()) {
+    switch (status) {
+      case GenerativeAssetStatus::Pending:
+        vit->second.status = "Pending generation";
+        vit->second.ready = false;
+        break;
+      case GenerativeAssetStatus::Generating:
+        vit->second.status = "Generating...";
+        vit->second.ready = false;
+        break;
+      case GenerativeAssetStatus::Ready:
+        vit->second.status = "Ready";
+        vit->second.ready = true;
+        if (!outputPath.empty()) {
+          vit->second.entry.path = outputPath;
+        }
+        break;
+      case GenerativeAssetStatus::Failed:
+        vit->second.status = "Failed: " + message;
+        vit->second.ready = false;
+        break;
+    }
+  }
+  
+  // Record change
+  AssetChange change{};
+  change.id = assetId;
+  change.type = it->second.type;
+  change.kind = AssetChange::Kind::Modified;
+  change.serial = ++m_changeSerial;
+  m_changeLog.push_back(change);
+}
+
+void AssetRegistry::FinalizeGenerativeAsset(const std::string &assetId,
+                                            const std::filesystem::path &generatedPath) {
+  using Clock = std::chrono::steady_clock;
+  
+  auto it = m_generativeAssets.find(assetId);
+  if (it == m_generativeAssets.end()) {
+    return;
+  }
+  
+  it->second.status = GenerativeAssetStatus::Ready;
+  it->second.statusMessage = "Generation complete";
+  it->second.outputPath = generatedPath;
+  it->second.progress = 1.0f;
+  it->second.completedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+      Clock::now().time_since_epoch()).count();
+  
+  // Create an actual asset entry for the generated file
+  if (std::filesystem::exists(generatedPath)) {
+    AssetEntry entry;
+    entry.id = assetId;
+    entry.path = generatedPath;
+    entry.type = it->second.type;
+    
+    m_entries.push_back(entry);
+    m_entryLookup[assetId] = m_entries.size() - 1;
+    m_pathToId[generatedPath.generic_string()] = assetId;
+  }
+  
+  // Record change
+  AssetChange change{};
+  change.id = assetId;
+  change.type = it->second.type;
+  change.kind = AssetChange::Kind::Modified;
+  change.serial = ++m_changeSerial;
+  m_changeLog.push_back(change);
+}
+
+const AssetRegistry::GenerativeAssetInfo *
+AssetRegistry::GetGenerativeAssetInfo(const std::string &assetId) const noexcept {
+  auto it = m_generativeAssets.find(assetId);
+  if (it == m_generativeAssets.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+const std::unordered_map<std::string, AssetRegistry::GenerativeAssetInfo> &
+AssetRegistry::GetGenerativeAssets() const noexcept {
+  return m_generativeAssets;
+}
+
+std::vector<std::string>
+AssetRegistry::GetGenerativeAssetsByStatus(GenerativeAssetStatus status) const {
+  std::vector<std::string> result;
+  for (const auto &[id, info] : m_generativeAssets) {
+    if (info.status == status) {
+      result.push_back(id);
+    }
+  }
+  return result;
+}
+
 const std::vector<std::string> *
 AssetRegistry::GetAssetDependencies(const std::string &assetId) const noexcept {
   auto it = m_assetDependencies.find(assetId);

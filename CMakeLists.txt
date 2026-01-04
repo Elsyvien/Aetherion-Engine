@@ -98,6 +98,7 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/System.cpp
     Engine/Scene/src/SceneSerializer.cpp
     Engine/Assets/src/AssetRegistry.cpp
+    Engine/Assets/src/AssetGenerator.cpp
     Engine/Platform/src/PlatformAbstraction.cpp
     Engine/Rendering/src/RenderingPlaceholder.cpp
     Engine/Rendering/src/VulkanContext.cpp
@@ -112,6 +113,9 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/AIBehaviorComponent.cpp
     Engine/Audio/src/AudioEngine.cpp
     Engine/Audio/src/AudioSystem.cpp
+    Engine/Scripting/src/ScriptingSystem.cpp
+    Engine/Scripting/src/NullScriptEngine.cpp
+    Engine/Scene/src/ScriptComponent.cpp
     Engine/Scripting/src/ScriptingPlaceholder.cpp
     Engine/Runtime/src/SystemScheduler.cpp
 )
@@ -199,6 +203,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorCommandPalette.cpp
     Engine/Editor/src/AICopilotPanel.cpp
     Engine/Editor/src/AICopilotProcessor.cpp
+    Engine/Editor/src/EditorAssetGenerationPanel.cpp
     Engine/Editor/src/EditorSettings.cpp
     Engine/Editor/src/EditorSettingsDialog.cpp
     Engine/Editor/resources/AetherionEditor.qrc
@@ -220,6 +225,7 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/EditorCommandPalette.h
         Engine/Editor/include/Aetherion/Editor/AICopilotPanel.h
         Engine/Editor/include/Aetherion/Editor/AICopilotProcessor.h
+        Engine/Editor/include/Aetherion/Editor/EditorAssetGenerationPanel.h
         Engine/Editor/include/Aetherion/Editor/EditorSettings.h
         Engine/Editor/include/Aetherion/Editor/EditorSettingsDialog.h
 )

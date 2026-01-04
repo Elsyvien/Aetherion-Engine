@@ -1,0 +1,41 @@
+#pragma once
+
+#include "Aetherion/Core/Types.h"
+#include "Aetherion/Scripting/ScriptEngine.h"
+#include <memory>
+#include <vector>
+#include <unordered_map>
+
+namespace Aetherion::Scene {
+class Scene;
+}
+
+namespace Aetherion::Scripting {
+
+/// @brief Manages scripting for a scene
+class ScriptingSystem {
+public:
+    explicit ScriptingSystem(ScriptEngine* engine);
+    ~ScriptingSystem();
+
+    void BindScene(Scene::Scene* scene);
+    void UnbindScene();
+
+    void Update(float deltaTime);
+
+    void SetEnabled(bool enabled) noexcept { m_enabled = enabled; }
+    [[nodiscard]] bool IsEnabled() const noexcept { return m_enabled; }
+
+private:
+    ScriptEngine* m_engine = nullptr;
+    Scene::Scene* m_scene = nullptr;
+    bool m_enabled = true;
+
+    struct EntityScript {
+        std::unique_ptr<ScriptInstance> instance;
+    };
+
+    std::unordered_map<Core::EntityId, std::vector<EntityScript>> m_entityScripts;
+};
+
+} // namespace Aetherion::Scripting
