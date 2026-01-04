@@ -29,6 +29,13 @@ public:
     AssetType type{AssetType::Other};
   };
 
+  struct VirtualAsset {
+    AssetEntry entry;
+    std::string uri;
+    bool ready{false};
+    std::string status{"Pending generation"};
+  };
+
   [[nodiscard]] const std::vector<AssetEntry> &GetEntries() const noexcept;
   [[nodiscard]] const std::filesystem::path &GetRootPath() const noexcept;
   [[nodiscard]] const AssetEntry *
@@ -126,6 +133,12 @@ public:
   static std::filesystem::path
   GetMetadataPathForAsset(const std::filesystem::path &assetPath);
 
+  void RegisterVirtualAsset(const std::string &uri, AssetType type,
+                            const std::filesystem::path &cachePath = {});
+  [[nodiscard]] const std::unordered_map<std::string, VirtualAsset> &
+  GetVirtualAssets() const noexcept;
+  [[nodiscard]] bool IsVirtualAsset(const std::string &assetId) const noexcept;
+
   // TODO: Replace string identifiers with strong asset handles/UUIDs.
   // TODO: Add import pipeline hooks and metadata caching.
 private:
@@ -134,6 +147,7 @@ private:
   std::unordered_map<std::string, CachedTexture> m_textures;
   std::unordered_map<std::string, Material> m_materials;
   std::unordered_map<std::string, MeshData> m_meshData;
+  std::unordered_map<std::string, VirtualAsset> m_virtualAssets;
   std::filesystem::path m_rootPath;
   std::vector<AssetEntry> m_entries;
   std::unordered_map<std::string, size_t> m_entryLookup;

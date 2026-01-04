@@ -76,9 +76,14 @@ EditorViewport::EditorViewport(QWidget* parent)
     m_speedLabel->setStyleSheet("color: #e0e0e0; padding-left: 8px; font-weight: bold;");
     m_speedLabel->setFocusPolicy(Qt::NoFocus);
 
+    m_aiHudLabel = new QLabel(tr("AI: --"), m_overlayWidget);
+    m_aiHudLabel->setStyleSheet("color: #b3ffc7; padding-left: 8px; font-weight: bold;");
+    m_aiHudLabel->setFocusPolicy(Qt::NoFocus);
+
     overlayLayout->addWidget(m_focusButton);
     overlayLayout->addWidget(m_focusHint);
     overlayLayout->addWidget(m_speedLabel);
+    overlayLayout->addWidget(m_aiHudLabel, 1, Qt::AlignLeft);
 
     m_overlayWidget->raise();
     UpdateOverlayGeometry();
@@ -157,6 +162,13 @@ void EditorViewport::SetCameraZoom(float zoom)
 {
     m_cameraZoom = zoom;
     emit cameraChanged();
+}
+
+void EditorViewport::SetAiHudText(const QString& text)
+{
+    if (m_aiHudLabel) {
+        m_aiHudLabel->setText(text);
+    }
 }
 
 void EditorViewport::UpdateOverlayGeometry()

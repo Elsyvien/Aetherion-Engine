@@ -23,7 +23,7 @@ class AudioEngine;
 }
 
 namespace Aetherion::Scripting {
-class ScriptingRuntimeStub;
+class ScriptingRuntime;
 }
 
 namespace Aetherion::Runtime {
@@ -59,8 +59,8 @@ public:
   GetAudioSystem() const noexcept;
 
   void SetScriptingRuntime(
-      std::shared_ptr<Scripting::ScriptingRuntimeStub> scripting);
-  [[nodiscard]] std::shared_ptr<Scripting::ScriptingRuntimeStub>
+      std::shared_ptr<Scripting::ScriptingRuntime> scripting);
+  [[nodiscard]] std::shared_ptr<Scripting::ScriptingRuntime>
   GetScriptingRuntime() const noexcept;
 
   // Simulation state (play/pause/step) shared with runtime systems
@@ -92,7 +92,7 @@ private:
   std::shared_ptr<Assets::AssetRegistry> m_assetRegistry;
   std::shared_ptr<Physics::PhysicsWorld> m_physicsSystem;
   std::shared_ptr<Audio::AudioEngine> m_audioSystem;
-  std::shared_ptr<Scripting::ScriptingRuntimeStub> m_scriptingRuntime;
+  std::shared_ptr<Scripting::ScriptingRuntime> m_scriptingRuntime;
   bool m_simulationPlaying{false};
   bool m_simulationPaused{false};
   bool m_stepOnceRequested{false};

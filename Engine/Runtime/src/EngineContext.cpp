@@ -70,11 +70,11 @@ EngineContext::GetAudioSystem() const noexcept {
 }
 
 void EngineContext::SetScriptingRuntime(
-    std::shared_ptr<Scripting::ScriptingRuntimeStub> scripting) {
+    std::shared_ptr<Scripting::ScriptingRuntime> scripting) {
   m_scriptingRuntime = std::move(scripting);
 }
 
-std::shared_ptr<Scripting::ScriptingRuntimeStub>
+std::shared_ptr<Scripting::ScriptingRuntime>
 EngineContext::GetScriptingRuntime() const noexcept {
   return m_scriptingRuntime;
 }

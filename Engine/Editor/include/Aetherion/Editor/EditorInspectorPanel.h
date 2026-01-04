@@ -26,6 +26,8 @@ class QWidget;
 class QComboBox;
 class QCheckBox;
 class QLineEdit;
+class QLabel;
+class QTextEdit;
 
 namespace Aetherion::Editor {
 class EditorInspectorPanel : public QWidget {
@@ -99,6 +101,16 @@ private:
   QCheckBox *m_audioLoop = nullptr;
   QCheckBox *m_audioSpatial = nullptr;
   QCheckBox *m_audioPlayOnAwake = nullptr;
+
+  QComboBox *m_aiMode = nullptr;
+  QComboBox *m_aiPromptAsset = nullptr;
+  QLineEdit *m_aiPersonality = nullptr;
+  QLineEdit *m_aiKnowledge = nullptr;
+  QTextEdit *m_aiContext = nullptr;
+  QTextEdit *m_aiInlinePrompt = nullptr;
+  QDoubleSpinBox *m_aiDecisionInterval = nullptr;
+  QLabel *m_aiStateLabel = nullptr;
+  QLabel *m_aiReasonLabel = nullptr;
 
   bool m_buildingUi = false;
   CommandExecutor m_commandExecutor;

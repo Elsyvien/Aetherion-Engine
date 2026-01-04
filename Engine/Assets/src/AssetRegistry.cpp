@@ -7,6 +7,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -53,7 +54,29 @@ std::string BuildSourceLabel(const std::filesystem::path &assetPath,
   std::filesystem::path relative =
       std::filesystem::relative(assetPath, rootPath, ec);
   return (!ec && !relative.empty()) ? relative.generic_string()
-                                    : assetPath.filename().generic_string();
+                                    : assetPath.filename().generic_string();    
+}
+
+std::string StableVirtualId(const std::string &uri) {
+  std::ostringstream ss;
+  ss << "virtual-";
+  std::size_t hashValue = std::hash<std::string>{}(uri);
+  ss << std::hex << std::setw(16) << std::setfill('0') << hashValue;
+  return ss.str();
+}
+
+std::string SanitizeName(const std::string &value) {
+  std::string out;
+  out.reserve(value.size());
+  for (char c : value) {
+    const bool alnum = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                       (c >= '0' && c <= '9') || c == '_' || c == '-';
+    out.push_back(alnum ? c : '_');
+  }
+  if (out.empty()) {
+    out = "generated_asset";
+  }
+  return out;
 }
 
 bool LoadMetadataJson(const std::filesystem::path &metaPath, Json &outRoot) {
@@ -1482,6 +1505,21 @@ void AssetRegistry::Scan(const std::string &rootPath) {
     }
   }
 
+  for (const auto &[virtualId, virtualAsset] : m_virtualAssets) {
+    if (virtualId.empty()) {
+      continue;
+    }
+    if (m_entryLookup.find(virtualId) != m_entryLookup.end()) {
+      continue;
+    }
+    m_entries.push_back(virtualAsset.entry);
+    if (!virtualAsset.entry.path.empty()) {
+      m_pathToId.emplace(
+          MakePathKey(virtualAsset.entry.path, m_rootPath),
+          virtualAsset.entry.id);
+    }
+  }
+
   std::sort(m_entries.begin(), m_entries.end(),
             [](const AssetEntry &a, const AssetEntry &b) {
               const int orderA = AssetTypeOrder(a.type);
@@ -1645,7 +1683,8 @@ void AssetRegistry::Rescan() {
 }
 
 bool AssetRegistry::HasAsset(const std::string &assetId) const {
-  return m_placeholderAssets.find(assetId) != m_placeholderAssets.end() ||
+  return m_placeholderAssets.find(assetId) != m_placeholderAssets.end() ||      
+         m_virtualAssets.find(assetId) != m_virtualAssets.end() ||
          m_entryLookup.find(assetId) != m_entryLookup.end() ||
          m_meshes.find(assetId) != m_meshes.end() ||
          m_textures.find(assetId) != m_textures.end() ||
@@ -1670,6 +1709,11 @@ AssetRegistry::FindEntry(const std::string &assetId) const noexcept {
     if (index < m_entries.size()) {
       return &m_entries[index];
     }
+  }
+
+  if (auto virtualIt = m_virtualAssets.find(assetId);
+      virtualIt != m_virtualAssets.end()) {
+    return &virtualIt->second.entry;
   }
 
   if (!assetId.empty() && !m_rootPath.empty()) {
@@ -2516,13 +2560,99 @@ std::uint64_t AssetRegistry::GetChangeSerial() const noexcept {
 }
 
 void AssetRegistry::GetChangesSince(
-    std::uint64_t serial, std::vector<AssetRegistry::AssetChange> &out) const {
+    std::uint64_t serial, std::vector<AssetRegistry::AssetChange> &out) const { 
   out.clear();
   for (const auto &change : m_changeLog) {
     if (change.serial > serial) {
       out.push_back(change);
     }
   }
+}
+
+void AssetRegistry::RegisterVirtualAsset(const std::string &uri, AssetType type,
+                                         const std::filesystem::path &cachePath) {
+  if (uri.empty()) {
+    return;
+  }
+
+  const std::string id = StableVirtualId(uri);
+  const bool existed = m_virtualAssets.find(id) != m_virtualAssets.end();
+
+  VirtualAsset &virtualAsset = m_virtualAssets[id];
+  virtualAsset.uri = uri;
+  virtualAsset.entry.id = id;
+  virtualAsset.entry.type = type;
+
+  std::filesystem::path targetPath = cachePath;
+  if (targetPath.empty() && !m_rootPath.empty()) {
+    targetPath = m_rootPath / "_generated" / (SanitizeName(uri) + ".virtual");
+  }
+
+  if (!targetPath.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(targetPath.parent_path(), ec);
+    if (!std::filesystem::exists(targetPath, ec)) {
+      std::ofstream output(targetPath, std::ios::trunc);
+      if (output.is_open()) {
+        output << "# Virtual asset placeholder\n";
+        output << "# URI: " << uri << "\n";
+      }
+    }
+    virtualAsset.entry.path = targetPath;
+    m_pathToId[MakePathKey(virtualAsset.entry.path, m_rootPath)] = id;
+  }
+
+  std::error_code ec;
+  virtualAsset.ready =
+      !virtualAsset.entry.path.empty() &&
+      std::filesystem::exists(virtualAsset.entry.path, ec);
+  virtualAsset.status = virtualAsset.ready ? "Cached placeholder"
+                                           : "Pending generation";
+
+  auto entryIt = m_entryLookup.find(id);
+  if (entryIt != m_entryLookup.end() && entryIt->second < m_entries.size()) {
+    m_entries[entryIt->second] = virtualAsset.entry;
+  } else {
+    m_entries.push_back(virtualAsset.entry);
+  }
+
+  std::sort(m_entries.begin(), m_entries.end(),
+            [](const AssetEntry &a, const AssetEntry &b) {
+              const int orderA = AssetTypeOrder(a.type);
+              const int orderB = AssetTypeOrder(b.type);
+              if (orderA != orderB) {
+                return orderA < orderB;
+              }
+              return a.id < b.id;
+            });
+  m_entryLookup.clear();
+  for (size_t i = 0; i < m_entries.size(); ++i) {
+    m_entryLookup.emplace(m_entries[i].id, i);
+  }
+
+  AssetChange change{};
+  change.id = id;
+  change.type = type;
+  change.kind =
+      existed ? AssetChange::Kind::Modified : AssetChange::Kind::Added;
+  change.serial = ++m_changeSerial;
+  m_changeLog.push_back(change);
+  const size_t maxChanges = 2048;
+  if (m_changeLog.size() > maxChanges) {
+    m_changeLog.erase(
+        m_changeLog.begin(),
+        m_changeLog.begin() +
+            static_cast<std::ptrdiff_t>(m_changeLog.size() - maxChanges));
+  }
+}
+
+const std::unordered_map<std::string, AssetRegistry::VirtualAsset> &
+AssetRegistry::GetVirtualAssets() const noexcept {
+  return m_virtualAssets;
+}
+
+bool AssetRegistry::IsVirtualAsset(const std::string &assetId) const noexcept {
+  return m_virtualAssets.find(assetId) != m_virtualAssets.end();
 }
 
 const std::vector<std::string> *

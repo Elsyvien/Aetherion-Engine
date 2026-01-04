@@ -33,6 +33,7 @@ public:
     void updateCamera(float deltaTime);
     void SetCameraTarget(float x, float y, float z);
     void SetCameraZoom(float zoom);
+    void SetAiHudText(const QString& text);
 
 signals:
     // WId ist unter Windows i.d.R. ein HWND (kann in Rendering/Win32 zu HWND gecastet werden)
@@ -64,6 +65,7 @@ private:
     QToolButton* m_focusButton = nullptr;
     QLabel* m_focusHint = nullptr;
     QLabel* m_speedLabel = nullptr;
+    QLabel* m_aiHudLabel = nullptr;
 
     // Camera state
     float m_cameraX = 0.0f;

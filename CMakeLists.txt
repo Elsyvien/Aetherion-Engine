@@ -75,6 +75,7 @@ find_package(Vulkan REQUIRED)
 set(PHYSICS_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/Engine/ThirdParty/JoltPhysics)
 set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
 set(ENABLE_OBJECT_STREAM OFF CACHE BOOL "" FORCE)
+set(USE_STATIC_MSVC_RUNTIME OFF CACHE BOOL "" FORCE)
 add_subdirectory(${PHYSICS_REPO_ROOT}/Build ${CMAKE_BINARY_DIR}/JoltPhysics)
 
 set(RUNTIME_SOURCES
@@ -103,6 +104,7 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/ColliderComponent.cpp
     Engine/Scene/src/AudioSourceComponent.cpp
     Engine/Scene/src/AudioListenerComponent.cpp
+    Engine/Scene/src/AIBehaviorComponent.cpp
     Engine/Audio/src/AudioEngine.cpp
     Engine/Audio/src/AudioSystem.cpp
     Engine/Scripting/src/ScriptingPlaceholder.cpp
@@ -184,6 +186,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorCameraPreview.cpp
     Engine/Editor/src/EditorMeshPreview.cpp
     Engine/Editor/src/AICopilotPanel.cpp
+    Engine/Editor/src/AICopilotProcessor.cpp
     Engine/Editor/src/EditorSettings.cpp
     Engine/Editor/src/EditorSettingsDialog.cpp
     Engine/Editor/resources/AetherionEditor.qrc
@@ -203,6 +206,7 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/EditorCameraPreview.h
         Engine/Editor/include/Aetherion/Editor/EditorMeshPreview.h
         Engine/Editor/include/Aetherion/Editor/AICopilotPanel.h
+        Engine/Editor/include/Aetherion/Editor/AICopilotProcessor.h
         Engine/Editor/include/Aetherion/Editor/EditorSettings.h
         Engine/Editor/include/Aetherion/Editor/EditorSettingsDialog.h
 )
@@ -225,3 +229,8 @@ target_link_libraries(AetherionEditor
 add_dependencies(AetherionEditor AetherionShaders)
 
 target_compile_features(AetherionEditor PRIVATE cxx_std_20)
+
+if(MSVC)
+    target_compile_options(AetherionEditor PRIVATE /Zc:__cplusplus)
+    target_compile_options(AetherionRuntime PRIVATE /Zc:__cplusplus)
+endif()

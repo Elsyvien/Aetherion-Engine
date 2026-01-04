@@ -373,7 +373,7 @@ public:
     }
 
     if (context.IsSimulationPaused()) {
-      const bool stepRequested = context.IsSimulationStepRequested();
+      const bool stepRequested = context.ConsumeSimulationStepRequest();
       if (!stepRequested) {
         return;
       }
@@ -514,17 +514,6 @@ public:
     ConfigureSceneSystems();
 
     if (auto scene = m_scene.lock()) {
-      const bool playing = context.IsSimulationPlaying();
-      const bool paused = context.IsSimulationPaused();
-      const bool stepRequested = context.IsSimulationStepRequested();
-      scene->Tick(deltaTime, playing, paused, stepRequested);
-
-      const bool shouldUpdate =
-          playing && (!paused || stepRequested);
-      if (!shouldUpdate) {
-        return;
-      }
-
       for (const auto &system : scene->GetSystems()) {
         if (system) {
           system->Update(*scene, deltaTime);
@@ -937,7 +926,10 @@ void EngineApplication::Initialize(bool enableValidationLayers,
   m_context->SetPhysicsSystem(std::make_shared<Physics::PhysicsWorld>());
   m_context->SetAudioSystem(std::make_shared<Audio::AudioEngine>());
   m_context->SetScriptingRuntime(
-      std::make_shared<Scripting::ScriptingRuntimeStub>());
+      std::make_shared<Scripting::ScriptingRuntime>());
+  if (const auto scripting = m_context->GetScriptingRuntime()) {
+    scripting->SetErrorSink([this](const std::string &msg) { DebugPrint(msg); });
+  }
 
   const std::filesystem::path resolvedAssetsRoot = ResolveAssetsRoot();
   ProjectMetadata project = LoadProjectMetadata(resolvedAssetsRoot);
@@ -1081,8 +1073,6 @@ void EngineApplication::Tick() {
   if (m_runtimeSystems.empty()) {
     UpdateSceneSystems(deltaTime);
   }
-
-  m_context->ClearSimulationStepRequest();
 }
 
 void EngineApplication::RegisterSystem(std::shared_ptr<IRuntimeSystem> system) {
@@ -1109,7 +1099,7 @@ void EngineApplication::SetSimulationPlaying(bool playing) {
   if (m_context) {
     m_context->SetSimulationState(m_simulationPlaying, m_simulationPaused);
     if (!m_simulationPlaying) {
-      m_context->ClearSimulationStepRequest();
+      (void)m_context->ConsumeSimulationStepRequest();
     }
   }
 }
@@ -1182,14 +1172,6 @@ void EngineApplication::UpdateSceneSystems(float deltaTime) {
     return;
   }
 
-  const bool playing =
-      m_context ? m_context->IsSimulationPlaying() : false;
-  const bool paused =
-      m_context ? m_context->IsSimulationPaused() : false;
-  const bool stepRequested =
-      m_context ? m_context->IsSimulationStepRequested() : false;
-  m_activeScene->Tick(deltaTime, playing, paused, stepRequested);
-
   if (!m_sceneSystemsConfigured && m_context) {
     for (const auto &system : m_activeScene->GetSystems()) {
       if (system) {
@@ -1197,11 +1179,6 @@ void EngineApplication::UpdateSceneSystems(float deltaTime) {
       }
     }
     m_sceneSystemsConfigured = true;
-  }
-
-  const bool shouldUpdate = playing && (!paused || stepRequested);
-  if (!shouldUpdate) {
-    return;
   }
 
   for (const auto &system : m_activeScene->GetSystems()) {

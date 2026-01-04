@@ -43,6 +43,7 @@ public:
     void SetName(std::string name);
 
     void BindContext(Runtime::EngineContext& context);
+    [[nodiscard]] Runtime::EngineContext* GetContext() const noexcept { return m_context; }
     void Tick(float deltaTime, bool playing, bool paused, bool stepRequested);
     [[nodiscard]] bool IsPlaying() const noexcept { return m_playing; }
 

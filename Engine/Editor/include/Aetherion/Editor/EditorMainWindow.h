@@ -50,6 +50,7 @@ class EditorConsole;
 class EditorSelection;
 class EditorAuxPanel;
 class AICopilotPanel;
+class AICopilotProcessor;
 
 class EditorMainWindow : public QMainWindow
 {
@@ -163,12 +164,7 @@ private:
     QAction* m_undoAction = nullptr;
     QAction* m_redoAction = nullptr;
 
-    enum class CopilotSpawnType
-    {
-        Empty,
-        Light,
-        Camera
-    };
+    std::unique_ptr<AICopilotProcessor> m_copilotProcessor;
 
     // Interactive transform state for smooth dragging
     bool m_interactiveTransformActive = false;
@@ -206,11 +202,8 @@ private:
     void DuplicateEntity(Aetherion::Core::EntityId id);
     void RenameEntity(Aetherion::Core::EntityId id);
     Core::EntityId AllocateEntityId() const;
-    std::shared_ptr<Scene::Entity> SpawnCopilotEntity(const QString& name,
-                                                      const std::array<float, 3>& position,
-                                                      CopilotSpawnType type,
-                                                      Aetherion::Core::EntityId parentId);
     void HandleCopilotPrompt(const QString& prompt);
+    void UpdateAiHudFromSelection();
     void CreateEmptyEntity(Aetherion::Core::EntityId parentId);
     void CreateLightEntity(Aetherion::Core::EntityId parentId);
     void CreateCameraEntity(Aetherion::Core::EntityId parentId);

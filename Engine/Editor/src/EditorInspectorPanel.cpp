@@ -16,6 +16,7 @@
 #include <QScrollArea>
 #include <QStringList>
 #include <QVBoxLayout>
+#include <QTextEdit>
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -28,6 +29,7 @@
 #include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/ColliderComponent.h"
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Scene/AIBehaviorComponent.h"
 #include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/RigidbodyComponent.h"
@@ -216,6 +218,15 @@ void EditorInspectorPanel::RebuildUi() {
   m_audioLoop = nullptr;
   m_audioSpatial = nullptr;
   m_audioPlayOnAwake = nullptr;
+  m_aiMode = nullptr;
+  m_aiPromptAsset = nullptr;
+  m_aiPersonality = nullptr;
+  m_aiKnowledge = nullptr;
+  m_aiContext = nullptr;
+  m_aiInlinePrompt = nullptr;
+  m_aiDecisionInterval = nullptr;
+  m_aiStateLabel = nullptr;
+  m_aiReasonLabel = nullptr;
 
   auto addMeshStatsRows = [this](
                               QFormLayout *form, QWidget *parent,
@@ -503,10 +514,11 @@ void EditorInspectorPanel::RebuildUi() {
   auto camera = m_entity->GetComponent<Scene::CameraComponent>();
   auto rigidbody = m_entity->GetComponent<Scene::RigidbodyComponent>();
   auto collider = m_entity->GetComponent<Scene::ColliderComponent>();
-  auto audioSource = m_entity->GetComponent<Scene::AudioSourceComponent>();
+  auto audioSource = m_entity->GetComponent<Scene::AudioSourceComponent>();     
+  auto aiBehavior = m_entity->GetComponent<Scene::AIBehaviorComponent>();
 
-  if (!transform && !mesh && !light && !camera && !rigidbody && !collider &&
-      !audioSource) {
+  if (!transform && !mesh && !light && !camera && !rigidbody && !collider &&    
+      !audioSource && !aiBehavior) {
     auto *noEditable =
         new QLabel(tr("No editable components on selected entity."), m_content);
     noEditable->setAlignment(Qt::AlignTop | Qt::AlignLeft);
@@ -1318,6 +1330,129 @@ void EditorInspectorPanel::RebuildUi() {
         makeComponentHeader(tr("Rigidbody"), rigidbody, formHost));
   }
 
+  // AI Behavior Component UI
+  if (aiBehavior) {
+    auto *formHost = new QWidget(m_content);
+    auto *form = new QFormLayout(formHost);
+    form->setLabelAlignment(Qt::AlignLeft);
+    form->setSpacing(6);
+
+    m_aiMode = new QComboBox(m_content);
+    m_aiMode->addItem(tr("Stub"),
+                      static_cast<int>(Scene::AIBehaviorComponent::ExecutionMode::Stub));
+    m_aiMode->addItem(tr("Local Model"),
+                      static_cast<int>(Scene::AIBehaviorComponent::ExecutionMode::LocalModel));
+    m_aiMode->addItem(tr("Remote Service"),
+                      static_cast<int>(Scene::AIBehaviorComponent::ExecutionMode::RemoteService));
+    const int modeIdx = m_aiMode->findData(
+        static_cast<int>(aiBehavior->GetExecutionMode()));
+    if (modeIdx >= 0) {
+      m_aiMode->setCurrentIndex(modeIdx);
+    }
+
+    m_aiPromptAsset = new QComboBox(m_content);
+    m_aiPromptAsset->addItem(tr("None"), QString());
+    if (m_assetRegistry) {
+      for (const auto &entry : m_assetRegistry->GetEntries()) {
+        if (entry.type == Assets::AssetRegistry::AssetType::Script ||
+            entry.type == Assets::AssetRegistry::AssetType::Other) {
+          const QString id = QString::fromStdString(entry.id);
+          QString label =
+              QString::fromStdString(entry.path.filename().string());
+          if (m_assetRegistry->IsVirtualAsset(entry.id)) {
+            label += tr(" (virtual)");
+          }
+          m_aiPromptAsset->addItem(label, id);
+        }
+      }
+    }
+    const QString promptId =
+        QString::fromStdString(aiBehavior->GetPromptAssetId());
+    int promptIdx = m_aiPromptAsset->findData(promptId);
+    if (promptIdx >= 0) {
+      m_aiPromptAsset->setCurrentIndex(promptIdx);
+    }
+
+    m_aiPersonality = new QLineEdit(
+        QString::fromStdString(aiBehavior->GetPersonality()), m_content);
+    m_aiKnowledge = new QLineEdit(
+        QString::fromStdString(aiBehavior->GetKnowledgeBase()), m_content);
+    m_aiContext = new QTextEdit(m_content);
+    m_aiContext->setPlaceholderText(
+        tr("Scene context, observations, goals..."));
+    m_aiContext->setPlainText(QString::fromStdString(aiBehavior->GetContext()));
+
+    m_aiInlinePrompt = new QTextEdit(m_content);
+    m_aiInlinePrompt->setPlaceholderText(
+        tr("Inline behavior prompt (used if no prompt asset is set)"));
+    m_aiInlinePrompt->setPlainText(
+        QString::fromStdString(aiBehavior->GetInlinePrompt()));
+
+    m_aiDecisionInterval = makeSpin(0.05, 5.0, 0.05);
+    m_aiDecisionInterval->setDecimals(2);
+    m_aiDecisionInterval->setValue(aiBehavior->GetDecisionInterval());
+
+    m_aiStateLabel = new QLabel(
+        tr("State: %1")
+            .arg(QString::fromStdString(aiBehavior->GetCurrentState())),
+        m_content);
+    m_aiReasonLabel = new QLabel(
+        tr("Reason: %1")
+            .arg(QString::fromStdString(aiBehavior->GetLastReason())),
+        m_content);
+    m_aiReasonLabel->setWordWrap(true);
+
+    form->addRow(tr("Execution"), m_aiMode);
+    form->addRow(tr("Prompt Asset"), m_aiPromptAsset);
+    form->addRow(tr("Inline Prompt"), m_aiInlinePrompt);
+    form->addRow(tr("Personality"), m_aiPersonality);
+    form->addRow(tr("Knowledge Base"), m_aiKnowledge);
+    form->addRow(tr("Context"), m_aiContext);
+    form->addRow(tr("Decision Interval (s)"), m_aiDecisionInterval);
+    form->addRow(m_aiStateLabel);
+    form->addRow(m_aiReasonLabel);
+
+    auto updateBehavior = [this, aiBehavior]() {
+      aiBehavior->SetPersonality(m_aiPersonality->text().toStdString());
+      aiBehavior->SetKnowledgeBase(m_aiKnowledge->text().toStdString());
+      aiBehavior->SetContext(m_aiContext->toPlainText().toStdString());
+      aiBehavior->SetInlinePrompt(m_aiInlinePrompt->toPlainText().toStdString());
+      aiBehavior->SetDecisionInterval(
+          static_cast<float>(m_aiDecisionInterval->value()));
+      emit sceneModified();
+    };
+
+    connect(m_aiMode, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            [aiBehavior, this](int idx) {
+              const int value = m_aiMode->itemData(idx).toInt();
+              aiBehavior->SetExecutionMode(
+                  static_cast<Scene::AIBehaviorComponent::ExecutionMode>(
+                      value));
+              emit sceneModified();
+            });
+    connect(m_aiPromptAsset, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [aiBehavior, this](int idx) {
+              const QString id = m_aiPromptAsset->itemData(idx).toString();
+              aiBehavior->SetPromptAssetId(id.toStdString());
+              emit sceneModified();
+            });
+    connect(m_aiPersonality, &QLineEdit::editingFinished, this,
+            [updateBehavior]() { updateBehavior(); });
+    connect(m_aiKnowledge, &QLineEdit::editingFinished, this,
+            [updateBehavior]() { updateBehavior(); });
+    connect(m_aiContext, &QTextEdit::textChanged, this,
+            [updateBehavior]() { updateBehavior(); });
+    connect(m_aiInlinePrompt, &QTextEdit::textChanged, this,
+            [updateBehavior]() { updateBehavior(); });
+    connect(
+        m_aiDecisionInterval, qOverload<double>(&QDoubleSpinBox::valueChanged),
+        this, [updateBehavior](double) { updateBehavior(); });
+
+    formHost->setLayout(form);
+    m_contentLayout->addWidget(
+        makeComponentHeader(tr("AI Behavior"), aiBehavior, formHost));
+  }
+
   // Collider Component UI
   if (collider) {
     auto *formHost = new QWidget(m_content);
@@ -1556,6 +1691,14 @@ void EditorInspectorPanel::RebuildUi() {
     if (!m_entity->GetComponent<Scene::AudioSourceComponent>()) {
       menu.addAction(tr("Audio Source"), [this] {
         auto comp = std::make_shared<Scene::AudioSourceComponent>();
+        if (m_commandExecutor)
+          m_commandExecutor(
+              std::make_unique<AddComponentCommand>(m_entity, comp));
+      });
+    }
+    if (!m_entity->GetComponent<Scene::AIBehaviorComponent>()) {
+      menu.addAction(tr("AI Behavior"), [this] {
+        auto comp = std::make_shared<Scene::AIBehaviorComponent>();
         if (m_commandExecutor)
           m_commandExecutor(
               std::make_unique<AddComponentCommand>(m_entity, comp));
