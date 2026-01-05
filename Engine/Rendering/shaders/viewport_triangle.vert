@@ -52,7 +52,7 @@ layout(push_constant) uniform InstancePC
 } pc;
 
 layout(location = 0) out vec3 vNormal;
-layout(location = 1) out vec3 vColor;
+layout(location = 1) out vec4 vColor;
 layout(location = 2) out vec2 vUv;
 layout(location = 3) out vec3 vWorldPos;
 layout(location = 4) flat out uint vEntityId;
@@ -70,7 +70,7 @@ void main()
     gl_Position = ubo.uViewProj * worldPos;
     mat3 normalMat = mat3(transpose(inverse(model)));
     vNormal = normalize(normalMat * aNormal);
-    vColor = aColor.rgb * color.rgb;
+    vColor = aColor * color;
     vUv = aUv;
     vWorldPos = worldPos.xyz;
     vEntityId = entityId;

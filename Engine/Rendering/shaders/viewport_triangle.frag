@@ -1,7 +1,7 @@
 #version 450
 
 layout(location = 0) in vec3 vNormal;
-layout(location = 1) in vec3 vColor;
+layout(location = 1) in vec4 vColor;
 layout(location = 2) in vec2 vUv;
 layout(location = 3) in vec3 vWorldPos;
 layout(location = 5) flat in uint vFlags;
@@ -218,8 +218,8 @@ vec3 ApplyLight(vec3 l,
 
 void main()
 {
-    vec4 baseColor = texture(uAlbedoMap, vUv) * material.baseColor *
-                     vec4(vColor, 1.0);
+    vec4 baseColor =
+        texture(uAlbedoMap, vUv) * material.baseColor * vColor;
     vec3 albedo = baseColor.rgb;
 
     // Normal Mapping

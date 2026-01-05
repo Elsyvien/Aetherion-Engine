@@ -348,8 +348,8 @@ std::array<float, 3> ParticleEmitterComponent::GetEmissionDirection() const {
     float phi = std::acos(2.0f * m_dist01(m_rng) - 1.0f);
 
     dir[0] = std::sin(phi) * std::cos(theta);
-    dir[1] = std::sin(phi) * std::sin(theta);
-    dir[2] = std::cos(phi);
+    dir[1] = std::cos(phi);
+    dir[2] = std::sin(phi) * std::sin(theta);
   }
   // Point and Box use default up direction
 
@@ -369,8 +369,8 @@ std::array<float, 3> ParticleEmitterComponent::GetEmissionOffset() const {
     float phi = std::acos(2.0f * m_dist01(m_rng) - 1.0f);
 
     offset[0] = r * std::sin(phi) * std::cos(theta);
-    offset[1] = r * std::sin(phi) * std::sin(theta);
-    offset[2] = r * std::cos(phi);
+    offset[1] = r * std::cos(phi);
+    offset[2] = r * std::sin(phi) * std::sin(theta);
     break;
   }
   case ParticleEmissionShape::Box: {
