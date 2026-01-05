@@ -4,8 +4,17 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec4 aColor;
 layout(location = 3) in vec2 aUv;
+layout(location = 4) in vec4 iModel0;
+layout(location = 5) in vec4 iModel1;
+layout(location = 6) in vec4 iModel2;
+layout(location = 7) in vec4 iModel3;
+layout(location = 8) in vec4 iColor;
+layout(location = 9) in uint iEntityId;
+layout(location = 10) in uint iFlags;
 
 const uint kMaxLights = 8u;
+const uint kShadowCascadeCount = 4u;
+const uint kInstanceFlagUseInstanceData = 2u;
 
 struct LightUniform
 {
@@ -26,6 +35,11 @@ layout(set = 0, binding = 0) uniform FrameUBO
     vec4 uMaterialParams;
     vec4 uLightCounts;
     LightUniform uLights[kMaxLights];
+    mat4 uShadowMatrices[kShadowCascadeCount];
+    vec4 uShadowSplits;
+    vec4 uShadowParams;
+    vec4 uPostParams;
+    vec4 uFrustumPlanes[6];
 } ubo;
 
 layout(push_constant) uniform InstancePC
@@ -41,14 +55,24 @@ layout(location = 0) out vec3 vNormal;
 layout(location = 1) out vec3 vColor;
 layout(location = 2) out vec2 vUv;
 layout(location = 3) out vec3 vWorldPos;
+layout(location = 4) flat out uint vEntityId;
+layout(location = 5) flat out uint vFlags;
 
 void main()
 {
-    vec4 worldPos = pc.uModel * vec4(aPos, 1.0);
+    bool useInstance = (pc.uFlags & kInstanceFlagUseInstanceData) != 0u;
+    mat4 model = useInstance ? mat4(iModel0, iModel1, iModel2, iModel3) : pc.uModel;
+    vec4 color = useInstance ? iColor : pc.uColor;
+    uint entityId = useInstance ? iEntityId : pc.uEntityId;
+    uint flags = useInstance ? iFlags : pc.uFlags;
+
+    vec4 worldPos = model * vec4(aPos, 1.0);
     gl_Position = ubo.uViewProj * worldPos;
-    mat3 normalMat = mat3(transpose(inverse(pc.uModel)));
+    mat3 normalMat = mat3(transpose(inverse(model)));
     vNormal = normalize(normalMat * aNormal);
-    vColor = aColor.rgb * pc.uColor.rgb;
+    vColor = aColor.rgb * color.rgb;
     vUv = aUv;
     vWorldPos = worldPos.xyz;
+    vEntityId = entityId;
+    vFlags = flags;
 }

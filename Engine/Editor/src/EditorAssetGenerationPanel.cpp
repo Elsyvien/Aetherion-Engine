@@ -433,10 +433,22 @@ void EditorAssetGenerationPanel::onAssetTypeChanged(int index) {
 
 void EditorAssetGenerationPanel::onHistoryItemSelected(QListWidgetItem *item) {
     if (!item) return;
-    
+
     QString requestId = item->data(Qt::UserRole).toString();
+    if (requestId.isEmpty()) {
+        m_detailsLabel->setText(tr("No request data found for this history entry."));
+        updateButtonStates();
+        return;
+    }
+
+    if (!m_generationQueue) {
+        m_detailsLabel->setText(tr("Generation system not available."));
+        updateButtonStates();
+        return;
+    }
+
     auto state = m_generationQueue->GetRequestState(requestId.toStdString());
-    
+
     if (state) {
         QString details;
         details += tr("<b>Request ID:</b> %1<br>").arg(requestId);
@@ -444,18 +456,27 @@ void EditorAssetGenerationPanel::onHistoryItemSelected(QListWidgetItem *item) {
             .arg(QString::fromStdString(state->statusMessage));
         details += tr("<b>Progress:</b> %1%<br>")
             .arg(static_cast<int>(state->progress * 100));
-        
+
         if (state->result) {
+            QString filename = tr("<unknown>");
+            try {
+                const auto u8name = state->result->outputPath.filename().u8string();
+                filename = QString::fromUtf8(reinterpret_cast<const char*>(u8name.data()),
+                                            static_cast<int>(u8name.size()));
+            } catch (...) {
+                filename = tr("<unavailable>");
+            }
             details += tr("<b>Output:</b> %1<br>")
-                .arg(QString::fromStdString(
-                    state->result->outputPath.filename().string()));
+                .arg(filename);
             details += tr("<b>Generation Time:</b> %1 ms<br>")
                 .arg(state->result->generationTimeMs);
         }
-        
+
         m_detailsLabel->setText(details);
+    } else {
+        m_detailsLabel->setText(tr("Request not found (history may have been cleared)."));
     }
-    
+
     updateButtonStates();
 }
 
@@ -530,13 +551,15 @@ void EditorAssetGenerationPanel::updateButtonStates() {
     bool hasSelection = (m_historyList->currentItem() != nullptr);
     bool canCancel = false;
     bool canRetry = false;
-    
+
     if (hasSelection) {
         QString requestId = m_historyList->currentItem()->data(Qt::UserRole).toString();
-        auto state = m_generationQueue->GetRequestState(requestId.toStdString());
-        if (state) {
-            canCancel = (state->status == Assets::GenerationStatus::Pending);
-            canRetry = (state->status == Assets::GenerationStatus::Failed);
+        if (!requestId.isEmpty() && m_generationQueue) {
+            auto state = m_generationQueue->GetRequestState(requestId.toStdString());
+            if (state) {
+                canCancel = (state->status == Assets::GenerationStatus::Pending);
+                canRetry = (state->status == Assets::GenerationStatus::Failed);
+            }
         }
     }
     

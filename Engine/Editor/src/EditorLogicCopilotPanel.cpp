@@ -4,10 +4,9 @@
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QGroupBox>
-#include <QFormLayout>
+#include <QFrame>
 #include <QTabWidget>
-#include <QSplitter>
+#include <QScrollArea>
 #include <QClipboard>
 #include <QApplication>
 #include <QMessageBox>
@@ -18,11 +17,12 @@ namespace Aetherion::Editor
 {
 
 EditorLogicCopilotPanel::EditorLogicCopilotPanel(QWidget* parent)
-    : QDockWidget("Logic Copilot", parent)
+    : QWidget(parent)
 {
+    setObjectName("LogicCopilotPanel");
     SetupUI();
     SetupConnections();
-    setMinimumWidth(450);
+    setMinimumWidth(300);
 }
 
 EditorLogicCopilotPanel::~EditorLogicCopilotPanel() = default;
@@ -40,149 +40,157 @@ void EditorLogicCopilotPanel::SetLogicCopilot(Scripting::LogicCopilot* copilot)
 
 void EditorLogicCopilotPanel::SetupUI()
 {
-    auto* mainWidget = new QWidget(this);
-    auto* mainLayout = new QVBoxLayout(mainWidget);
-    mainLayout->setContentsMargins(8, 8, 8, 8);
-    mainLayout->setSpacing(8);
+    // Main container with scroll
+    auto* containerLayout = new QVBoxLayout(this);
+    containerLayout->setContentsMargins(0, 0, 0, 0);
+    containerLayout->setSpacing(0);
 
-    // Header
-    auto* headerLabel = new QLabel("🤖 <b>Logic Copilot</b> - Generate C++ ECS code from natural language", this);
-    headerLabel->setWordWrap(true);
-    mainLayout->addWidget(headerLabel);
+    auto* scrollArea = new QScrollArea(this);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    containerLayout->addWidget(scrollArea);
 
-    // Splitter for input/output
-    auto* splitter = new QSplitter(Qt::Vertical, this);
-
-    // ========== INPUT SECTION ==========
-    auto* inputGroup = new QGroupBox("Input", this);
-    auto* inputLayout = new QVBoxLayout(inputGroup);
-
-    // System type and template row
-    auto* typeRow = new QHBoxLayout();
+    auto* scrollWidget = new QWidget();
+    scrollArea->setWidget(scrollWidget);
     
-    m_systemTypeCombo = new QComboBox(this);
-    m_systemTypeCombo->addItem("🔧 System", "System");
-    m_systemTypeCombo->addItem("📦 Component", "Component");
-    m_systemTypeCombo->addItem("🧠 Behavior", "Behavior");
-    typeRow->addWidget(new QLabel("Type:", this));
-    typeRow->addWidget(m_systemTypeCombo);
+    auto* layout = new QVBoxLayout(scrollWidget);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(6);
+
+    // ===== INPUT SECTION =====
+    // Type selection - single row
+    auto* typeLayout = new QHBoxLayout();
+    typeLayout->setSpacing(4);
+    m_systemTypeCombo = new QComboBox();
+    m_systemTypeCombo->addItem(tr("System"), "System");
+    m_systemTypeCombo->addItem(tr("Component"), "Component");
+    m_systemTypeCombo->addItem(tr("Behavior"), "Behavior");
+    m_systemTypeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    typeLayout->addWidget(m_systemTypeCombo);
     
-    m_templateCombo = new QComboBox(this);
-    m_templateCombo->addItem("(Kein Template)");
-    m_templateCombo->addItem("Bewegungssystem");
-    m_templateCombo->addItem("Gesundheitskomponente");
-    m_templateCombo->addItem("KI-Patrouille");
-    m_templateCombo->addItem("Spawner-System");
-    m_templateCombo->addItem("Schadens-System");
-    typeRow->addWidget(new QLabel("Template:", this));
-    typeRow->addWidget(m_templateCombo);
-    typeRow->addStretch();
-    
-    inputLayout->addLayout(typeRow);
+    m_templateCombo = new QComboBox();
+    m_templateCombo->addItem(tr("(No Template)"));
+    m_templateCombo->addItem(tr("Movement System"));
+    m_templateCombo->addItem(tr("Health Component"));
+    m_templateCombo->addItem(tr("AI Patrol"));
+    m_templateCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    typeLayout->addWidget(m_templateCombo);
+    layout->addLayout(typeLayout);
 
-    // Class name
-    auto* nameRow = new QHBoxLayout();
-    nameRow->addWidget(new QLabel("Klassenname:", this));
-    m_classNameInput = new QLineEdit(this);
-    m_classNameInput->setPlaceholderText("(automatisch generiert wenn leer)");
-    nameRow->addWidget(m_classNameInput);
-    inputLayout->addLayout(nameRow);
+    // Class name input
+    m_classNameInput = new QLineEdit();
+    m_classNameInput->setPlaceholderText(tr("Class name (optional, auto-generated)"));
+    m_classNameInput->setMaximumHeight(28);
+    layout->addWidget(m_classNameInput);
 
-    // Prompt input
-    m_promptInput = new QTextEdit(this);
-    m_promptInput->setPlaceholderText(
-        "Beschreibe die gewünschte Spiellogik in natürlicher Sprache...\n\n"
-        "Beispiele:\n"
-        "• Erstelle ein System, das alle Entities mit einer TransformComponent in Richtung des Spielers bewegt\n"
-        "• Erstelle eine Gesundheitskomponente mit Schaden-nehmen und Heilen-Funktionen\n"
-        "• Erstelle ein KI-Verhalten, das zwischen Patrouillieren, Jagen und Fliehen wechselt"
-    );
-    m_promptInput->setMinimumHeight(100);
-    inputLayout->addWidget(m_promptInput);
+    // Description input - compact
+    m_promptInput = new QTextEdit();
+    m_promptInput->setPlaceholderText(tr("Describe what you want to generate..."));
+    m_promptInput->setMaximumHeight(65);
+    m_promptInput->setMinimumHeight(65);
+    layout->addWidget(m_promptInput);
 
-    // Buttons
-    auto* btnRow = new QHBoxLayout();
-    m_generateBtn = new QPushButton("✨ Generieren", this);
+    // Action buttons - compact row
+    auto* actionLayout = new QHBoxLayout();
+    actionLayout->setSpacing(4);
+    m_generateBtn = new QPushButton(tr("Generate"));
     m_generateBtn->setEnabled(false);
-    m_generateBtn->setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; padding: 8px 16px; }");
-    m_clearBtn = new QPushButton("🗑️ Löschen", this);
-    btnRow->addWidget(m_generateBtn);
-    btnRow->addWidget(m_clearBtn);
-    btnRow->addStretch();
-    inputLayout->addLayout(btnRow);
+    m_generateBtn->setMaximumHeight(28);
+    m_clearBtn = new QPushButton(tr("Clear"));
+    m_clearBtn->setMaximumHeight(28);
+    actionLayout->addWidget(m_generateBtn);
+    actionLayout->addWidget(m_clearBtn);
+    actionLayout->addStretch();
+    layout->addLayout(actionLayout);
 
-    splitter->addWidget(inputGroup);
+    // Thin separator
+    auto* sep1 = new QFrame();
+    sep1->setFrameShape(QFrame::HLine);
+    sep1->setMaximumHeight(1);
+    layout->addWidget(sep1);
 
-    // ========== OUTPUT SECTION ==========
-    auto* outputGroup = new QGroupBox("Generierter Code", this);
-    auto* outputLayout = new QVBoxLayout(outputGroup);
-
-    // Progress
-    m_progressBar = new QProgressBar(this);
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
+    // ===== STATUS SECTION =====
+    m_progressBar = new QProgressBar();
+    m_progressBar->setMaximumHeight(14);
+    m_progressBar->setTextVisible(false);
     m_progressBar->setVisible(false);
-    outputLayout->addWidget(m_progressBar);
+    layout->addWidget(m_progressBar);
 
-    m_statusLabel = new QLabel("Bereit.", this);
-    outputLayout->addWidget(m_statusLabel);
+    m_statusLabel = new QLabel();
+    m_statusLabel->setMaximumHeight(20);
+    m_statusLabel->setVisible(false);
+    layout->addWidget(m_statusLabel);
 
-    // Tab widget for header/source
-    m_outputTabs = new QTabWidget(this);
+    // ===== OUTPUT SECTION =====
+    m_outputTabs = new QTabWidget();
+    m_outputTabs->setMinimumHeight(200);
     
-    // Header tab
-    auto* headerWidget = new QWidget(this);
+    // Header Tab - ultra compact
+    auto* headerWidget = new QWidget();
     auto* headerLayout = new QVBoxLayout(headerWidget);
-    m_headerOutput = new QPlainTextEdit(this);
+    headerLayout->setContentsMargins(4, 4, 4, 4);
+    headerLayout->setSpacing(2);
+    
+    m_headerOutput = new QPlainTextEdit();
     m_headerOutput->setReadOnly(true);
-    m_headerOutput->setFont(QFont("Consolas", 10));
+    m_headerOutput->setFont(QFont("Consolas", 8));
     m_headerOutput->setLineWrapMode(QPlainTextEdit::NoWrap);
     headerLayout->addWidget(m_headerOutput);
-    m_copyHeaderBtn = new QPushButton("📋 Header kopieren", this);
+    
+    m_copyHeaderBtn = new QPushButton(tr("Copy"));
+    m_copyHeaderBtn->setMaximumHeight(22);
     headerLayout->addWidget(m_copyHeaderBtn);
-    m_outputTabs->addTab(headerWidget, "📄 Header (.h)");
+    
+    m_outputTabs->addTab(headerWidget, tr("Header"));
 
-    // Source tab
-    auto* sourceWidget = new QWidget(this);
+    // Source Tab - ultra compact
+    auto* sourceWidget = new QWidget();
     auto* sourceLayout = new QVBoxLayout(sourceWidget);
-    m_sourceOutput = new QPlainTextEdit(this);
+    sourceLayout->setContentsMargins(4, 4, 4, 4);
+    sourceLayout->setSpacing(2);
+    
+    m_sourceOutput = new QPlainTextEdit();
     m_sourceOutput->setReadOnly(true);
-    m_sourceOutput->setFont(QFont("Consolas", 10));
+    m_sourceOutput->setFont(QFont("Consolas", 8));
     m_sourceOutput->setLineWrapMode(QPlainTextEdit::NoWrap);
     sourceLayout->addWidget(m_sourceOutput);
-    m_copySourceBtn = new QPushButton("📋 Source kopieren", this);
+    
+    m_copySourceBtn = new QPushButton(tr("Copy"));
+    m_copySourceBtn->setMaximumHeight(22);
     sourceLayout->addWidget(m_copySourceBtn);
-    m_outputTabs->addTab(sourceWidget, "📄 Source (.cpp)");
+    
+    m_outputTabs->addTab(sourceWidget, tr("Source"));
 
-    outputLayout->addWidget(m_outputTabs);
+    layout->addWidget(m_outputTabs, 1);
 
-    // Action buttons
-    auto* actionRow = new QHBoxLayout();
-    m_saveBtn = new QPushButton("💾 Speichern", this);
+    // Save/Add buttons - compact
+    auto* saveLayout = new QHBoxLayout();
+    saveLayout->setSpacing(4);
+    m_saveBtn = new QPushButton(tr("Save"));
     m_saveBtn->setEnabled(false);
-    m_addToProjectBtn = new QPushButton("➕ Zum Projekt hinzufügen", this);
+    m_saveBtn->setMaximumHeight(26);
+    m_addToProjectBtn = new QPushButton(tr("Add to Project"));
     m_addToProjectBtn->setEnabled(false);
-    m_addToProjectBtn->setStyleSheet("QPushButton { background-color: #2196F3; color: white; }");
-    actionRow->addWidget(m_saveBtn);
-    actionRow->addWidget(m_addToProjectBtn);
-    actionRow->addStretch();
-    outputLayout->addLayout(actionRow);
+    m_addToProjectBtn->setMaximumHeight(26);
+    saveLayout->addWidget(m_saveBtn);
+    saveLayout->addWidget(m_addToProjectBtn);
+    saveLayout->addStretch();
+    layout->addLayout(saveLayout);
 
-    splitter->addWidget(outputGroup);
+    // Separator
+    auto* sep2 = new QFrame();
+    sep2->setFrameShape(QFrame::HLine);
+    sep2->setMaximumHeight(1);
+    layout->addWidget(sep2);
 
-    // ========== HISTORY SECTION ==========
-    auto* historyGroup = new QGroupBox("Verlauf", this);
-    auto* historyLayout = new QVBoxLayout(historyGroup);
-    m_historyList = new QListWidget(this);
-    m_historyList->setMaximumHeight(100);
-    historyLayout->addWidget(m_historyList);
-    splitter->addWidget(historyGroup);
+    // History - very compact, hidden initially
+    m_historyList = new QListWidget();
+    m_historyList->setMaximumHeight(50);
+    m_historyList->setVisible(false);
+    layout->addWidget(m_historyList);
 
-    // Set splitter sizes
-    splitter->setSizes({300, 400, 100});
-
-    mainLayout->addWidget(splitter);
-    setWidget(mainWidget);
+    layout->addStretch();
 }
 
 void EditorLogicCopilotPanel::SetupConnections()
@@ -204,21 +212,22 @@ void EditorLogicCopilotPanel::OnGenerateClicked()
 {
     if (!m_copilot)
     {
-        QMessageBox::warning(this, "Fehler", "Logic Copilot nicht initialisiert.\nBitte API-Schlüssel in den Einstellungen konfigurieren.");
+        QMessageBox::warning(this, tr("Error"), tr("Logic Copilot not initialized.\nPlease configure API key in settings."));
         return;
     }
 
     QString prompt = m_promptInput->toPlainText().trimmed();
     if (prompt.isEmpty())
     {
-        QMessageBox::warning(this, "Eingabe erforderlich", "Bitte gib eine Beschreibung für den zu generierenden Code ein.");
+        QMessageBox::warning(this, tr("Input Required"), tr("Please enter a description for the code to generate."));
         return;
     }
 
     UpdateUIState(true);
     m_progressBar->setValue(0);
     m_progressBar->setVisible(true);
-    m_statusLabel->setText("Generiere Code...");
+    m_statusLabel->setText(tr("Generating code..."));
+    m_statusLabel->setVisible(true);
 
     Scripting::CodeGenerationRequest request;
     request.prompt = prompt.toStdString();
@@ -259,7 +268,8 @@ void EditorLogicCopilotPanel::OnClearClicked()
     m_classNameInput->clear();
     m_headerOutput->clear();
     m_sourceOutput->clear();
-    m_statusLabel->setText("Bereit.");
+    m_statusLabel->setText("");
+    m_statusLabel->setVisible(false);
     m_progressBar->setValue(0);
     m_progressBar->setVisible(false);
     m_saveBtn->setEnabled(false);
@@ -269,24 +279,26 @@ void EditorLogicCopilotPanel::OnClearClicked()
 void EditorLogicCopilotPanel::OnCopyHeaderClicked()
 {
     QApplication::clipboard()->setText(m_headerOutput->toPlainText());
-    m_statusLabel->setText("Header in Zwischenablage kopiert.");
+    m_statusLabel->setText(tr("Header copied to clipboard."));
+    m_statusLabel->setVisible(true);
 }
 
 void EditorLogicCopilotPanel::OnCopySourceClicked()
 {
     QApplication::clipboard()->setText(m_sourceOutput->toPlainText());
-    m_statusLabel->setText("Source in Zwischenablage kopiert.");
+    m_statusLabel->setText(tr("Source copied to clipboard."));
+    m_statusLabel->setVisible(true);
 }
 
 void EditorLogicCopilotPanel::OnSaveClicked()
 {
     if (m_lastGeneratedClassName.isEmpty())
     {
-        QMessageBox::warning(this, "Fehler", "Kein generierter Code zum Speichern.");
+        QMessageBox::warning(this, tr("Error"), tr("No generated code to save."));
         return;
     }
 
-    QString dir = QFileDialog::getExistingDirectory(this, "Speicherort wählen");
+    QString dir = QFileDialog::getExistingDirectory(this, tr("Choose Save Location"));
     if (dir.isEmpty()) return;
 
     QString headerPath = dir + "/" + m_lastGeneratedClassName + ".h";
@@ -308,7 +320,7 @@ void EditorLogicCopilotPanel::OnSaveClicked()
         sourceFile.close();
     }
 
-    m_statusLabel->setText("Gespeichert: " + m_lastGeneratedClassName + ".h/.cpp");
+    m_statusLabel->setText(tr("Saved: ") + m_lastGeneratedClassName + ".h/.cpp");
     emit CodeGenerated(m_lastGeneratedClassName, headerPath, sourcePath);
 }
 
@@ -316,7 +328,7 @@ void EditorLogicCopilotPanel::OnAddToProjectClicked()
 {
     if (!m_copilot || m_lastGeneratedClassName.isEmpty())
     {
-        QMessageBox::warning(this, "Fehler", "Kein generierter Code zum Hinzufügen.");
+        QMessageBox::warning(this, tr("Error"), tr("No generated code to add."));
         return;
     }
 
@@ -326,15 +338,15 @@ void EditorLogicCopilotPanel::OnAddToProjectClicked()
     {
         if (m_copilot->AddToProject(result->code))
         {
-            m_statusLabel->setText("Zum Projekt hinzugefügt: " + m_lastGeneratedClassName);
+            m_statusLabel->setText(tr("Added to project: ") + m_lastGeneratedClassName);
             emit AddToProject(m_lastGeneratedClassName);
-            QMessageBox::information(this, "Erfolg", 
-                "Code wurde zum Projekt hinzugefügt.\n\n"
-                "Du musst CMake neu konfigurieren und neu builden, um den Code zu verwenden.");
+            QMessageBox::information(this, tr("Success"), 
+                tr("Code has been added to the project.\n\n"
+                   "You need to reconfigure CMake and rebuild to use the code."));
         }
         else
         {
-            QMessageBox::warning(this, "Fehler", "Konnte Code nicht zum Projekt hinzufügen.");
+            QMessageBox::warning(this, tr("Error"), tr("Could not add code to project."));
         }
     }
 }
@@ -362,31 +374,31 @@ void EditorLogicCopilotPanel::OnSystemTypeChanged(int index)
     if (type == "System")
     {
         m_promptInput->setPlaceholderText(
-            "Beschreibe ein ECS-System...\n\n"
-            "Beispiele:\n"
-            "• Erstelle ein System das alle Entities mit Velocity auf ihre Position anwendet\n"
-            "• Erstelle ein Partikel-Update-System für Explosionseffekte\n"
-            "• Erstelle ein KI-Navigations-System"
+            tr("Describe an ECS System...\n\n"
+               "Examples:\n"
+               "- Create a system that applies velocity to position\n"
+               "- Create a particle update system for explosions\n"
+               "- Create an AI navigation system")
         );
     }
     else if (type == "Component")
     {
         m_promptInput->setPlaceholderText(
-            "Beschreibe eine ECS-Komponente...\n\n"
-            "Beispiele:\n"
-            "• Erstelle eine Gesundheitskomponente mit max HP und Regeneration\n"
-            "• Erstelle eine Inventar-Komponente mit Slots und Gewichtslimit\n"
-            "• Erstelle eine Damage-Komponente für Schadensquellen"
+            tr("Describe an ECS Component...\n\n"
+               "Examples:\n"
+               "- Create a health component with max HP and regeneration\n"
+               "- Create an inventory component with slots and weight limit\n"
+               "- Create a damage component for damage sources")
         );
     }
     else if (type == "Behavior")
     {
         m_promptInput->setPlaceholderText(
-            "Beschreibe ein State-Machine-Verhalten...\n\n"
-            "Beispiele:\n"
-            "• Erstelle ein Wächter-Verhalten: Patrouillieren, Untersuchen, Verfolgen\n"
-            "• Erstelle ein NPC-Verhalten: Idle, Wandern, Interagieren, Fliehen\n"
-            "• Erstelle ein Boss-Verhalten mit verschiedenen Angriffsphasen"
+            tr("Describe a state machine behavior...\n\n"
+               "Examples:\n"
+               "- Create a guard behavior: Patrol, Investigate, Chase\n"
+               "- Create an NPC behavior: Idle, Wander, Interact, Flee\n"
+               "- Create a boss behavior with different attack phases")
         );
     }
 }
@@ -403,65 +415,65 @@ void EditorLogicCopilotPanel::ApplyTemplate(int templateIndex)
 {
     switch (templateIndex)
     {
-        case 1: // Bewegungssystem
+        case 1: // Movement System
             m_systemTypeCombo->setCurrentIndex(0);
             m_promptInput->setText(
-                "Erstelle ein Bewegungssystem, das alle Entities mit einer VelocityComponent bewegt.\n"
-                "Das System soll:\n"
-                "- Die Velocity auf die Position anwenden (position += velocity * deltaTime)\n"
-                "- Optional Drag/Friction anwenden\n"
-                "- Optional Geschwindigkeitsbegrenzung haben"
+                "Create a movement system that moves all entities with a VelocityComponent.\n"
+                "The system should:\n"
+                "- Apply velocity to position (position += velocity * deltaTime)\n"
+                "- Optionally apply drag/friction\n"
+                "- Optionally have a speed limit"
             );
             m_classNameInput->setText("MovementSystem");
             break;
             
-        case 2: // Gesundheitskomponente
+        case 2: // Health Component
             m_systemTypeCombo->setCurrentIndex(1);
             m_promptInput->setText(
-                "Erstelle eine Gesundheitskomponente mit folgenden Features:\n"
-                "- Aktuelle und maximale Gesundheit (float)\n"
-                "- TakeDamage(float amount) Methode\n"
-                "- Heal(float amount) Methode\n"
-                "- IsDead() Check\n"
-                "- Optional: OnDeath Callback"
+                "Create a health component with the following features:\n"
+                "- Current and maximum health (float)\n"
+                "- TakeDamage(float amount) method\n"
+                "- Heal(float amount) method\n"
+                "- IsDead() check\n"
+                "- Optional: OnDeath callback"
             );
             m_classNameInput->setText("HealthComponent");
             break;
             
-        case 3: // KI-Patrouille
+        case 3: // AI Patrol
             m_systemTypeCombo->setCurrentIndex(2);
             m_promptInput->setText(
-                "Erstelle ein KI-Patrouille-Verhalten mit diesen Zuständen:\n"
-                "- Patrolling: Bewegt sich zwischen Wegpunkten\n"
-                "- Investigating: Geht zu einem verdächtigen Ort\n"
-                "- Chasing: Verfolgt den Spieler\n"
-                "- Returning: Kehrt zur Patrouille zurück\n"
-                "Übergänge basierend auf Sichtweite und Distanz zum Spieler"
+                "Create an AI patrol behavior with these states:\n"
+                "- Patrolling: Moves between waypoints\n"
+                "- Investigating: Goes to a suspicious location\n"
+                "- Chasing: Pursues the player\n"
+                "- Returning: Returns to patrol route\n"
+                "Transitions based on sight range and distance to player"
             );
             m_classNameInput->setText("PatrolBehavior");
             break;
             
-        case 4: // Spawner-System
+        case 4: // Spawner System
             m_systemTypeCombo->setCurrentIndex(0);
             m_promptInput->setText(
-                "Erstelle ein Spawner-System, das:\n"
-                "- Entities mit SpawnerComponent findet\n"
-                "- In regelmäßigen Intervallen neue Entities spawnt\n"
-                "- Maximalzahl gleichzeitiger Spawns respektiert\n"
-                "- Optional zufällige Position im Radius verwendet"
+                "Create a spawner system that:\n"
+                "- Finds entities with SpawnerComponent\n"
+                "- Spawns new entities at regular intervals\n"
+                "- Respects maximum concurrent spawn count\n"
+                "- Optionally uses random position within radius"
             );
             m_classNameInput->setText("SpawnerSystem");
             break;
             
-        case 5: // Schadens-System
+        case 5: // Damage System
             m_systemTypeCombo->setCurrentIndex(0);
             m_promptInput->setText(
-                "Erstelle ein Schadens-System, das:\n"
-                "- DamageEvent-Komponenten verarbeitet\n"
-                "- Schaden auf HealthComponents anwendet\n"
-                "- Kritische Treffer berechnet\n"
-                "- Rüstung/Resistenzen berücksichtigt\n"
-                "- Schadens-Events nach Verarbeitung entfernt"
+                "Create a damage system that:\n"
+                "- Processes DamageEvent components\n"
+                "- Applies damage to HealthComponents\n"
+                "- Calculates critical hits\n"
+                "- Considers armor/resistances\n"
+                "- Removes damage events after processing"
             );
             m_classNameInput->setText("DamageSystem");
             break;

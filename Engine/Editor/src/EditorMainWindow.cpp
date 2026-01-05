@@ -3,6 +3,7 @@
 #include "Aetherion/Editor/AICopilotProcessor.h"
 #include "Aetherion/Editor/EditorAssetGenerationPanel.h"
 #include "Aetherion/Editor/EditorStatisticsPanel.h"
+#include "Aetherion/Scripting/LogicCopilot.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -58,6 +59,7 @@
 #include "Aetherion/Editor/EditorSelection.h"
 #include "Aetherion/Editor/EditorSettingsDialog.h"
 #include "Aetherion/Editor/EditorViewport.h"
+#include "Aetherion/Editor/TabPanelManager.h"
 #include "Aetherion/Rendering/RenderView.h"
 #include "Aetherion/Rendering/VulkanContext.h"
 #include "Aetherion/Rendering/VulkanViewport.h"
@@ -164,6 +166,33 @@ Vec3 Cross(const Vec3 &a, const Vec3 &b) {
 Vec3 Normalize(const Vec3 &v) {
   float l = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
   return l > 0 ? v * (1.0f / l) : v;
+}
+
+void SetCurrentTab(QTabWidget *tabs, QWidget *widget) {
+  if (!tabs || !widget) {
+    return;
+  }
+  const int index = tabs->indexOf(widget);
+  if (index >= 0) {
+    tabs->setCurrentIndex(index);
+  }
+}
+
+void FocusBottomTab(TabPanelManager *manager, QWidget *widget) {
+  if (!manager || !widget) {
+    return;
+  }
+  manager->SetBottomPanelVisible(true);
+  SetCurrentTab(manager->GetBottomPanel(), widget);
+}
+
+void FocusSideTab(TabPanelManager *manager, QWidget *widget, bool useRight) {
+  if (!manager || !widget) {
+    return;
+  }
+  QTabWidget *tabs = useRight ? manager->GetRightPanel()
+                              : manager->GetLeftPanel();
+  SetCurrentTab(tabs, widget);
 }
 
 // Returns t for L1 (P1 + t*D1) closest to L2 (P2 + s*D2)
@@ -477,16 +506,14 @@ EditorMainWindow::EditorMainWindow(
   setWindowIcon(QApplication::windowIcon());
   resize(1440, 900);
 
-  auto *centerSplit = new QSplitter(Qt::Horizontal, this);
-  centerSplit->setChildrenCollapsible(false);
-
-  m_viewport = new EditorViewport(centerSplit);
+  m_panelManager = new TabPanelManager(this);
+  m_viewport = new EditorViewport(m_panelManager);
   m_viewport->setFocusPolicy(Qt::StrongFocus);
   m_viewport->installEventFilter(this);
   if (m_viewport->surfaceWidget()) {
     m_viewport->surfaceWidget()->installEventFilter(this);
   }
-  centerSplit->addWidget(m_viewport);
+  m_panelManager->SetCentralWidget(m_viewport);
 
   m_renderTimer = new QTimer(this);
   m_renderTimer->setInterval(m_targetFrameIntervalMs);
@@ -811,20 +838,9 @@ EditorMainWindow::EditorMainWindow(
   connect(m_viewport, &EditorViewport::gizmoDragEnded, this,
           [this]() { EndInteractiveTransform(); });
 
-  auto *secondaryPlaceholder = new QWidget(centerSplit);
-  secondaryPlaceholder->setMinimumWidth(260);
-  auto *secondaryLayout = new QVBoxLayout(secondaryPlaceholder);
-  secondaryLayout->setContentsMargins(0, 0, 0, 0);
+  setCentralWidget(m_panelManager);
 
-  m_auxPanel = new EditorAuxPanel(secondaryPlaceholder);
-  secondaryLayout->addWidget(m_auxPanel, 1);
-  centerSplit->addWidget(secondaryPlaceholder);
-  centerSplit->setStretchFactor(0, 1);
-  centerSplit->setStretchFactor(1, 0);
-
-  setCentralWidget(centerSplit);
-
-  CreateDockPanels();
+  CreateTabPanels();
   LoadBookmarks();
   RefreshBookmarksList();
   CreateMenuBarContent();
@@ -961,10 +977,7 @@ EditorMainWindow::EditorMainWindow(
     connect(m_hierarchyPanel, &EditorHierarchyPanel::entityActivated, this,
             [this](Aetherion::Core::EntityId) {
               // Re-open the Properties/Inspector panel if the user closed it.
-              if (m_inspectorDock) {
-                m_inspectorDock->show();
-                m_inspectorDock->raise();
-              }
+              FocusSideTab(m_panelManager, m_inspectorPanel, true);
               // QoL: Focus camera on double-click
               FocusCameraOnSelection();
             });
@@ -1094,10 +1107,7 @@ EditorMainWindow::EditorMainWindow(
               }
             });
     connect(m_assetBrowser, &EditorAssetBrowser::AssetActivated, this, [this] {
-      if (m_inspectorDock) {
-        m_inspectorDock->show();
-        m_inspectorDock->raise();
-      }
+      FocusSideTab(m_panelManager, m_inspectorPanel, true);
     });
     connect(m_assetBrowser, &EditorAssetBrowser::RescanRequested, this,
             &EditorMainWindow::RescanAssets);
@@ -1178,10 +1188,7 @@ void EditorMainWindow::CreateMenuBarContent() {
   m_focusAssetFilterAction->setShortcut(QKeySequence::Find);
   addAction(m_focusAssetFilterAction);
   connect(m_focusAssetFilterAction, &QAction::triggered, this, [this] {
-    if (m_assetBrowserDock) {
-      m_assetBrowserDock->setVisible(true);
-      m_assetBrowserDock->raise();
-    }
+    FocusSideTab(m_panelManager, m_assetBrowser, false);
     if (m_assetBrowser) {
       m_assetBrowser->FocusFilter();
     }
@@ -1246,162 +1253,99 @@ void EditorMainWindow::CreateMenuBarContent() {
 
   auto *viewMenu = menuBar()->addMenu(tr("&View"));
 
-  m_showHierarchyAction = viewMenu->addAction(tr("Show Hierarchy"));
-  m_showHierarchyAction->setCheckable(true);
-  m_showHierarchyAction->setChecked(true);
+  m_showHierarchyAction = viewMenu->addAction(tr("Focus Hierarchy"));
   m_showHierarchyAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_1));
-  connect(m_showHierarchyAction, &QAction::triggered, this,
-          [this](bool checked) {
-            if (m_hierarchyDock) {
-              m_hierarchyDock->setVisible(checked);
-              if (checked) {
-                m_hierarchyDock->raise();
-              }
-            }
-          });
+  connect(m_showHierarchyAction, &QAction::triggered, this, [this] {
+    FocusSideTab(m_panelManager, m_hierarchyPanel, false);
+  });
   RegisterCommandAction(m_showHierarchyAction, tr("View"),
-                        tr("Toggle the hierarchy panel"));
+                        tr("Focus the hierarchy tab"));
 
-  m_showInspectorAction = viewMenu->addAction(tr("Show Inspector"));
-  m_showInspectorAction->setCheckable(true);
-  m_showInspectorAction->setChecked(true);
-  m_showInspectorAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_2));
-  connect(m_showInspectorAction, &QAction::triggered, this,
-          [this](bool checked) {
-            if (m_inspectorDock) {
-              m_inspectorDock->setVisible(checked);
-              if (checked) {
-                m_inspectorDock->raise();
-              }
-            }
-          });
-  RegisterCommandAction(m_showInspectorAction, tr("View"),
-                        tr("Toggle the inspector panel"));
-
-  m_showAssetBrowserAction = viewMenu->addAction(tr("Show Asset Browser"));
-  m_showAssetBrowserAction->setCheckable(true);
-  m_showAssetBrowserAction->setChecked(true);
-  m_showAssetBrowserAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_3));
-  connect(m_showAssetBrowserAction, &QAction::triggered, this,
-          [this](bool checked) {
-            if (m_assetBrowserDock) {
-              m_assetBrowserDock->setVisible(checked);
-              if (checked) {
-                m_assetBrowserDock->raise();
-              }
-            }
-          });
+  m_showAssetBrowserAction = viewMenu->addAction(tr("Focus Asset Browser"));
+  m_showAssetBrowserAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_2));
+  connect(m_showAssetBrowserAction, &QAction::triggered, this, [this] {
+    FocusSideTab(m_panelManager, m_assetBrowser, false);
+  });
   RegisterCommandAction(m_showAssetBrowserAction, tr("View"),
-                        tr("Toggle the asset browser panel"));
+                        tr("Focus the asset browser tab"));
 
-  m_showConsoleAction = viewMenu->addAction(tr("Show Console"));
-  m_showConsoleAction->setCheckable(true);
-  m_showConsoleAction->setChecked(true);
+  m_showInspectorAction = viewMenu->addAction(tr("Focus Inspector"));
+  m_showInspectorAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_3));
+  connect(m_showInspectorAction, &QAction::triggered, this, [this] {
+    FocusSideTab(m_panelManager, m_inspectorPanel, true);
+  });
+  RegisterCommandAction(m_showInspectorAction, tr("View"),
+                        tr("Focus the inspector tab"));
+
+  m_showConsoleAction = viewMenu->addAction(tr("Focus Console"));
   m_showConsoleAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_4));
-  connect(m_showConsoleAction, &QAction::triggered, this, [this](bool checked) {
-    if (m_consoleDock) {
-      m_consoleDock->setVisible(checked);
-      if (checked) {
-        m_consoleDock->raise();
-      }
-    }
+  connect(m_showConsoleAction, &QAction::triggered, this, [this] {
+    FocusBottomTab(m_panelManager, m_console);
   });
   RegisterCommandAction(m_showConsoleAction, tr("View"),
-                        tr("Toggle the console panel"));
+                        tr("Focus the console tab"));
 
-  m_showMeshPreviewAction = viewMenu->addAction(tr("Show Mesh Preview"));
-  m_showMeshPreviewAction->setCheckable(true);
-  m_showMeshPreviewAction->setChecked(true);
+  m_showMeshPreviewAction = viewMenu->addAction(tr("Focus Mesh Preview"));
   m_showMeshPreviewAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_5));
-  connect(m_showMeshPreviewAction, &QAction::triggered, this,
-          [this](bool checked) {
-            if (m_meshPreviewDock) {
-              m_meshPreviewDock->setVisible(checked);
-              if (checked) {
-                m_meshPreviewDock->raise();
-              }
-            }
-          });
+  connect(m_showMeshPreviewAction, &QAction::triggered, this, [this] {
+    FocusSideTab(m_panelManager, m_meshPreview, true);
+  });
   RegisterCommandAction(m_showMeshPreviewAction, tr("View"),
-                        tr("Toggle the mesh preview panel"));
+                        tr("Focus the mesh preview tab"));
 
-  m_showCameraPreviewAction = viewMenu->addAction(tr("Show Camera Preview"));
-  m_showCameraPreviewAction->setCheckable(true);
-  m_showCameraPreviewAction->setChecked(true);
-  m_showCameraPreviewAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_6));   
-  connect(m_showCameraPreviewAction, &QAction::triggered, this,
-          [this](bool checked) {
-            if (m_cameraPreviewDock) {
-              m_cameraPreviewDock->setVisible(checked);
-              if (checked) {
-                m_cameraPreviewDock->raise();
-              }
-            }
-          });
+  m_showCameraPreviewAction = viewMenu->addAction(tr("Focus Camera Preview"));
+  m_showCameraPreviewAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_6));
+  connect(m_showCameraPreviewAction, &QAction::triggered, this, [this] {
+    FocusSideTab(m_panelManager, m_cameraPreview, true);
+  });
   RegisterCommandAction(m_showCameraPreviewAction, tr("View"),
-                        tr("Toggle the camera preview panel"));
+                        tr("Focus the camera preview tab"));
 
-  m_showBookmarksAction = viewMenu->addAction(tr("Show Bookmarks"));
-  m_showBookmarksAction->setCheckable(true);
-  m_showBookmarksAction->setChecked(true);
-  m_showBookmarksAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_8));
-  connect(m_showBookmarksAction, &QAction::triggered, this,
-          [this](bool checked) {
-            if (m_bookmarksDock) {
-              m_bookmarksDock->setVisible(checked);
-              if (checked) {
-                m_bookmarksDock->raise();
-              }
-            }
-          });
-
-  m_showAICopilotAction = viewMenu->addAction(tr("Show AI Copilot"));
-  m_showAICopilotAction->setCheckable(true);
-  m_showAICopilotAction->setChecked(true);
-  m_showAICopilotAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_7));       
-  connect(m_showAICopilotAction, &QAction::triggered, this,
-          [this](bool checked) {
-            if (m_copilotDock) {
-              m_copilotDock->setVisible(checked);
-              if (checked) {
-                m_copilotDock->raise();
-              }
-            }
-          });
+  m_showAICopilotAction = viewMenu->addAction(tr("Focus AI Copilot"));
+  m_showAICopilotAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_7));
+  connect(m_showAICopilotAction, &QAction::triggered, this, [this] {
+    FocusSideTab(m_panelManager, m_copilotPanel, true);
+  });
   RegisterCommandAction(m_showAICopilotAction, tr("View"),
-                        tr("Toggle the AI copilot panel"));
+                        tr("Focus the AI copilot tab"));
 
-  m_showAssetGenAction = viewMenu->addAction(tr("Show Asset Generation"));
-  m_showAssetGenAction->setCheckable(true);
-  m_showAssetGenAction->setChecked(false);
+  m_showAssetGenAction = viewMenu->addAction(tr("Focus Asset Generation"));
   m_showAssetGenAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_8));
-  connect(m_showAssetGenAction, &QAction::triggered, this,
-          [this](bool checked) {
-            if (m_assetGenDock) {
-              m_assetGenDock->setVisible(checked);
-              if (checked) {
-                m_assetGenDock->raise();
-              }
-            }
-          });
+  connect(m_showAssetGenAction, &QAction::triggered, this, [this] {
+    FocusSideTab(m_panelManager, m_assetGenPanel, true);
+  });
   RegisterCommandAction(m_showAssetGenAction, tr("View"),
-                        tr("Toggle the asset generation panel"));
+                        tr("Focus the asset generation tab"));
 
-  m_showStatsAction = viewMenu->addAction(tr("Show Statistics"));
-  m_showStatsAction->setCheckable(true);
-  m_showStatsAction->setChecked(false);
+  m_showStatsAction = viewMenu->addAction(tr("Focus Statistics"));
   m_showStatsAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_9));
-  connect(m_showStatsAction, &QAction::triggered, this,
-          [this](bool checked) {
-            if (m_statsDock) {
-              m_statsDock->setVisible(checked);
-              if (checked) {
-                m_statsDock->raise();
-              }
+  connect(m_showStatsAction, &QAction::triggered, this, [this] {
+    FocusBottomTab(m_panelManager, m_statsPanel);
+  });
+  RegisterCommandAction(m_showStatsAction, tr("View"),
+                        tr("Focus the statistics tab"));
+
+  m_showBookmarksAction = viewMenu->addAction(tr("Focus Bookmarks"));
+  m_showBookmarksAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
+  connect(m_showBookmarksAction, &QAction::triggered, this, [this] {
+    FocusSideTab(m_panelManager, m_bookmarkList ? m_bookmarkList->parentWidget()
+                                                : nullptr,
+                 true);
+  });
+  RegisterCommandAction(m_showBookmarksAction, tr("View"),
+                        tr("Focus the bookmarks tab"));
+
+  m_showBottomPanelAction = viewMenu->addAction(tr("Show Bottom Panel"));
+  m_showBottomPanelAction->setCheckable(true);
+  m_showBottomPanelAction->setChecked(true);
+  connect(m_showBottomPanelAction, &QAction::toggled, this,
+          [this](bool visible) {
+            if (m_panelManager) {
+              m_panelManager->SetBottomPanelVisible(visible);
             }
           });
-  RegisterCommandAction(m_showStatsAction, tr("View"),
-                        tr("Toggle the statistics panel"));
+  RegisterCommandAction(m_showBottomPanelAction, tr("View"),
+                        tr("Toggle bottom panel visibility"));
 
   viewMenu->addSeparator();
   auto *saveLayoutAction = viewMenu->addAction(tr("Save Layout As..."), [this] {
@@ -1443,6 +1387,10 @@ void EditorMainWindow::CreateMenuBarContent() {
                       saveState());
     settings.setValue(QString("layout/presets/%1/geometry").arg(trimmed),
                       saveGeometry());
+    if (m_panelManager) {
+      m_panelManager->SavePanelState(
+          settings, QString("layout/presets/%1/panel").arg(trimmed));
+    }
     settings.setValue("layout/presetNames", presets);
     settings.sync();
     statusBar()->showMessage(tr("Layout preset saved"), 2000);
@@ -1481,6 +1429,16 @@ void EditorMainWindow::CreateMenuBarContent() {
     if (!state.isEmpty()) {
       restoreState(state);
     }
+    if (m_panelManager) {
+      m_panelManager->RestorePanelState(
+          settings, QString("layout/presets/%1/panel").arg(choice));
+      if (m_showBottomPanelAction) {
+        m_showBottomPanelAction->blockSignals(true);
+        m_showBottomPanelAction->setChecked(
+            m_panelManager->IsBottomPanelVisible());
+        m_showBottomPanelAction->blockSignals(false);
+      }
+    }
     SaveLayout();
     statusBar()->showMessage(tr("Layout preset loaded"), 2000);
   });
@@ -1493,6 +1451,17 @@ void EditorMainWindow::CreateMenuBarContent() {
     }
     restoreState(m_defaultLayoutState);
     m_defaultLayoutState = saveState();
+    if (m_panelManager) {
+      QSettings defaultSettings("Aetherion", "Editor");
+      m_panelManager->RestorePanelState(defaultSettings,
+                                        "layout/defaultPanel");
+      if (m_showBottomPanelAction) {
+        m_showBottomPanelAction->blockSignals(true);
+        m_showBottomPanelAction->setChecked(
+            m_panelManager->IsBottomPanelVisible());
+        m_showBottomPanelAction->blockSignals(false);
+      }
+    }
     SaveLayout();
     statusBar()->showMessage(tr("Layout reset"), 2000);
   });
@@ -3251,6 +3220,27 @@ void EditorMainWindow::LoadLayout() {
   if (m_defaultLayoutState.isEmpty()) {
     m_defaultLayoutState = saveState();
     m_defaultLayoutGeometry = saveGeometry();
+    if (m_panelManager) {
+      m_panelManager->SavePanelState(settings, "layout/defaultPanel");
+      m_defaultPanelVerticalState =
+          settings.value("layout/defaultPanel/VerticalSplitterState")
+              .toByteArray();
+      m_defaultPanelHorizontalState =
+          settings.value("layout/defaultPanel/HorizontalSplitterState")
+              .toByteArray();
+      m_defaultLeftTabIndex =
+          settings.value("layout/defaultPanel/LeftPanelCurrentIndex", 0)
+              .toInt();
+      m_defaultRightTabIndex =
+          settings.value("layout/defaultPanel/RightPanelCurrentIndex", 0)
+              .toInt();
+      m_defaultBottomTabIndex =
+          settings.value("layout/defaultPanel/BottomPanelCurrentIndex", 0)
+              .toInt();
+      m_defaultBottomVisible =
+          settings.value("layout/defaultPanel/BottomPanelVisible", true)
+              .toBool();
+    }
   }
 
   const QByteArray geometry =
@@ -3267,12 +3257,25 @@ void EditorMainWindow::LoadLayout() {
   } else {
     settings.setValue("layout/mainWindow", saveState());
   }
+
+  if (m_panelManager) {
+    m_panelManager->RestorePanelState(settings);
+    if (m_showBottomPanelAction) {
+      m_showBottomPanelAction->blockSignals(true);
+      m_showBottomPanelAction->setChecked(
+          m_panelManager->IsBottomPanelVisible());
+      m_showBottomPanelAction->blockSignals(false);
+    }
+  }
 }
 
 void EditorMainWindow::SaveLayout() const {
   QSettings settings("Aetherion", "Editor");
   settings.setValue("layout/mainWindow", saveState());
   settings.setValue("layout/mainWindowGeometry", saveGeometry());
+  if (m_panelManager) {
+    m_panelManager->SavePanelState(settings);
+  }
 }
 
 std::filesystem::path EditorMainWindow::GetBookmarksPath() const {
@@ -3453,87 +3456,21 @@ void EditorMainWindow::closeEvent(QCloseEvent *event) {
   QMainWindow::closeEvent(event);
 }
 
-void EditorMainWindow::CreateDockPanels() {
-  auto *hierarchyDock = new QDockWidget(tr("Hierarchy"), this);
-  hierarchyDock->setObjectName("HierarchyDock");
-  hierarchyDock->setAttribute(Qt::WA_NativeWindow, true);
-  m_hierarchyDock = hierarchyDock;
-  m_hierarchyPanel = new EditorHierarchyPanel(hierarchyDock);
-  hierarchyDock->setWidget(m_hierarchyPanel);
-  hierarchyDock->setAllowedAreas(Qt::LeftDockWidgetArea |
-                                 Qt::RightDockWidgetArea);
-  addDockWidget(Qt::LeftDockWidgetArea, hierarchyDock);
-  connect(hierarchyDock, &QDockWidget::visibilityChanged, this,
-          [this](bool visible) {
-            if (m_showHierarchyAction) {
-              m_showHierarchyAction->blockSignals(true);
-              m_showHierarchyAction->setChecked(visible);
-              m_showHierarchyAction->blockSignals(false);
-            }
-          });
+void EditorMainWindow::CreateTabPanels() {
+  if (!m_panelManager) {
+    return;
+  }
 
-  auto *inspectorDock = new QDockWidget(tr("Inspector"), this);
-  inspectorDock->setObjectName("InspectorDock");
-  inspectorDock->setAttribute(Qt::WA_NativeWindow, true);
-  m_inspectorDock = inspectorDock;
-  m_inspectorPanel = new EditorInspectorPanel(inspectorDock);
-  m_inspectorPanel->SetCommandExecutor(
-      [this](std::unique_ptr<Command> cmd) { ExecuteCommand(std::move(cmd)); });
-  inspectorDock->setWidget(m_inspectorPanel);
-  inspectorDock->setAllowedAreas(Qt::RightDockWidgetArea |
-                                 Qt::LeftDockWidgetArea);
-  addDockWidget(Qt::RightDockWidgetArea, inspectorDock);
-  connect(inspectorDock, &QDockWidget::visibilityChanged, this,
-          [this](bool visible) {
-            if (m_showInspectorAction) {
-              m_showInspectorAction->blockSignals(true);
-              m_showInspectorAction->setChecked(visible);
-              m_showInspectorAction->blockSignals(false);
-            }
-          });
+  m_panelManager->CreatePanelGroups(this);
 
-  auto *assetDock = new QDockWidget(tr("Asset Browser"), this);
-  assetDock->setObjectName("AssetBrowserDock");
-  assetDock->setAttribute(Qt::WA_NativeWindow, true);
-  m_assetBrowserDock = assetDock;
-  m_assetBrowser = new EditorAssetBrowser(assetDock);
-  assetDock->setWidget(m_assetBrowser);
-  assetDock->setAllowedAreas(Qt::BottomDockWidgetArea | Qt::LeftDockWidgetArea |
-                             Qt::RightDockWidgetArea);
-  addDockWidget(Qt::BottomDockWidgetArea, assetDock);
-  connect(assetDock, &QDockWidget::visibilityChanged, this,
-          [this](bool visible) {
-            if (m_showAssetBrowserAction) {
-              m_showAssetBrowserAction->blockSignals(true);
-              m_showAssetBrowserAction->setChecked(visible);
-              m_showAssetBrowserAction->blockSignals(false);
-            }
-          });
+  // Left panel tabs
+  m_assetBrowser = new EditorAssetBrowser(m_panelManager);
+  m_hierarchyPanel = new EditorHierarchyPanel(m_panelManager);
+  m_panelManager->AddToLeftPanel(m_assetBrowser, tr("Assets"));
+  m_panelManager->AddToLeftPanel(m_hierarchyPanel, tr("Hierarchy"));
 
-  auto *consoleDock = new QDockWidget(tr("Console"), this);
-  consoleDock->setObjectName("ConsoleDock");
-  consoleDock->setAttribute(Qt::WA_NativeWindow, true);
-  m_consoleDock = consoleDock;
-  m_console = new EditorConsole(consoleDock);
-  consoleDock->setWidget(m_console);
-  consoleDock->setAllowedAreas(Qt::BottomDockWidgetArea |
-                               Qt::LeftDockWidgetArea |
-                               Qt::RightDockWidgetArea);
-  addDockWidget(Qt::BottomDockWidgetArea, consoleDock);
-  connect(consoleDock, &QDockWidget::visibilityChanged, this,
-          [this](bool visible) {
-            if (m_showConsoleAction) {
-              m_showConsoleAction->blockSignals(true);
-              m_showConsoleAction->setChecked(visible);
-              m_showConsoleAction->blockSignals(false);
-            }
-          });
-
-  auto *bookmarksDock = new QDockWidget(tr("Bookmarks"), this);
-  bookmarksDock->setObjectName("BookmarksDock");
-  bookmarksDock->setAttribute(Qt::WA_NativeWindow, true);
-  m_bookmarksDock = bookmarksDock;
-  auto *bookmarkContainer = new QWidget(bookmarksDock);
+  // Bookmarks tab (right side)
+  auto *bookmarkContainer = new QWidget(m_panelManager);
   auto *bookmarkLayout = new QVBoxLayout(bookmarkContainer);
   bookmarkLayout->setContentsMargins(6, 6, 6, 6);
   bookmarkLayout->setSpacing(6);
@@ -3556,21 +3493,48 @@ void EditorMainWindow::CreateDockPanels() {
   btnLayout->addWidget(m_deleteBookmarkBtn);
   btnLayout->addStretch(1);
   bookmarkLayout->addWidget(btnRow);
-
   bookmarkContainer->setLayout(bookmarkLayout);
-  bookmarksDock->setWidget(bookmarkContainer);
-  bookmarksDock->setAllowedAreas(Qt::LeftDockWidgetArea |
-                                 Qt::RightDockWidgetArea);
-  addDockWidget(Qt::RightDockWidgetArea, bookmarksDock);
 
-  connect(bookmarksDock, &QDockWidget::visibilityChanged, this,
-          [this](bool visible) {
-            if (m_showBookmarksAction) {
-              m_showBookmarksAction->blockSignals(true);
-              m_showBookmarksAction->setChecked(visible);
-              m_showBookmarksAction->blockSignals(false);
-            }
-          });
+  // Right panel tabs
+  m_inspectorPanel = new EditorInspectorPanel(m_panelManager);
+  m_inspectorPanel->SetCommandExecutor(
+      [this](std::unique_ptr<Command> cmd) { ExecuteCommand(std::move(cmd)); });
+
+  m_meshPreview = new EditorMeshPreview(m_panelManager);
+  m_cameraPreview = new EditorCameraPreview(m_panelManager);
+  m_copilotPanel = new AICopilotPanel(m_panelManager);
+  m_auxPanel = new EditorAuxPanel(m_panelManager);
+
+  m_assetGenPanel = new EditorAssetGenerationPanel(m_panelManager);
+  m_assetGenPanel->setObjectName("AssetGenerationPanel");
+  m_assetGenPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
+  if (m_runtimeApp) {
+    auto context = m_runtimeApp->GetContext();
+    if (context) {
+      m_assetGenPanel->SetAssetRegistry(context->GetAssetRegistry());
+    }
+  }
+  m_assetGenPanel->ConfigureLLMGenerator(m_settings.llm);
+
+  m_statsPanel = new EditorStatisticsPanel(m_panelManager);
+  m_statsPanel->setObjectName("StatisticsPanel");
+  if (m_scene) {
+    m_statsPanel->SetScene(m_scene);
+  }
+
+  m_panelManager->AddToRightPanel(m_inspectorPanel, tr("Inspector"));
+  m_panelManager->AddToRightPanel(m_meshPreview, tr("Mesh Preview"));
+  m_panelManager->AddToRightPanel(m_cameraPreview, tr("Camera Preview"));
+  m_panelManager->AddToRightPanel(m_copilotPanel, tr("AI Copilot"));
+  m_panelManager->AddToRightPanel(m_assetGenPanel, tr("Asset Generation"));
+  m_panelManager->AddToRightPanel(bookmarkContainer, tr("Bookmarks"));
+  m_panelManager->AddToRightPanel(m_auxPanel, tr("Quick Info"));
+
+  // Bottom panel tabs
+  m_console = new EditorConsole(m_panelManager);
+  m_panelManager->AddToBottomPanel(m_console, tr("Console"));
+  m_panelManager->AddToBottomPanel(m_statsPanel, tr("Statistics"));
+
   connect(m_addBookmarkBtn, &QPushButton::clicked, this,
           &EditorMainWindow::AddBookmarkFromCamera);
   connect(m_renameBookmarkBtn, &QPushButton::clicked, this,
@@ -3596,68 +3560,6 @@ void EditorMainWindow::CreateDockPanels() {
   if (m_deleteBookmarkBtn)
     m_deleteBookmarkBtn->setEnabled(false);
 
-  tabifyDockWidget(assetDock, consoleDock);
-  consoleDock->raise();
-
-  // Mesh Preview panel (right side, below inspector)
-  auto *meshPreviewDock = new QDockWidget(tr("Mesh Preview"), this);
-  meshPreviewDock->setObjectName("MeshPreviewDock");
-  meshPreviewDock->setAttribute(Qt::WA_NativeWindow, true);
-  m_meshPreviewDock = meshPreviewDock;
-  m_meshPreview = new EditorMeshPreview(meshPreviewDock);
-  meshPreviewDock->setWidget(m_meshPreview);
-  meshPreviewDock->setAllowedAreas(Qt::RightDockWidgetArea |
-                                   Qt::LeftDockWidgetArea |
-                                   Qt::BottomDockWidgetArea);
-  addDockWidget(Qt::RightDockWidgetArea, meshPreviewDock);
-  connect(meshPreviewDock, &QDockWidget::visibilityChanged, this,
-          [this](bool visible) {
-            if (m_showMeshPreviewAction) {
-              m_showMeshPreviewAction->blockSignals(true);
-              m_showMeshPreviewAction->setChecked(visible);
-              m_showMeshPreviewAction->blockSignals(false);
-            }
-          });
-
-  // Camera Preview panel (right side, tabbed with mesh preview)
-  auto *cameraPreviewDock = new QDockWidget(tr("Camera Preview"), this);
-  cameraPreviewDock->setObjectName("CameraPreviewDock");
-  cameraPreviewDock->setAttribute(Qt::WA_NativeWindow, true);
-  m_cameraPreviewDock = cameraPreviewDock;
-  m_cameraPreview = new EditorCameraPreview(cameraPreviewDock);
-  cameraPreviewDock->setWidget(m_cameraPreview);
-  cameraPreviewDock->setAllowedAreas(Qt::RightDockWidgetArea |
-                                     Qt::LeftDockWidgetArea |
-                                     Qt::BottomDockWidgetArea);
-  addDockWidget(Qt::RightDockWidgetArea, cameraPreviewDock);
-  tabifyDockWidget(meshPreviewDock, cameraPreviewDock);
-  meshPreviewDock->raise();
-  connect(cameraPreviewDock, &QDockWidget::visibilityChanged, this,
-          [this](bool visible) {
-            if (m_showCameraPreviewAction) {
-              m_showCameraPreviewAction->blockSignals(true);
-              m_showCameraPreviewAction->setChecked(visible);
-              m_showCameraPreviewAction->blockSignals(false);
-            }
-          });
-
-  auto *copilotDock = new QDockWidget(tr("AI Copilot"), this);
-  copilotDock->setObjectName("AICopilotDock");
-  copilotDock->setAttribute(Qt::WA_NativeWindow, true);
-  m_copilotDock = copilotDock;
-  m_copilotPanel = new AICopilotPanel(copilotDock);
-  copilotDock->setWidget(m_copilotPanel);
-  copilotDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-  addDockWidget(Qt::RightDockWidgetArea, copilotDock);
-  connect(copilotDock, &QDockWidget::visibilityChanged, this,
-          [this](bool visible) {
-            if (m_showAICopilotAction) {
-              m_showAICopilotAction->blockSignals(true);
-              m_showAICopilotAction->setChecked(visible);
-              m_showAICopilotAction->blockSignals(false);
-            }
-          });
-
   connect(m_copilotPanel, &AICopilotPanel::PromptSubmitted, this,
           [this](const QString &prompt) {
             m_copilotPanel->SetProcessing(true);
@@ -3665,31 +3567,6 @@ void EditorMainWindow::CreateDockPanels() {
             m_copilotPanel->SetProcessing(false);
           });
 
-  // Asset Generation panel
-  m_assetGenPanel = new EditorAssetGenerationPanel(this);
-  m_assetGenPanel->setObjectName("AssetGenerationDock");
-  m_assetGenPanel->setAttribute(Qt::WA_NativeWindow, true);
-  m_assetGenDock = m_assetGenPanel;
-  if (m_runtimeApp) {
-    auto context = m_runtimeApp->GetContext();
-    if (context) {
-      m_assetGenPanel->SetAssetRegistry(context->GetAssetRegistry());
-    }
-  }
-  // Configure LLM generator with current settings for AI-powered asset generation
-  m_assetGenPanel->ConfigureLLMGenerator(m_settings.llm);
-  
-  addDockWidget(Qt::RightDockWidgetArea, m_assetGenPanel);
-  tabifyDockWidget(copilotDock, m_assetGenPanel);
-  copilotDock->raise();
-  connect(m_assetGenPanel, &QDockWidget::visibilityChanged, this,
-          [this](bool visible) {
-            if (m_showAssetGenAction) {
-              m_showAssetGenAction->blockSignals(true);
-              m_showAssetGenAction->setChecked(visible);
-              m_showAssetGenAction->blockSignals(false);
-            }
-          });
   connect(m_assetGenPanel, &EditorAssetGenerationPanel::requestAssetBrowserRefresh,
           this, &EditorMainWindow::RefreshAssetBrowser);
   connect(m_assetGenPanel, &EditorAssetGenerationPanel::assetGenerated,
@@ -3704,18 +3581,6 @@ void EditorMainWindow::CreateDockPanels() {
               m_console->AppendMessage(QString("Generation failed: %1 - %2").arg(assetId, error), ConsoleSeverity::Error);
             }
           });
-
-  // Statistics panel
-  m_statsPanel = new EditorStatisticsPanel(this);
-  m_statsPanel->setObjectName("StatisticsDock");
-  m_statsDock = m_statsPanel;
-  if (m_scene) {
-    m_statsPanel->SetScene(m_scene);
-  }
-  addDockWidget(Qt::RightDockWidgetArea, m_statsPanel);
-  tabifyDockWidget(m_assetGenPanel, m_statsPanel);
-  m_statsPanel->hide(); // Hidden by default, user can enable from View menu
-
 }
 
 void EditorMainWindow::ConfigureStatusBar() {

@@ -21,7 +21,6 @@
 class QAction;
 class QActionGroup;
 class QLabel;
-class QDockWidget;
 class QFileSystemWatcher;
 class QListWidget;
 class QPushButton;
@@ -42,6 +41,11 @@ class Scene;
 class Entity;
 } // namespace Aetherion::Scene
 
+namespace Aetherion::Scripting
+{
+class LogicCopilot;
+} // namespace Aetherion::Scripting
+
 namespace Aetherion::Editor
 {
 class EditorViewport;
@@ -59,6 +63,7 @@ class AICopilotPanel;
 class AICopilotProcessor;
 class EditorAnimationPanel;
 class EditorLogicCopilotPanel;
+class TabPanelManager;
 
 class EditorMainWindow : public QMainWindow
 {
@@ -134,6 +139,12 @@ private:
     int m_fpsFrameCounter{0};
     QAction* m_validationMenuAction = nullptr;
     QAction* m_loggingMenuAction = nullptr;
+    QAction* m_commandPaletteAction = nullptr;
+    QAction* m_focusAssetFilterAction = nullptr;
+    QAction* m_playAction = nullptr;
+    QAction* m_pauseAction = nullptr;
+    QAction* m_stepAction = nullptr;
+    QAction* m_resetAction = nullptr;
     QAction* m_showHierarchyAction = nullptr;
     QAction* m_showInspectorAction = nullptr;
     QAction* m_showAssetBrowserAction = nullptr;
@@ -144,16 +155,10 @@ private:
     QAction* m_showAICopilotAction = nullptr;
     QAction* m_showAssetGenAction = nullptr;
     QAction* m_showStatsAction = nullptr;
-    QAction* m_showAnimationPanelAction = nullptr;
-    QAction* m_showLogicCopilotAction = nullptr;
+    QAction* m_showBottomPanelAction = nullptr;
     QAction* m_showAiHudAction = nullptr;
-    QAction* m_commandPaletteAction = nullptr;
-    QAction* m_focusAssetFilterAction = nullptr;
-    QAction* m_playAction = nullptr;
-    QAction* m_pauseAction = nullptr;
-    QAction* m_stepAction = nullptr;
-    QAction* m_resetAction = nullptr;
 
+    class TabPanelManager* m_panelManager = nullptr;
     EditorViewport* m_viewport = nullptr;
     EditorHierarchyPanel* m_hierarchyPanel = nullptr;
     EditorInspectorPanel* m_inspectorPanel = nullptr;
@@ -163,23 +168,17 @@ private:
     EditorStatisticsPanel* m_statsPanel = nullptr;
     EditorAnimationPanel* m_animationPanel = nullptr;
     EditorLogicCopilotPanel* m_logicCopilotPanel = nullptr;
-    QDockWidget* m_hierarchyDock = nullptr;
-    QDockWidget* m_inspectorDock = nullptr;
-    QDockWidget* m_assetBrowserDock = nullptr;
-    QDockWidget* m_consoleDock = nullptr;
-    QDockWidget* m_meshPreviewDock = nullptr;
-    QDockWidget* m_cameraPreviewDock = nullptr;
-    QDockWidget* m_copilotDock = nullptr;
-    QDockWidget* m_assetGenDock = nullptr;
-    QDockWidget* m_statsDock = nullptr;
-    QDockWidget* m_animationDock = nullptr;
-    QDockWidget* m_logicCopilotDock = nullptr;
-    QDockWidget* m_bookmarksDock = nullptr;
     EditorAssetBrowser* m_assetBrowser = nullptr;
     EditorAssetGenerationPanel* m_assetGenPanel = nullptr;
     EditorConsole* m_console = nullptr;
     QByteArray m_defaultLayoutState;
     QByteArray m_defaultLayoutGeometry;
+    QByteArray m_defaultPanelVerticalState;
+    QByteArray m_defaultPanelHorizontalState;
+    int m_defaultLeftTabIndex{0};
+    int m_defaultRightTabIndex{0};
+    int m_defaultBottomTabIndex{0};
+    bool m_defaultBottomVisible{true};
     EditorAuxPanel* m_auxPanel = nullptr;
     EditorCommandPalette* m_commandPalette = nullptr;
     QString m_selectedAssetId;
@@ -191,6 +190,7 @@ private:
     QAction* m_redoAction = nullptr;
 
     std::unique_ptr<AICopilotProcessor> m_copilotProcessor;
+    std::unique_ptr<Scripting::LogicCopilot> m_logicCopilot;
 
     // Interactive transform state for smooth dragging
     bool m_interactiveTransformActive = false;
@@ -222,7 +222,7 @@ private:
 
     void CreateMenuBarContent();
     void CreateToolBarContent();
-    void CreateDockPanels();
+    void CreateTabPanels();
     void InitializeCommandPalette();
     void RegisterCommandAction(QAction* action,
                                const QString& category,
