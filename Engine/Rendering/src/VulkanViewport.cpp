@@ -1715,6 +1715,17 @@ void VulkanViewport::DestroySwapchainResources() {
   }
   m_pipeline = VK_NULL_HANDLE;
 
+  if (device != VK_NULL_HANDLE && m_particlePipelineAlpha != VK_NULL_HANDLE) {
+    vkDestroyPipeline(device, m_particlePipelineAlpha, nullptr);
+  }
+  m_particlePipelineAlpha = VK_NULL_HANDLE;
+
+  if (device != VK_NULL_HANDLE &&
+      m_particlePipelineAdditive != VK_NULL_HANDLE) {
+    vkDestroyPipeline(device, m_particlePipelineAdditive, nullptr);
+  }
+  m_particlePipelineAdditive = VK_NULL_HANDLE;
+
   if (device != VK_NULL_HANDLE && m_linePipeline != VK_NULL_HANDLE) {
     vkDestroyPipeline(device, m_linePipeline, nullptr);
   }
@@ -2777,22 +2788,33 @@ void VulkanViewport::CreateLineBuffers() {
 
 void VulkanViewport::UpdateParticleBuffer(const RenderView &view) {
   m_particleVertexCount = 0;
+  m_particleAlphaVertexCount = 0;
+  m_particleAdditiveVertexCount = 0;
   if (m_particleVertexMemory == VK_NULL_HANDLE) {
     return;
   }
 
   // Count total particles
   size_t totalParticles = 0;
+  size_t alphaParticles = 0;
+  size_t additiveParticles = 0;
   for (const auto &emitter : view.particleEmitters) {
     totalParticles += emitter.particles.size();
+    if (emitter.blendMode == RenderParticleBlendMode::Additive) {
+      additiveParticles += emitter.particles.size();
+    } else {
+      alphaParticles += emitter.particles.size();
+    }
   }
 
   if (totalParticles == 0) {
     return;
   }
 
-  std::vector<Vertex> vertices;
-  vertices.reserve(totalParticles * 6);
+  std::vector<Vertex> alphaVertices;
+  std::vector<Vertex> additiveVertices;
+  alphaVertices.reserve(alphaParticles * 6);
+  additiveVertices.reserve(additiveParticles * 6);
 
   // Generate camera-facing quads for each particle
   // Use view direction from camera for billboard orientation
@@ -2801,6 +2823,9 @@ void VulkanViewport::UpdateParticleBuffer(const RenderView &view) {
   const float camPosZ = view.camera.position[2];
 
   for (const auto &emitter : view.particleEmitters) {
+    auto &target = emitter.blendMode == RenderParticleBlendMode::Additive
+                       ? additiveVertices
+                       : alphaVertices;
     for (const auto &p : emitter.particles) {
       // Calculate billboard orientation vectors
       // Using simple screen-aligned billboards
@@ -2874,34 +2899,45 @@ void VulkanViewport::UpdateParticleBuffer(const RenderView &view) {
       const float color[4] = {p.color[0], p.color[1], p.color[2], p.color[3]};
 
       // First triangle: bl, br, tr
-      vertices.push_back(Vertex{{bl[0], bl[1], bl[2]},
-                                {normal[0], normal[1], normal[2]},
-                                {color[0], color[1], color[2], color[3]},
-                                {0.0f, 0.0f}});
-      vertices.push_back(Vertex{{br[0], br[1], br[2]},
-                                {normal[0], normal[1], normal[2]},
-                                {color[0], color[1], color[2], color[3]},
-                                {1.0f, 0.0f}});
-      vertices.push_back(Vertex{{tr[0], tr[1], tr[2]},
-                                {normal[0], normal[1], normal[2]},
-                                {color[0], color[1], color[2], color[3]},
-                                {1.0f, 1.0f}});
+      target.push_back(Vertex{{bl[0], bl[1], bl[2]},
+                              {normal[0], normal[1], normal[2]},
+                              {color[0], color[1], color[2], color[3]},
+                              {0.0f, 0.0f}});
+      target.push_back(Vertex{{br[0], br[1], br[2]},
+                              {normal[0], normal[1], normal[2]},
+                              {color[0], color[1], color[2], color[3]},
+                              {1.0f, 0.0f}});
+      target.push_back(Vertex{{tr[0], tr[1], tr[2]},
+                              {normal[0], normal[1], normal[2]},
+                              {color[0], color[1], color[2], color[3]},
+                              {1.0f, 1.0f}});
 
       // Second triangle: bl, tr, tl
-      vertices.push_back(Vertex{{bl[0], bl[1], bl[2]},
-                                {normal[0], normal[1], normal[2]},
-                                {color[0], color[1], color[2], color[3]},
-                                {0.0f, 0.0f}});
-      vertices.push_back(Vertex{{tr[0], tr[1], tr[2]},
-                                {normal[0], normal[1], normal[2]},
-                                {color[0], color[1], color[2], color[3]},
-                                {1.0f, 1.0f}});
-      vertices.push_back(Vertex{{tl[0], tl[1], tl[2]},
-                                {normal[0], normal[1], normal[2]},
-                                {color[0], color[1], color[2], color[3]},
-                                {0.0f, 1.0f}});
+      target.push_back(Vertex{{bl[0], bl[1], bl[2]},
+                              {normal[0], normal[1], normal[2]},
+                              {color[0], color[1], color[2], color[3]},
+                              {0.0f, 0.0f}});
+      target.push_back(Vertex{{tr[0], tr[1], tr[2]},
+                              {normal[0], normal[1], normal[2]},
+                              {color[0], color[1], color[2], color[3]},
+                              {1.0f, 1.0f}});
+      target.push_back(Vertex{{tl[0], tl[1], tl[2]},
+                              {normal[0], normal[1], normal[2]},
+                              {color[0], color[1], color[2], color[3]},
+                              {0.0f, 1.0f}});
     }
   }
+
+  std::vector<Vertex> vertices;
+  vertices.reserve(alphaVertices.size() + additiveVertices.size());
+  vertices.insert(vertices.end(), alphaVertices.begin(), alphaVertices.end());
+  vertices.insert(vertices.end(), additiveVertices.begin(),
+                  additiveVertices.end());
+
+  m_particleAlphaVertexCount =
+      static_cast<uint32_t>(alphaVertices.size());
+  m_particleAdditiveVertexCount =
+      static_cast<uint32_t>(additiveVertices.size());
 
   if (vertices.empty()) {
     return;
@@ -2910,6 +2946,16 @@ void VulkanViewport::UpdateParticleBuffer(const RenderView &view) {
   constexpr size_t maxParticleVerts = 10000 * 6;
   if (vertices.size() > maxParticleVerts) {
     vertices.resize(maxParticleVerts);
+    if (m_particleAlphaVertexCount > maxParticleVerts) {
+      m_particleAlphaVertexCount = static_cast<uint32_t>(maxParticleVerts);
+      m_particleAdditiveVertexCount = 0;
+    } else {
+      const size_t remaining =
+          maxParticleVerts - static_cast<size_t>(m_particleAlphaVertexCount);
+      if (m_particleAdditiveVertexCount > remaining) {
+        m_particleAdditiveVertexCount = static_cast<uint32_t>(remaining);
+      }
+    }
   }
 
   void *data = nullptr;
@@ -3670,6 +3716,47 @@ void VulkanViewport::CreatePipeline() {
                                 &overlayPipe, nullptr,
                                 &m_overlayPipeline) != VK_SUCCESS) {
     throw std::runtime_error("Failed to create overlay pipeline");
+  }
+
+  // Particle pipelines (alpha and additive blending). Reuse main shaders but
+  // enable blending and disable depth writes so quads compose correctly.
+  VkPipelineDepthStencilStateCreateInfo particleDepth = depth;
+  particleDepth.depthWriteEnable = VK_FALSE;
+
+  VkPipelineColorBlendAttachmentState particleBlend = blendAttach;
+  particleBlend.blendEnable = VK_TRUE;
+  particleBlend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+  particleBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  particleBlend.colorBlendOp = VK_BLEND_OP_ADD;
+  particleBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+  particleBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  particleBlend.alphaBlendOp = VK_BLEND_OP_ADD;
+
+  VkPipelineColorBlendStateCreateInfo particleBlendState = blend;
+  particleBlendState.pAttachments = &particleBlend;
+
+  VkGraphicsPipelineCreateInfo particlePipe = pipe;
+  particlePipe.pColorBlendState = &particleBlendState;
+  particlePipe.pDepthStencilState = &particleDepth;
+  if (vkCreateGraphicsPipelines(m_context->GetDevice(), VK_NULL_HANDLE, 1,
+                                &particlePipe, nullptr,
+                                &m_particlePipelineAlpha) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create particle alpha pipeline");
+  }
+
+  VkPipelineColorBlendAttachmentState additiveBlend = particleBlend;
+  additiveBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+  additiveBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+
+  VkPipelineColorBlendStateCreateInfo additiveBlendState = blend;
+  additiveBlendState.pAttachments = &additiveBlend;
+
+  VkGraphicsPipelineCreateInfo additivePipe = particlePipe;
+  additivePipe.pColorBlendState = &additiveBlendState;
+  if (vkCreateGraphicsPipelines(m_context->GetDevice(), VK_NULL_HANDLE, 1,
+                                &additivePipe, nullptr,
+                                &m_particlePipelineAdditive) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create particle additive pipeline");
   }
 
   VkPipelineShaderStageCreateInfo pickFs = fs;
@@ -4785,28 +4872,46 @@ void VulkanViewport::RecordOpaquePass(
     vkCmdDraw(cb, m_colliderVertexCount, 1, 0, 0);
   }
 
-  // Render particles using the main pipeline (filled triangles with vertex
-  // colors)
-  if (m_pipeline != VK_NULL_HANDLE &&
-      m_particleVertexBuffer != VK_NULL_HANDLE && m_particleVertexCount > 0) {
+  // Render particles with alpha and additive blending using dedicated
+  // pipelines and the same vertex layout as the main pass.
+  if (m_particleVertexBuffer != VK_NULL_HANDLE && m_particleVertexCount > 0) {
+    auto bindParticleDescriptorSet = [&]() {
+      if (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE &&
+          boundMaterialSet != m_defaultMaterial.descriptorSet) {
+        VkDescriptorSet sets[] = {uboSet, m_defaultMaterial.descriptorSet,
+                                  shadowSet};
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_pipelineLayout, 0, 3, sets, 0, nullptr);
+        boundMaterialSet = m_defaultMaterial.descriptorSet;
+      }
+    };
+
     baseConstants.flags = kInstanceFlagUnlit;
     vkCmdPushConstants(cb, m_pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT |
                            VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(InstancePushConstants), &baseConstants);
-    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-    if (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE &&
-        boundMaterialSet != m_defaultMaterial.descriptorSet) {
-      VkDescriptorSet sets[] = {uboSet, m_defaultMaterial.descriptorSet,
-                                shadowSet};
-      vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              m_pipelineLayout, 0, 3, sets, 0, nullptr);
-      boundMaterialSet = m_defaultMaterial.descriptorSet;
-    }
+
     VkBuffer particleBuffers[] = {m_particleVertexBuffer,
                                   fallbackInstanceBuffer};
     vkCmdBindVertexBuffers(cb, 0, 2, particleBuffers, offsets);
-    vkCmdDraw(cb, m_particleVertexCount, 1, 0, 0);
+
+    if (m_particlePipelineAlpha != VK_NULL_HANDLE &&
+        m_particleAlphaVertexCount > 0) {
+      vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        m_particlePipelineAlpha);
+      bindParticleDescriptorSet();
+      vkCmdDraw(cb, m_particleAlphaVertexCount, 1, 0, 0);
+    }
+
+    if (m_particlePipelineAdditive != VK_NULL_HANDLE &&
+        m_particleAdditiveVertexCount > 0) {
+      vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        m_particlePipelineAdditive);
+      bindParticleDescriptorSet();
+      vkCmdDraw(cb, m_particleAdditiveVertexCount, 1,
+                m_particleAlphaVertexCount, 0);
+    }
   }
 
   vkCmdEndRenderPass(cb);

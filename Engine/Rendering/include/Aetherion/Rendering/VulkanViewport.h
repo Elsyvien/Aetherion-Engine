@@ -268,6 +268,8 @@ private:
   VkPipelineLayout m_shadowPipelineLayout{VK_NULL_HANDLE};
   VkPipelineLayout m_cullPipelineLayout{VK_NULL_HANDLE};
   VkPipeline m_pipeline{VK_NULL_HANDLE};
+  VkPipeline m_particlePipelineAlpha{VK_NULL_HANDLE};
+  VkPipeline m_particlePipelineAdditive{VK_NULL_HANDLE};
 
   std::vector<VkDescriptorPool> m_materialDescriptorPools;
   size_t m_activeMaterialDescriptorPool{0};
@@ -355,6 +357,8 @@ private:
   VkBuffer m_particleVertexBuffer{VK_NULL_HANDLE};
   VkDeviceMemory m_particleVertexMemory{VK_NULL_HANDLE};
   uint32_t m_particleVertexCount{0};
+  uint32_t m_particleAlphaVertexCount{0};
+  uint32_t m_particleAdditiveVertexCount{0};
   VkSampler m_textureSampler{VK_NULL_HANDLE};
   VkSampler m_postProcessSampler{VK_NULL_HANDLE};
   VkSampler m_shadowSampler{VK_NULL_HANDLE};
