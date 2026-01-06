@@ -118,16 +118,16 @@ void EditorConsole::AddMessageToView(const ConsoleMessage& msg)
 
     switch (msg.severity) {
         case ConsoleSeverity::Error:
-            color = QColor(230, 80, 80);
+            color = QColor(230, 70, 70);
             prefix = "[Error]";
             break;
         case ConsoleSeverity::Warning:
-            color = QColor(230, 180, 70);
+            color = QColor(255, 165, 0);
             prefix = "[Warn] "; // Extra space for alignment roughly
             break;
         case ConsoleSeverity::Info:
         default:
-            color = QColor(220, 220, 220);
+            color = QColor(255, 255, 255);
             prefix = "[Info] ";
             break;
     }

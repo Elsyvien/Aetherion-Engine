@@ -8,9 +8,14 @@
 
 #include <QAction>
 #include <QActionGroup>
+#include <QAbstractButton>
+#include <QAbstractSpinBox>
 #include <QApplication>
+#include <QChildEvent>
 #include <QCloseEvent>
+#include <QColor>
 #include <QCoreApplication>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
@@ -18,10 +23,13 @@
 #include <QFileDialog>
 #include <QFileSystemWatcher>
 #include <QFormLayout>
+#include <QGraphicsDropShadowEffect>
 #include <QInputDialog>
+#include <QEasingCurve>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -34,7 +42,9 @@
 #include <QSysInfo>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QUrl>
+#include <QVariantAnimation>
 #include <QVBoxLayout>
 #include <QSet>
 #include <algorithm>
@@ -81,6 +91,156 @@
 #include "nlohmann/json.hpp"
 
 namespace Aetherion::Editor {
+namespace {
+class SubtleUiMotionFilter final : public QObject {
+public:
+  explicit SubtleUiMotionFilter(QObject *parent = nullptr) : QObject(parent) {}
+
+  void RegisterSubtree(QWidget *root) {
+    if (!root) {
+      return;
+    }
+
+    RegisterWidget(root);
+    const auto widgets = root->findChildren<QWidget *>();
+    for (auto *widget : widgets) {
+      RegisterWidget(widget);
+    }
+  }
+
+protected:
+  bool eventFilter(QObject *watched, QEvent *event) override {
+    if (event->type() == QEvent::ChildAdded) {
+      auto *childEvent = static_cast<QChildEvent *>(event);
+      if (auto *childWidget = qobject_cast<QWidget *>(childEvent->child())) {
+        RegisterSubtree(childWidget);
+      }
+    }
+
+    auto *widget = qobject_cast<QWidget *>(watched);
+    if (!widget) {
+      return QObject::eventFilter(watched, event);
+    }
+
+    if (IsHoverTarget(widget)) {
+      if (event->type() == QEvent::Enter) {
+        StartGlow(widget, true, HoverConfig());
+      } else if (event->type() == QEvent::Leave) {
+        StartGlow(widget, false, HoverConfig());
+      }
+    }
+
+    if (IsFocusTarget(widget)) {
+      if (event->type() == QEvent::FocusIn) {
+        StartGlow(widget, true, FocusConfig());
+      } else if (event->type() == QEvent::FocusOut) {
+        StartGlow(widget, false, FocusConfig());
+      }
+    }
+
+    return QObject::eventFilter(watched, event);
+  }
+
+private:
+  struct GlowConfig {
+    int blur;
+    int alpha;
+    int durationIn;
+    int durationOut;
+  };
+
+  static GlowConfig HoverConfig() { return {6, 70, 140, 120}; }
+  static GlowConfig FocusConfig() { return {10, 110, 160, 140}; }
+
+  static bool IsHoverTarget(QWidget *widget) {
+    return qobject_cast<QPushButton *>(widget) ||
+           qobject_cast<QToolButton *>(widget);
+  }
+
+  static bool IsFocusTarget(QWidget *widget) {
+    return qobject_cast<QLineEdit *>(widget) ||
+           qobject_cast<QComboBox *>(widget) ||
+           qobject_cast<QAbstractSpinBox *>(widget);
+  }
+
+  void RegisterWidget(QWidget *widget) {
+    if (!widget || widget->property("aetherionMotionInstalled").toBool()) {
+      return;
+    }
+
+    widget->setProperty("aetherionMotionInstalled", true);
+    widget->installEventFilter(this);
+  }
+
+  static void StartGlow(QWidget *widget, bool enable,
+                        const GlowConfig &config) {
+    if (!widget) {
+      return;
+    }
+
+    auto *effect =
+        qobject_cast<QGraphicsDropShadowEffect *>(widget->graphicsEffect());
+    if (!effect) {
+      if (widget->graphicsEffect()) {
+        return;
+      }
+      effect = new QGraphicsDropShadowEffect(widget);
+      effect->setObjectName("AetherionGlowEffect");
+      effect->setOffset(0, 0);
+      effect->setBlurRadius(0.0);
+      effect->setColor(QColor(0, 122, 204, 0));
+      widget->setGraphicsEffect(effect);
+    } else if (effect->objectName() != "AetherionGlowEffect") {
+      return;
+    }
+
+    const qreal startBlur = effect->blurRadius();
+    const qreal endBlur =
+        enable ? static_cast<qreal>(config.blur) : 0.0;
+    const int startAlpha = effect->color().alpha();
+    const int endAlpha = enable ? config.alpha : 0;
+
+    if (qFuzzyCompare(startBlur, endBlur) && startAlpha == endAlpha) {
+      return;
+    }
+
+    if (auto *oldAnim =
+            widget->findChild<QVariantAnimation *>("AetherionGlowAnim")) {
+      oldAnim->stop();
+      oldAnim->deleteLater();
+    }
+
+    auto *anim = new QVariantAnimation(widget);
+    anim->setObjectName("AetherionGlowAnim");
+    anim->setStartValue(0.0);
+    anim->setEndValue(1.0);
+    anim->setDuration(enable ? config.durationIn : config.durationOut);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+
+    const QColor baseColor(0, 122, 204);
+    connect(anim, &QVariantAnimation::valueChanged, widget,
+            [effect, startBlur, endBlur, startAlpha, endAlpha,
+             baseColor](const QVariant &value) {
+              const double t = value.toDouble();
+              effect->setBlurRadius(startBlur + (endBlur - startBlur) * t);
+              QColor color = baseColor;
+              color.setAlpha(static_cast<int>(
+                  startAlpha + (endAlpha - startAlpha) * t));
+              effect->setColor(color);
+            });
+    connect(anim, &QVariantAnimation::finished, widget,
+            [effect, endBlur, endAlpha, baseColor] {
+              effect->setBlurRadius(endBlur);
+              QColor color = baseColor;
+              color.setAlpha(endAlpha);
+              effect->setColor(color);
+            });
+
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
+  }
+};
+} // namespace
+
 class EditorAuxPanel final : public QWidget {
 public:
   explicit EditorAuxPanel(QWidget *parent = nullptr) : QWidget(parent) {
@@ -893,6 +1053,9 @@ EditorMainWindow::EditorMainWindow(
   CreateToolBarContent();
   ConfigureStatusBar();
   LoadLayout();
+
+  auto *uiMotion = new SubtleUiMotionFilter(this);
+  uiMotion->RegisterSubtree(this);
 
   if (m_hierarchyPanel) {
     m_hierarchyPanel->SetSelectionModel(m_selection);

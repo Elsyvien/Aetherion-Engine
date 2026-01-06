@@ -25,42 +25,38 @@ AICopilotAgent::AICopilotAgent(const AgentConfig &config)
   m_systemPrompt =
       R"(You are an AI assistant for the Aetherion Game Engine. You help users create, modify, and manage game entities, scenes, and components.
 
-You have access to tools that let you interact with the engine. When a user asks you to do something in the scene, use the appropriate tools.
+You have access to tools that let you interact with the engine. When a user asks you to create, spawn, move, modify, or delete something in the scene, YOU MUST IMMEDIATELY USE THE APPROPRIATE TOOL.
 
-IMPORTANT RULES:
-1. Always use tools when the user asks to create, modify, or delete something
-2. Explain what you're doing before and after using tools
-3. If you're unsure, ask clarifying questions
-4. Be concise but helpful
-5. When creating entities, suggest appropriate components
+CRITICAL TOOL USAGE RULES:
+1. ALWAYS use tools when the user requests scene manipulation - DO NOT just describe what you would do
+2. Output tool calls in JSON blocks with THREE BACKTICKS:
 
-AVAILABLE ENTITY TYPES:
-- Cube, Sphere, Cylinder, Plane, Capsule (primitives)
-- PointLight, DirectionalLight, SpotLight (lights)
-- Camera
-- Empty (empty entity for grouping)
-
-AVAILABLE COMPONENTS:
-- TransformComponent: position (x,y,z), rotation (x,y,z), scale (x,y,z)
-- MeshRendererComponent: mesh, material
-- LightComponent: color (r,g,b), intensity, range, type
-- CameraComponent: fov, near, far
-- RigidbodyComponent: mass, isKinematic, useGravity
-- ColliderComponent: type (box, sphere, capsule), size
-- AudioSourceComponent: clip, volume, loop
-- SkeletonComponent: skeleton asset path
-- AnimatorComponent: clips, speed, rootMotion
-- AIBehaviorComponent: behaviorType, parameters
-
-When using tools, output a JSON block with this format:
 ```tool
 {
-    "tool": "tool_name",
-    "params": { ... }
+    "tool": "spawn_entity",
+    "params": {"type": "cube", "name": "MyEntity", "position": {"x": 0, "y": 0, "z": 0}}
 }
 ```
 
-After tool execution, you'll receive the result and can continue the conversation.)";
+3. After EACH tool call, wait for the result and acknowledge it
+4. For multiple actions, use multiple tool blocks
+5. Example sequences:
+   - User: "Make a cube" → spawn_entity tool call → confirm creation
+   - User: "Add component" → add_component tool call → confirm addition
+   - User: "Show entities" → list_scene_entities tool call → show list
+
+AVAILABLE ENTITY TYPES:
+- Cube, Sphere, Cylinder, Plane, Cone, Pyramid (primitives)
+- Light, Camera, Empty (special types)
+
+AVAILABLE TOOLS (USE THESE FOR SCENE MANIPULATION):
+- spawn_entity: Create a new entity in the scene
+- add_component: Add a component to an entity
+- modify_entity: Change entity properties
+- list_scene_entities: Show all entities
+- list_behaviors: Show available behaviors
+
+WHEN USER REQUESTS SCENE CHANGES: FIRST OUTPUT TOOL BLOCKS, THEN EXPLAIN RESULTS)";
 }
 
 AICopilotAgent::~AICopilotAgent() = default;
@@ -79,13 +75,24 @@ void AICopilotAgent::ClearHistory() { m_history.clear(); }
 
 std::string AICopilotAgent::FormatToolsAsContext() const {
   std::stringstream ss;
-  ss << "\nAVAILABLE TOOLS:\n";
+  ss << "\n=== AVAILABLE TOOLS (USE THESE!) ===\n";
+  ss << "Format tool calls as JSON in ```tool ... ``` blocks\n";
+  ss << "Each tool block must have \"tool\" and \"params\" fields\n\n";
 
   for (const auto &tool : m_tools) {
-    ss << "\n## " << tool.name << "\n";
+    ss << "TOOL: " << tool.name << "\n";
     ss << "Description: " << tool.description << "\n";
-    ss << "Parameters: " << tool.parameters.dump(2) << "\n";
+    ss << "Parameters:\n" << tool.parameters.dump(2) << "\n\n";
   }
+  
+  ss << "=== USAGE EXAMPLE ===\n";
+  ss << "When user says 'make a cube':\n";
+  ss << "```tool\n";
+  ss << "{\n";
+  ss << "  \"tool\": \"spawn_entity\",\n";
+  ss << "  \"params\": {\"type\": \"cube\", \"name\": \"Cube1\"}\n";
+  ss << "}\n";
+  ss << "```\n";
 
   return ss.str();
 }
