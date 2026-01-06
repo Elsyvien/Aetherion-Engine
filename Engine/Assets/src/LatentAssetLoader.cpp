@@ -56,7 +56,8 @@ namespace Aetherion::Assets
             seed ^= hasher(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
         }
         
-        std::mt19937 rng(static_cast<unsigned int>(seed));
+        // Use lower 32 bits for seed (mt19937 uses 32-bit seed)
+        std::mt19937 rng(static_cast<uint32_t>(seed));
 
         std::uniform_int_distribution<int> dist(0, 255);
 
