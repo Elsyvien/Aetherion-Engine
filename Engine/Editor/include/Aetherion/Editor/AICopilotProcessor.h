@@ -45,6 +45,8 @@ class AICopilotProcessor {
 public:
     using CommandExecutor = std::function<void(std::unique_ptr<Command>)>;
     using EntityHighlightCallback = std::function<void(uint64_t entityId, float duration)>;
+    using ActivityCallback = std::function<void(int activityType, const std::string& details)>;
+    using ToolStatusCallback = std::function<void(const std::string& toolName, const std::string& params)>;
 
     AICopilotProcessor(CommandExecutor executor);
     ~AICopilotProcessor();
@@ -53,6 +55,8 @@ public:
     void SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry);     
     void SetSelectedEntity(std::shared_ptr<Scene::Entity> selected);
     void SetHighlightCallback(const EntityHighlightCallback& callback) { m_highlightCallback = callback; }
+    void SetActivityCallback(const ActivityCallback& callback) { m_activityCallback = callback; }
+    void SetToolStatusCallback(const ToolStatusCallback& callback) { m_toolStatusCallback = callback; }
     
     // Configure LLM settings
     void ConfigureLLM(const CopilotLLMConfig& config);
@@ -79,6 +83,8 @@ private:
     
     CopilotLLMConfig m_llmConfig;
     std::unique_ptr<AICopilotAgent> m_agent;
+    ActivityCallback m_activityCallback;
+    ToolStatusCallback m_toolStatusCallback;
     
     // Initialize agent with tools
     void InitializeAgent();

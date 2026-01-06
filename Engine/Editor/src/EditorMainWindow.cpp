@@ -697,6 +697,29 @@ EditorMainWindow::EditorMainWindow(
   m_commandHistory = std::make_unique<CommandHistory>();
   m_copilotProcessor = std::make_unique<AICopilotProcessor>(
       [this](std::unique_ptr<Command> cmd) { ExecuteCommand(std::move(cmd)); });
+  
+  // Set up highlight callback
+  m_copilotProcessor->SetHighlightCallback([this](uint64_t entityId, float duration) {
+    if (m_copilotPanel) {
+      m_copilotPanel->HighlightEntity(entityId);
+    }
+  });
+  
+  // Set up activity callback for UI feedback
+  m_copilotProcessor->SetActivityCallback([this](int activityType, const std::string& details) {
+    if (m_copilotPanel) {
+      m_copilotPanel->SetActivity(static_cast<AICopilotPanel::ActivityType>(activityType), 
+                                   QString::fromStdString(details));
+      m_copilotPanel->AddActivityLogEntry("Activity", QString::fromStdString(details));
+    }
+  });
+  
+  // Set up tool status callback
+  m_copilotProcessor->SetToolStatusCallback([this](const std::string& toolName, const std::string& params) {
+    if (m_copilotPanel) {
+      m_copilotPanel->SetCurrentTool(QString::fromStdString(toolName), QString::fromStdString(params));
+    }
+  });
 
   m_settings.Clamp();
   m_validationEnabled = m_settings.validationEnabled;

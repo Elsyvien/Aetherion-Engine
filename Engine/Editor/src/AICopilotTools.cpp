@@ -19,11 +19,26 @@ void AICopilotToolFactory::RegisterAllTools(AICopilotAgent &agent,
                                             Scene::Scene *scene,
                                             Scene::Entity *selected,
                                             const CommandExecutor &executor,
-                                            const EntityHighlightCallback &highlightCallback) {
+                                            const EntityHighlightCallback &highlightCallback,
+                                            const ActivityCallback &activityCallback,
+                                            const ToolStatusCallback &toolStatusCallback) {
 
   if (!scene) {
     return;
   }
+  
+  // Helper to report activity
+  auto reportActivity = [activityCallback](ActivityType type, const std::string& details) {
+    if (activityCallback) {
+      activityCallback(static_cast<int>(type), details);
+    }
+  };
+  
+  auto reportTool = [toolStatusCallback](const std::string& name, const std::string& params) {
+    if (toolStatusCallback) {
+      toolStatusCallback(name, params);
+    }
+  };
 
   // =====================================================================
   // list_scene_entities - List all entities in the scene
@@ -32,7 +47,10 @@ void AICopilotToolFactory::RegisterAllTools(AICopilotAgent &agent,
   listTool.name = "list_scene_entities";
   listTool.description = "Lists all entities currently in the scene with their names, IDs, and components.";
   listTool.parameters = nlohmann::json::object();
-  listTool.execute = [scene](const nlohmann::json& /*params*/) -> nlohmann::json {
+  listTool.execute = [scene, reportActivity, reportTool](const nlohmann::json& /*params*/) -> nlohmann::json {
+    reportTool("list_scene_entities", "Scanning scene...");
+    reportActivity(ActivityType::ExecutingTool, "Listing scene entities");
+    
     nlohmann::json result;
     result["success"] = true;
     nlohmann::json entities = nlohmann::json::array();
@@ -140,9 +158,13 @@ void AICopilotToolFactory::RegisterAllTools(AICopilotAgent &agent,
          {"description", "Additional components to add: collider, rigidbody"},
          {"items", {{"type", "string"}}}}}});
   spawnTool.execute =
-      [scene, executor, highlightCallback](const nlohmann::json &params) -> nlohmann::json {
+      [scene, executor, highlightCallback, reportActivity, reportTool](const nlohmann::json &params) -> nlohmann::json {
     std::string type = params.value("type", "cube");
     std::string name = params.value("name", type);
+    
+    reportTool("spawn_entity", "type=" + type + ", name=" + name);
+    reportActivity(ActivityType::ModifyingScene, "Creating " + name);
+    
     float x = 0.0f, y = 0.0f, z = 0.0f;
     if (params.contains("position")) {
       auto &pos = params["position"];

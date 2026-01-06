@@ -5936,22 +5936,13 @@ void VulkanViewport::UpdateSelectionBuffer(
   // 2. Translation Gizmo (Arrows)
   const float origin[3] = {model[12], model[13], model[14]};
   const float axisLen = 2.0f;
-  const float headLen = 0.4f;
-  const float headWidth = 0.1f;
+  const float headLen = 0.45f;
+  const float headWidth = 0.16f;
+  const float shaftRadius = 0.035f;
 
   auto addArrow = [&](const float dir[3], const float color[4]) {
     float end[3] = {origin[0] + dir[0] * axisLen, origin[1] + dir[1] * axisLen,
                     origin[2] + dir[2] * axisLen};
-
-    // Shaft
-    vertices.push_back(Vertex{{origin[0], origin[1], origin[2]},
-                              {0, 0, 1},
-                              {color[0], color[1], color[2], 1},
-                              {0, 0}});
-    vertices.push_back(Vertex{{end[0], end[1], end[2]},
-                              {0, 0, 1},
-                              {color[0], color[1], color[2], 1},
-                              {0, 0}});
 
     // Calculate basis for arrowhead
     float up[3] = {0.0f, 1.0f, 0.0f};
@@ -5982,6 +5973,34 @@ void VulkanViewport::UpdateSelectionBuffer(
 
     float baseCenter[3] = {end[0] - dir[0] * headLen, end[1] - dir[1] * headLen,
                            end[2] - dir[2] * headLen};
+
+    const std::array<std::array<float, 2>, 5> shaftOffsets = {{
+        {0.0f, 0.0f},
+        {1.0f, 0.0f},
+        {-1.0f, 0.0f},
+        {0.0f, 1.0f},
+        {0.0f, -1.0f},
+    }};
+
+    for (const auto &offset : shaftOffsets) {
+      const float offsetX = right[0] * shaftRadius * offset[0] +
+                            orthoUp[0] * shaftRadius * offset[1];
+      const float offsetY = right[1] * shaftRadius * offset[0] +
+                            orthoUp[1] * shaftRadius * offset[1];
+      const float offsetZ = right[2] * shaftRadius * offset[0] +
+                            orthoUp[2] * shaftRadius * offset[1];
+
+      vertices.push_back(Vertex{{origin[0] + offsetX, origin[1] + offsetY,
+                                 origin[2] + offsetZ},
+                                {0, 0, 1},
+                                {color[0], color[1], color[2], 1},
+                                {0, 0}});
+      vertices.push_back(Vertex{{baseCenter[0] + offsetX, baseCenter[1] + offsetY,
+                                 baseCenter[2] + offsetZ},
+                                {0, 0, 1},
+                                {color[0], color[1], color[2], 1},
+                                {0, 0}});
+    }
 
     // 4 segments for cone
     for (int i = 0; i < 4; ++i) {

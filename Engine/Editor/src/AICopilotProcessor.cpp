@@ -285,7 +285,7 @@ void AICopilotProcessor::SetScene(std::shared_ptr<Scene::Scene> scene) {
     
     // Re-register tools with updated scene context
     if (m_agent && m_scene) {
-        AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_executor, m_highlightCallback);
+        AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_executor, m_highlightCallback, m_activityCallback, m_toolStatusCallback);
     }
 }
 
@@ -298,7 +298,7 @@ void AICopilotProcessor::SetSelectedEntity(std::shared_ptr<Scene::Entity> select
     
     // Re-register tools with updated selection context
     if (m_agent && m_scene) {
-        AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_executor, m_highlightCallback);
+        AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_executor, m_highlightCallback, m_activityCallback, m_toolStatusCallback);
     }
 }
 
@@ -1004,7 +1004,7 @@ CopilotResult AICopilotProcessor::ProcessWithAgent(const QString& prompt) {
     }
     
     // Ensure tools are registered with current context
-    AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_executor, m_highlightCallback);
+    AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_executor, m_highlightCallback, m_activityCallback, m_toolStatusCallback);
     
     // Process the request through the agent
     std::string response = m_agent->ProcessAgenticRequest(prompt.toStdString());

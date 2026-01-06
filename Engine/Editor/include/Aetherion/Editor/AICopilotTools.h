@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <cstdint>
+#include <string>
 
 namespace Aetherion::Scene {
 class Scene;
@@ -18,6 +19,24 @@ using CommandExecutor = std::function<void(std::unique_ptr<Command>)>;
 
 // Callback for entity highlighting
 using EntityHighlightCallback = std::function<void(uint64_t entityId, float duration)>;
+
+// Callback for activity status updates (for UI feedback)
+using ActivityCallback = std::function<void(int activityType, const std::string& details)>;
+
+// Callback for current tool updates (for UI feedback)
+using ToolStatusCallback = std::function<void(const std::string& toolName, const std::string& params)>;
+
+// Activity types (matches AICopilotPanel::ActivityType)
+enum class ActivityType : int {
+    Idle = 0,
+    Thinking = 1,
+    ExecutingTool = 2,
+    GeneratingCode = 3,
+    HighlightingEntity = 4,
+    ModifyingScene = 5,
+    ReadingFile = 6,
+    WritingFile = 7
+};
 
 /**
  * Factory for registering AI Copilot tools that can create/modify scene
@@ -36,11 +55,15 @@ public:
    * @param selected The currently selected entity (can be null)
    * @param executor Command executor for undo/redo support (can be null)
    * @param highlightCallback Callback to highlight entities during AI operations
+   * @param activityCallback Callback to update activity status in the UI
+   * @param toolStatusCallback Callback to show current tool in the UI
    */
   static void RegisterAllTools(AICopilotAgent &agent, Scene::Scene *scene,
                                Scene::Entity *selected,
                                const CommandExecutor &executor,
-                               const EntityHighlightCallback &highlightCallback = nullptr);
+                               const EntityHighlightCallback &highlightCallback = nullptr,
+                               const ActivityCallback &activityCallback = nullptr,
+                               const ToolStatusCallback &toolStatusCallback = nullptr);
 };
 
 } // namespace Aetherion::Editor

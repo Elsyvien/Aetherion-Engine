@@ -37,6 +37,7 @@
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/ParticleEmitterComponent.h"
 #include "Aetherion/Scene/RigidbodyComponent.h"
+#include "Aetherion/Scene/ScriptComponent.h"
 #include "Aetherion/Scene/TransformComponent.h"
 #include <QToolButton>
 
@@ -522,15 +523,16 @@ void EditorInspectorPanel::RebuildUi() {
   auto camera = m_entity->GetComponent<Scene::CameraComponent>();
   auto rigidbody = m_entity->GetComponent<Scene::RigidbodyComponent>();
   auto collider = m_entity->GetComponent<Scene::ColliderComponent>();
-  auto skeleton = m_entity->GetComponent<Scene::SkeletonComponent>();
   auto animator = m_entity->GetComponent<Scene::AnimatorComponent>();
   auto audioSource = m_entity->GetComponent<Scene::AudioSourceComponent>();
   auto aiBehavior = m_entity->GetComponent<Scene::AIBehaviorComponent>();
   auto particleEmitter =
       m_entity->GetComponent<Scene::ParticleEmitterComponent>();
+  auto scriptComponent = m_entity->GetComponent<Scene::ScriptComponent>();
 
   if (!transform && !mesh && !light && !camera && !rigidbody && !collider &&
-      !skeleton && !animator && !audioSource && !aiBehavior && !particleEmitter) {
+      !animator && !audioSource && !aiBehavior && !particleEmitter &&
+      !scriptComponent) {
     auto *noEditable =
         new QLabel(tr("No editable components on selected entity."), m_content);
     noEditable->setAlignment(Qt::AlignTop | Qt::AlignLeft);
@@ -1781,90 +1783,6 @@ void EditorInspectorPanel::RebuildUi() {
         makeComponentHeader(tr("Collider"), collider, formHost));
   }
 
-  // Skeleton Component UI
-  if (skeleton) {
-    auto *formHost = new QWidget(m_content);
-    auto *form = new QFormLayout(formHost);
-    form->setLabelAlignment(Qt::AlignLeft);
-
-    auto *pathEdit = new QLineEdit(m_content);
-    pathEdit->setText(
-        QString::fromStdString(skeleton->GetSkeletonAssetPath()));
-    pathEdit->setPlaceholderText(
-        tr("assets/animations/character.skeleton.json"));
-
-    auto *browseBtn = new QPushButton(tr("Browse"), m_content);
-    browseBtn->setMaximumWidth(70);
-
-    auto *pathRow = new QWidget(m_content);
-    auto *pathLayout = new QHBoxLayout(pathRow);
-    pathLayout->setContentsMargins(0, 0, 0, 0);
-    pathLayout->setSpacing(4);
-    pathLayout->addWidget(pathEdit, 1);
-    pathLayout->addWidget(browseBtn);
-    form->addRow(tr("Skeleton File"), pathRow);
-
-    auto *boneCountLabel = new QLabel(m_content);
-    if (auto skeletonData = skeleton->GetSkeleton()) {
-      boneCountLabel->setText(
-          QString::number(skeletonData->GetBoneCount()));
-    } else {
-      boneCountLabel->setText("0");
-    }
-    form->addRow(tr("Bones"), boneCountLabel);
-
-    auto applySkeleton = [this, skeleton, pathEdit, boneCountLabel]() {
-      if (m_buildingUi || !m_entity) {
-        return;
-      }
-
-      const QString pathText = pathEdit->text().trimmed();
-      if (pathText.isEmpty()) {
-        skeleton->SetSkeleton(nullptr);
-        boneCountLabel->setText("0");
-        emit sceneModified();
-        return;
-      }
-
-      const std::string path = pathText.toStdString();
-      if (!skeleton->LoadSkeletonFromFile(path)) {
-        QMessageBox::warning(
-            this, tr("Skeleton Load Failed"),
-            tr("Failed to load skeleton:\n%1").arg(pathText));
-        pathEdit->setText(
-            QString::fromStdString(skeleton->GetSkeletonAssetPath()));
-        return;
-      }
-
-      if (auto skeletonData = skeleton->GetSkeleton()) {
-        boneCountLabel->setText(
-            QString::number(skeletonData->GetBoneCount()));
-      } else {
-        boneCountLabel->setText("0");
-      }
-      emit sceneModified();
-    };
-
-    connect(pathEdit, &QLineEdit::editingFinished, this,
-            [applySkeleton]() { applySkeleton(); });
-    connect(browseBtn, &QPushButton::clicked, this,
-            [this, pathEdit, applySkeleton]() {
-              const QString filter =
-                  tr("Skeleton (*.skeleton.json);;JSON (*.json);;All Files (*)");
-              QString selected = QFileDialog::getOpenFileName(
-                  this, tr("Load Skeleton"), QString(), filter);
-              if (selected.isEmpty()) {
-                return;
-              }
-              pathEdit->setText(selected);
-              applySkeleton();
-            });
-
-    formHost->setLayout(form);
-    m_contentLayout->addWidget(
-        makeComponentHeader(tr("Skeleton"), skeleton, formHost));
-  }
-
   // Animator Component UI
   if (animator) {
     auto *formHost = new QWidget(m_content);
@@ -2030,6 +1948,65 @@ void EditorInspectorPanel::RebuildUi() {
         makeComponentHeader(tr("Audio Source"), audioSource, formHost));
   }
 
+  // ==================== Script Component ====================
+  auto scriptComp = m_entity->GetComponent<Scene::ScriptComponent>();
+  if (scriptComp) {
+    auto *formHost = new QWidget(m_content);
+    auto *form = new QFormLayout();
+    form->setContentsMargins(10, 10, 10, 10);
+
+    // Script asset ID
+    auto *scriptAssetEdit = new QLineEdit(formHost);
+    scriptAssetEdit->setText(QString::fromStdString(scriptComp->GetScriptAssetId()));
+    scriptAssetEdit->setPlaceholderText(tr("scripts/my_script.lua"));
+    form->addRow(tr("Script Asset:"), scriptAssetEdit);
+
+    // Script source code editor
+    auto *codeLabel = new QLabel(tr("Script Code:"), formHost);
+    form->addRow(codeLabel);
+
+    auto *codeEditor = new QTextEdit(formHost);
+    codeEditor->setPlainText(QString::fromStdString(scriptComp->GetScriptSource()));
+    codeEditor->setMinimumHeight(200);
+    codeEditor->setFont(QFont("Consolas", 10));
+    codeEditor->setStyleSheet(
+        "QTextEdit { background-color: #1e1e1e; color: #d4d4d4; "
+        "border: 1px solid #444; border-radius: 4px; "
+        "font-family: Consolas, 'Courier New', monospace; }");
+    codeEditor->setTabStopDistance(QFontMetricsF(codeEditor->font()).horizontalAdvance(' ') * 4);
+    codeEditor->setLineWrapMode(QTextEdit::NoWrap);
+    form->addRow(codeEditor);
+
+    // Apply button
+    auto *applyBtn = new QPushButton(tr("Apply Script"), formHost);
+    applyBtn->setStyleSheet(
+        "QPushButton { background-color: #2d5a2d; color: white; "
+        "border-radius: 4px; padding: 6px 12px; font-weight: bold; }"
+        "QPushButton:hover { background-color: #3d6a3d; }");
+    form->addRow(applyBtn);
+
+    connect(scriptAssetEdit, &QLineEdit::editingFinished, this,
+            [this, scriptComp, scriptAssetEdit]() {
+              if (m_buildingUi || !m_entity)
+                return;
+              scriptComp->SetScriptAssetId(scriptAssetEdit->text().toStdString());
+              emit sceneModified();
+            });
+
+    connect(applyBtn, &QPushButton::clicked, this,
+            [this, scriptComp, codeEditor, scriptAssetEdit]() {
+              if (!m_entity)
+                return;
+              scriptComp->SetScriptAssetId(scriptAssetEdit->text().toStdString());
+              scriptComp->SetScriptSource(codeEditor->toPlainText().toStdString());
+              emit sceneModified();
+            });
+
+    formHost->setLayout(form);
+    m_contentLayout->addWidget(
+        makeComponentHeader(tr("Script"), scriptComp, formHost));
+  }
+
   m_contentLayout->addStretch(1);
 
   auto *addCompBtn = new QPushButton(tr("Add Component"), m_content);
@@ -2086,14 +2063,6 @@ void EditorInspectorPanel::RebuildUi() {
               std::make_unique<AddComponentCommand>(m_entity, comp));
       });
     }
-    if (!m_entity->GetComponent<Scene::SkeletonComponent>()) {
-      menu.addAction(tr("Skeleton"), [this] {
-        auto comp = std::make_shared<Scene::SkeletonComponent>();
-        if (m_commandExecutor)
-          m_commandExecutor(
-              std::make_unique<AddComponentCommand>(m_entity, comp));
-      });
-    }
     if (!m_entity->GetComponent<Scene::AnimatorComponent>()) {
       menu.addAction(tr("Animator"), [this] {
         auto comp = std::make_shared<Scene::AnimatorComponent>();
@@ -2121,6 +2090,14 @@ void EditorInspectorPanel::RebuildUi() {
     if (!m_entity->GetComponent<Scene::ParticleEmitterComponent>()) {
       menu.addAction(tr("Particle Emitter"), [this] {
         auto comp = std::make_shared<Scene::ParticleEmitterComponent>();
+        if (m_commandExecutor)
+          m_commandExecutor(
+              std::make_unique<AddComponentCommand>(m_entity, comp));
+      });
+    }
+    if (!m_entity->GetComponent<Scene::ScriptComponent>()) {
+      menu.addAction(tr("Script"), [this] {
+        auto comp = std::make_shared<Scene::ScriptComponent>();
         if (m_commandExecutor)
           m_commandExecutor(
               std::make_unique<AddComponentCommand>(m_entity, comp));

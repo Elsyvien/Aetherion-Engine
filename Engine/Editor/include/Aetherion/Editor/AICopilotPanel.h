@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QString>
 #include <QPropertyAnimation>
+#include <QFrame>
 #include <memory>
 #include <cstdint>
 
@@ -13,15 +14,11 @@ class QTextEdit;
 class QPushButton;
 class QLabel;
 class QTimer;
-class QFrame;
 class QScrollArea;
 class QGraphicsOpacityEffect;
 class QSplitter;
 
 namespace Aetherion::Editor {
-
-// Forward declaration
-class CodeViewerWidget;
 
 /// Enhanced AI Copilot Panel with activity tracking, code viewer, and animations
 class AICopilotPanel : public QWidget {
@@ -126,27 +123,6 @@ private:
     ActivityType m_currentActivity = ActivityType::Idle;
     float m_activityOpacity = 1.0f;
     int m_pulseDirection = 1;
-};
-
-/// Inline code viewer widget for displaying generated code
-class CodeViewerWidget : public QFrame {
-    Q_OBJECT
-public:
-    explicit CodeViewerWidget(QWidget* parent = nullptr);
-    
-    void SetCode(const QString& code, const QString& language = "cpp");
-    void SetTitle(const QString& title);
-    void Clear();
-
-signals:
-    void CloseRequested();
-    void CopyRequested();
-
-private:
-    QTextEdit* m_codeEdit = nullptr;
-    QLabel* m_titleLabel = nullptr;
-    QPushButton* m_copyButton = nullptr;
-    QPushButton* m_closeButton = nullptr;
 };
 
 } // namespace Aetherion::Editor

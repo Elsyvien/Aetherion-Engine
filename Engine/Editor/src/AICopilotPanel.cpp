@@ -17,6 +17,7 @@
 #include <QApplication>
 #include <QFont>
 #include <QFontDatabase>
+#include <QTime>
 
 namespace Aetherion::Editor {
 
@@ -557,45 +558,32 @@ void AICopilotPanel::HighlightEntity(uint64_t entityId) {
 }
 
 void AICopilotPanel::AppendMessage(const QString& sender, const QString& message) {
-    auto renderMarkdown = [](const QString& text) {
-        return QTextDocumentFragment::fromMarkdown(text).toHtml();
-    };
-
-    QString bodyHtml = renderMarkdown(Qt::convertFromPlainText(message));
     QString formatted;
     
     if (sender == "User") {
         formatted = QString(
-            "<div style='margin: 8px 4px; padding: 12px 16px; "
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1e3a5f, stop:1 #1a1a1a); "
-            "border-left: 4px solid #4da6ff; border-radius: 6px;'>"
-            "<div style='margin-bottom: 4px;'>"
-            "<span style='background-color: #4da6ff; color: #000; padding: 2px 8px; "
-            "border-radius: 3px; font-weight: bold; font-size: 11px;'>USER</span>"
+            "<div style='margin: 6px 0px; padding: 8px; text-align: left; "
+            "background-color: #1e2d3d; border-left: 3px solid #4da6ff;'>"
+            "<span style='color: #4da6ff; font-weight: bold;'>User:</span> "
+            "<span style='color: #e0e0e0;'>%1</span>"
             "</div>"
-            "<div style='color: #e0e0e0; font-size: 13px; line-height: 1.4;'>%1</div>"
-            "</div>"
-        ).arg(bodyHtml);
+        ).arg(message.toHtmlEscaped());
     } else if (sender == "System") {
         formatted = QString(
-            "<div style='margin: 4px 4px; padding: 8px 16px; text-align: center; "
+            "<div style='margin: 4px 0px; padding: 6px; text-align: left; "
             "color: #888; font-style: italic; font-size: 11px;'>"
-            "⚙️ %1"
+            "%1"
             "</div>"
-        ).arg(message);
+        ).arg(message.toHtmlEscaped());
     } else {
         // Copilot message
         formatted = QString(
-            "<div style='margin: 8px 4px; padding: 12px 16px; "
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1f3a1f, stop:1 #1a1a1a); "
-            "border-left: 4px solid #4dff88; border-radius: 6px;'>"
-            "<div style='margin-bottom: 4px;'>"
-            "<span style='background-color: #4dff88; color: #000; padding: 2px 8px; "
-            "border-radius: 3px; font-weight: bold; font-size: 11px;'>COPILOT</span>"
+            "<div style='margin: 6px 0px; padding: 8px; text-align: left; "
+            "background-color: #1d2d1d; border-left: 3px solid #4dff88;'>"
+            "<span style='color: #4dff88; font-weight: bold;'>Copilot:</span> "
+            "<span style='color: #e0e0e0;'>%1</span>"
             "</div>"
-            "<div style='color: #e0e0e0; font-size: 13px; line-height: 1.4;'>%1</div>"
-            "</div>"
-        ).arg(bodyHtml);
+        ).arg(message.toHtmlEscaped());
     }
     
     m_chatHistory->append(formatted);
@@ -678,62 +666,6 @@ QString AICopilotPanel::FormatCodeBlock(const QString& code, const QString& lang
     return QString("<pre style='background-color: #1e1e1e; padding: 8px; border-radius: 4px; "
                   "font-family: Consolas, monospace; font-size: 12px; color: #d4d4d4; "
                   "overflow-x: auto;'>%1</pre>").arg(code.toHtmlEscaped());
-}
-
-// ============================================================================
-// CodeViewerWidget Implementation
-// ============================================================================
-
-CodeViewerWidget::CodeViewerWidget(QWidget* parent) : QFrame(parent) {
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    
-    // Header
-    auto* header = new QFrame(this);
-    auto* headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(8, 4, 8, 4);
-    
-    m_titleLabel = new QLabel("Code", header);
-    m_copyButton = new QPushButton("Copy", header);
-    m_closeButton = new QPushButton("×", header);
-    m_closeButton->setFixedSize(20, 20);
-    
-    headerLayout->addWidget(m_titleLabel);
-    headerLayout->addStretch();
-    headerLayout->addWidget(m_copyButton);
-    headerLayout->addWidget(m_closeButton);
-    
-    layout->addWidget(header);
-    
-    m_codeEdit = new QTextEdit(this);
-    m_codeEdit->setReadOnly(true);
-    m_codeEdit->setLineWrapMode(QTextEdit::NoWrap);
-    
-    QFont monoFont("Consolas", 10);
-    monoFont.setStyleHint(QFont::Monospace);
-    m_codeEdit->setFont(monoFont);
-    
-    layout->addWidget(m_codeEdit);
-    
-    connect(m_copyButton, &QPushButton::clicked, this, [this]() {
-        QApplication::clipboard()->setText(m_codeEdit->toPlainText());
-        emit CopyRequested();
-    });
-    
-    connect(m_closeButton, &QPushButton::clicked, this, &CodeViewerWidget::CloseRequested);
-}
-
-void CodeViewerWidget::SetCode(const QString& code, const QString& /*language*/) {
-    m_codeEdit->setPlainText(code);
-}
-
-void CodeViewerWidget::SetTitle(const QString& title) {
-    m_titleLabel->setText(title);
-}
-
-void CodeViewerWidget::Clear() {
-    m_codeEdit->clear();
 }
 
 } // namespace Aetherion::Editor
