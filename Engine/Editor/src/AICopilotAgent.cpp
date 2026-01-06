@@ -2,8 +2,11 @@
 #include <iostream>
 #include <regex>
 #include <sstream>
+#include <algorithm>
+#include <cctype>
 
 #include <QByteArray>
+#include <QDebug>
 #include <QEventLoop>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -178,6 +181,9 @@ std::string AICopilotAgent::CallLLM(const std::string &prompt) {
   QNetworkRequest httpRequest(QUrl(QString::fromStdString(requestUrl)));
   httpRequest.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
+  qDebug() << "[AICopilot] Sending request to:" << QString::fromStdString(requestUrl);
+  qDebug() << "[AICopilot] Model:" << QString::fromStdString(m_config.model);
+
   // Synchronous request using event loop (matches LLMClient.cpp pattern)
   QEventLoop loop;
   QTimer timer;
@@ -189,14 +195,17 @@ std::string AICopilotAgent::CallLLM(const std::string &prompt) {
   QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
   QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
 
-  timer.start(30000); // 30 second timeout
+  timer.start(120000); // 120 second timeout (large models need more time)
   loop.exec();
+
+  qDebug() << "[AICopilot] Request finished, timer active:" << timer.isActive();
 
   std::string response;
   if (timer.isActive()) {
     timer.stop();
     if (reply->error() == QNetworkReply::NoError) {
       response = reply->readAll().toStdString();
+      qDebug() << "[AICopilot] Got response, length:" << response.length();
     } else {
       reply->deleteLater();
       return "Network error: " + reply->errorString().toStdString();
@@ -249,13 +258,24 @@ json AICopilotAgent::ParseLLMResponse(const std::string &response) {
   result["toolCalls"] = json::array();
 
   // Look for tool call blocks
-  std::regex toolRegex("```tool\\s*\\n([\\s\\S]*?)\\n```");
+  // Allow optional language hints after ```tool and tolerate Windows line endings
+  std::regex toolRegex("```tool[^\\n]*\\r?\\n([\\s\\S]*?)```", std::regex::icase);
   std::smatch match;
   std::string remaining = response;
 
   while (std::regex_search(remaining, match, toolRegex)) {
     try {
-      json toolCall = json::parse(match[1].str());
+      std::string block = match[1].str();
+      // Trim leading/trailing whitespace to reduce parse failures
+      block.erase(block.begin(), std::find_if(block.begin(), block.end(), [](unsigned char ch) {
+        return !std::isspace(ch);
+      }));
+      block.erase(std::find_if(block.rbegin(), block.rend(), [](unsigned char ch) {
+                   return !std::isspace(ch);
+                 }).base(),
+                 block.end());
+
+      json toolCall = json::parse(block);
       result["toolCalls"].push_back(toolCall);
     } catch (...) {
       // Ignore parse errors
@@ -311,6 +331,7 @@ AICopilotAgent::ProcessAgenticRequest(const std::string &userMessage) {
 
   const int maxIterations = 5; // Prevent infinite loops
   std::string finalResponse;
+  std::vector<std::string> actionsSummary;
 
   for (int i = 0; i < maxIterations; ++i) {
     // Build prompt and call LLM
@@ -330,8 +351,8 @@ AICopilotAgent::ProcessAgenticRequest(const std::string &userMessage) {
     // Execute any tool calls
     auto &toolCalls = parsed["toolCalls"];
     if (toolCalls.empty()) {
-      // No more tool calls, we're done
-      finalResponse = llmResponse;
+      // No more tool calls, we're done - clean up the response
+      finalResponse = CleanResponseForUser(llmResponse);
       break;
     }
 
@@ -341,6 +362,11 @@ AICopilotAgent::ProcessAgenticRequest(const std::string &userMessage) {
       json params = call.value("params", json::object());
 
       json result = ExecuteToolCall(toolName, params);
+      
+      // Track what was done for user summary
+      if (result.contains("message")) {
+        actionsSummary.push_back(result["message"].get<std::string>());
+      }
 
       // Add tool result as system message
       Message resultMsg;
@@ -349,10 +375,53 @@ AICopilotAgent::ProcessAgenticRequest(const std::string &userMessage) {
       m_history.push_back(resultMsg);
     }
 
-    finalResponse = llmResponse;
+    finalResponse = CleanResponseForUser(llmResponse);
+  }
+
+  // If we executed tools, provide a clean summary
+  if (!actionsSummary.empty()) {
+    std::string summary;
+    for (const auto& action : actionsSummary) {
+      if (!summary.empty()) summary += "\n";
+      summary += action;
+    }
+    // Append any remaining cleaned response
+    std::string cleaned = CleanResponseForUser(finalResponse);
+    if (!cleaned.empty() && cleaned.find("```") == std::string::npos) {
+      summary += "\n" + cleaned;
+    }
+    return summary;
   }
 
   return finalResponse;
+}
+
+std::string AICopilotAgent::CleanResponseForUser(const std::string& response) {
+  // Remove tool call blocks from the response
+  std::string cleaned = response;
+  
+  // Remove ```tool ... ``` blocks
+  std::regex toolBlockRegex("```tool[^`]*```", std::regex::icase);
+  cleaned = std::regex_replace(cleaned, toolBlockRegex, "");
+  
+  // Remove any JSON blocks that look like tool calls
+  std::regex jsonToolRegex("```json[^`]*\"tool\"[^`]*```", std::regex::icase);
+  cleaned = std::regex_replace(cleaned, jsonToolRegex, "");
+  
+  // Clean up excessive whitespace
+  std::regex multiNewline("\n{3,}");
+  cleaned = std::regex_replace(cleaned, multiNewline, "\n\n");
+  
+  // Trim leading/trailing whitespace
+  auto start = cleaned.find_first_not_of(" \t\n\r");
+  auto end = cleaned.find_last_not_of(" \t\n\r");
+  if (start != std::string::npos && end != std::string::npos) {
+    cleaned = cleaned.substr(start, end - start + 1);
+  } else {
+    cleaned.clear();
+  }
+  
+  return cleaned;
 }
 
 } // namespace Aetherion::Editor

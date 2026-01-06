@@ -1,16 +1,50 @@
 #include "Aetherion/Editor/TabPanelManager.h"
 
 #include <QApplication>
+#include <QGraphicsOpacityEffect>
 #include <QMainWindow>
+#include <QParallelAnimationGroup>
+#include <QPropertyAnimation>
 #include <QSettings>
 #include <QSplitter>
 #include <QStyleFactory>
+#include <QVariantAnimation>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QList>
+#include <algorithm>
 
 namespace Aetherion::Editor
 {
+namespace
+{
+bool HasNativeChild(QWidget* widget)
+{
+    if (!widget) {
+        return false;
+    }
+
+    if (widget->testAttribute(Qt::WA_NativeWindow) ||
+        widget->testAttribute(Qt::WA_PaintOnScreen)) {
+        return true;
+    }
+
+    const auto children =
+        widget->findChildren<QWidget*>(QString(), Qt::FindChildrenRecursively);
+    for (const auto* child : children) {
+        if (!child) {
+            continue;
+        }
+        if (child->testAttribute(Qt::WA_NativeWindow) ||
+            child->testAttribute(Qt::WA_PaintOnScreen)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+} // namespace
+
 
 TabPanelManager::TabPanelManager(QWidget* parent)
     : QWidget(parent)
@@ -78,6 +112,7 @@ TabPanelManager::TabPanelManager(QWidget* parent)
     mainLayout->addWidget(m_verticalSplitter);
 
     SetupPanelStyle();
+    SetupPanelAnimations();
 
     setLayout(mainLayout);
 }
@@ -115,7 +150,89 @@ void TabPanelManager::CreatePanelGroups(QMainWindow* mainWindow)
     }
 }
 
-void TabPanelManager::AddToLeftPanel(QWidget* widget, const QString& tabName)
+void TabPanelManager::SetupPanelAnimations()
+{
+    for (auto* tabWidget : { m_leftPanel, m_rightPanel, m_bottomPanel }) {
+        if (!tabWidget) {
+            continue;
+        }
+
+        connect(tabWidget, &QTabWidget::currentChanged, this,
+                [this, tabWidget](int index) {
+                    AnimateTabChange(tabWidget, index);
+                });
+    }
+}
+
+void TabPanelManager::AnimateTabChange(QTabWidget* tabWidget, int index)
+{
+    if (!tabWidget || index < 0) {
+        return;
+    }
+
+    auto* page = tabWidget->widget(index);
+    if (!page || !page->isVisible()) {
+        return;
+    }
+
+    const QRect endRect = page->geometry();
+    if (!endRect.isValid()) {
+        return;
+    }
+
+    const int offset = 8;
+    const QRect startRect = endRect.translated(0, offset);
+    page->setGeometry(startRect);
+
+    auto* slide = new QPropertyAnimation(page, "geometry", page);
+    slide->setDuration(220);
+    slide->setStartValue(startRect);
+    slide->setEndValue(endRect);
+    slide->setEasingCurve(QEasingCurve::OutCubic);
+
+    if (HasNativeChild(page)) {
+        connect(slide, &QPropertyAnimation::finished, page, [page, endRect] {
+            page->setGeometry(endRect);
+        });
+        slide->start(QAbstractAnimation::DeleteWhenStopped);
+        return;
+    }
+
+    auto* opacityEffect =
+        qobject_cast<QGraphicsOpacityEffect*>(page->graphicsEffect());
+    if (page->graphicsEffect() && !opacityEffect) {
+        connect(slide, &QPropertyAnimation::finished, page, [page, endRect] {
+            page->setGeometry(endRect);
+        });
+        slide->start(QAbstractAnimation::DeleteWhenStopped);
+        return;
+    }
+
+    if (!opacityEffect) {
+        opacityEffect = new QGraphicsOpacityEffect(page);
+        page->setGraphicsEffect(opacityEffect);
+    }
+
+    opacityEffect->setOpacity(0.0);
+
+    auto* fade = new QPropertyAnimation(opacityEffect, "opacity", page);
+    fade->setDuration(180);
+    fade->setStartValue(0.0);
+    fade->setEndValue(1.0);
+    fade->setEasingCurve(QEasingCurve::OutCubic);
+
+    auto* group = new QParallelAnimationGroup(page);
+    group->addAnimation(fade);
+    group->addAnimation(slide);
+    connect(group, &QParallelAnimationGroup::finished, page,
+            [page, opacityEffect, endRect] {
+                page->setGeometry(endRect);
+                opacityEffect->setOpacity(1.0);
+            });
+    group->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void TabPanelManager::AddToLeftPanel(QWidget* widget, const QString& tabName)   
 {
     if (m_leftPanel && widget) {
         m_leftPanel->addTab(widget, tabName);
@@ -223,26 +340,84 @@ int TabPanelManager::GetActiveBottomTabIndex() const
 
 void TabPanelManager::SetBottomPanelVisible(bool visible)
 {
-    if (m_bottomPanel) {
-        m_bottomPanel->setVisible(visible);
+    if (!m_bottomPanel || !m_verticalSplitter) {
+        if (m_bottomPanel) {
+            m_bottomPanel->setVisible(visible);
+        }
+        return;
     }
 
-    if (m_verticalSplitter && m_bottomPanel) {
-        QList<int> sizes = m_verticalSplitter->sizes();
-        if (!visible) {
-            if (sizes.size() >= 2) {
-                sizes[0] = sizes[0] + sizes[1];
-                sizes[1] = 0;
-                m_verticalSplitter->setSizes(sizes);
-            }
-        } else {
-            if (sizes.size() >= 2 && sizes[1] == 0) {
-                sizes[0] = 3;
-                sizes[1] = 1;
-                m_verticalSplitter->setSizes(sizes);
-            }
+    QList<int> startSizes = m_verticalSplitter->sizes();
+    if (startSizes.size() < 2) {
+        m_bottomPanel->setVisible(visible);
+        return;
+    }
+
+    const int total = startSizes[0] + startSizes[1];
+    QList<int> endSizes = startSizes;
+
+    if (!visible) {
+        endSizes[0] = total;
+        endSizes[1] = 0;
+    } else {
+        if (startSizes[1] == 0) {
+            const int bottom = std::max(1, total / 4);
+            endSizes[1] = bottom;
+            endSizes[0] = std::max(1, total - bottom);
         }
     }
+
+    if (startSizes == endSizes) {
+        m_bottomPanel->setVisible(visible);
+        m_verticalSplitter->setSizes(endSizes);
+        return;
+    }
+
+    if (m_bottomPanelAnimation) {
+        m_bottomPanelAnimation->stop();
+        m_bottomPanelAnimation->deleteLater();
+        m_bottomPanelAnimation = nullptr;
+    }
+
+    if (visible) {
+        m_bottomPanel->setVisible(true);
+    }
+
+    auto* animation = new QVariantAnimation(this);
+    m_bottomPanelAnimation = animation;
+    animation->setDuration(220);
+    animation->setStartValue(0.0);
+    animation->setEndValue(1.0);
+    animation->setEasingCurve(QEasingCurve::OutCubic);
+
+    connect(animation, &QVariantAnimation::valueChanged, this,
+            [this, startSizes, endSizes](const QVariant& value) {
+                const double t = value.toDouble();
+                QList<int> sizes;
+                sizes.reserve(startSizes.size());
+                for (int i = 0; i < startSizes.size(); ++i) {
+                    const int start = startSizes[i];
+                    const int end = endSizes[i];
+                    sizes.append(static_cast<int>(start + (end - start) * t));
+                }
+                m_verticalSplitter->setSizes(sizes);
+            });
+
+    connect(animation, &QVariantAnimation::finished, this,
+            [this, visible, endSizes] {
+                if (m_verticalSplitter) {
+                    m_verticalSplitter->setSizes(endSizes);
+                }
+                if (m_bottomPanel) {
+                    m_bottomPanel->setVisible(visible);
+                }
+                if (m_bottomPanelAnimation) {
+                    m_bottomPanelAnimation->deleteLater();
+                    m_bottomPanelAnimation = nullptr;
+                }
+            });
+
+    animation->start();
 }
 
 bool TabPanelManager::IsBottomPanelVisible() const

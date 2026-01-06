@@ -3,6 +3,7 @@
 #include "Aetherion/Editor/AICopilotAgent.h"
 #include <functional>
 #include <memory>
+#include <cstdint>
 
 namespace Aetherion::Scene {
 class Scene;
@@ -14,6 +15,9 @@ namespace Aetherion::Editor {
 // Forward declaration for command executor type
 class Command;
 using CommandExecutor = std::function<void(std::unique_ptr<Command>)>;
+
+// Callback for entity highlighting
+using EntityHighlightCallback = std::function<void(uint64_t entityId, float duration)>;
 
 /**
  * Factory for registering AI Copilot tools that can create/modify scene
@@ -31,10 +35,12 @@ public:
    * @param scene The current scene (can be null)
    * @param selected The currently selected entity (can be null)
    * @param executor Command executor for undo/redo support (can be null)
+   * @param highlightCallback Callback to highlight entities during AI operations
    */
   static void RegisterAllTools(AICopilotAgent &agent, Scene::Scene *scene,
                                Scene::Entity *selected,
-                               const CommandExecutor &executor);
+                               const CommandExecutor &executor,
+                               const EntityHighlightCallback &highlightCallback = nullptr);
 };
 
 } // namespace Aetherion::Editor

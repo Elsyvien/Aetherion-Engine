@@ -9,6 +9,7 @@
 
 class QSplitter;
 class QVBoxLayout;
+class QVariantAnimation;
 
 class QMainWindow;
 
@@ -73,10 +74,13 @@ private:
     QSplitter* m_verticalSplitter = nullptr;
     QSplitter* m_horizontalSplitter = nullptr;
     QWidget* m_centerContainer = nullptr;
-    QTabWidget* m_leftPanel = nullptr;      // Asset Browser & Hierarchy
-    QTabWidget* m_rightPanel = nullptr;     // Inspector & Previews & Copilot
+    QTabWidget* m_leftPanel = nullptr;      // Asset Browser & Hierarchy        
+    QTabWidget* m_rightPanel = nullptr;     // Inspector & Previews & Copilot   
     QTabWidget* m_bottomPanel = nullptr;    // Console & Statistics
+    QVariantAnimation* m_bottomPanelAnimation = nullptr;
 
+    void SetupPanelAnimations();
+    void AnimateTabChange(QTabWidget* tabWidget, int index);
     void SetupPanelStyle();
 };
 

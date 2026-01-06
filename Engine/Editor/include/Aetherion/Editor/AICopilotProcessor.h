@@ -43,7 +43,8 @@ struct CopilotLLMConfig {
 
 class AICopilotProcessor {
 public:
-    using CommandExecutor = std::function<void(std::unique_ptr<Command>)>;      
+    using CommandExecutor = std::function<void(std::unique_ptr<Command>)>;
+    using EntityHighlightCallback = std::function<void(uint64_t entityId, float duration)>;
 
     AICopilotProcessor(CommandExecutor executor);
     ~AICopilotProcessor();
@@ -51,6 +52,7 @@ public:
     void SetScene(std::shared_ptr<Scene::Scene> scene);
     void SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry);     
     void SetSelectedEntity(std::shared_ptr<Scene::Entity> selected);
+    void SetHighlightCallback(const EntityHighlightCallback& callback) { m_highlightCallback = callback; }
     
     // Configure LLM settings
     void ConfigureLLM(const CopilotLLMConfig& config);
@@ -73,6 +75,7 @@ private:
     std::shared_ptr<Assets::AssetRegistry> m_assetRegistry;
     std::shared_ptr<Scene::Entity> m_selectedEntity;
     CommandExecutor m_executor;
+    EntityHighlightCallback m_highlightCallback;
     
     CopilotLLMConfig m_llmConfig;
     std::unique_ptr<AICopilotAgent> m_agent;

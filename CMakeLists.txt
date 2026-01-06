@@ -316,6 +316,8 @@ target_link_libraries(AetherionSelfTests
 add_executable(AetherionCopilotTest
     tests/CopilotIntentTest.cpp
     Engine/Editor/src/AICopilotProcessor.cpp
+    Engine/Editor/src/AICopilotAgent.cpp
+    Engine/Editor/src/AICopilotTools.cpp
 )
 target_include_directories(AetherionCopilotTest
     PRIVATE
