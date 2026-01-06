@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <random>
+#include <functional>
 
 namespace Aetherion::Assets
 {
@@ -47,10 +48,15 @@ namespace Aetherion::Assets
         outHeight = 256;
         std::vector<uint8_t> pixels(outWidth * outHeight * 4);
 
-        std::mt19937 rng(12345); // Deterministic based on nothing for now, ideally hash of asset.data
-        if (!asset.data.empty()) {
-             rng.seed(static_cast<unsigned int>(asset.data[0] * 10000));
+        // Compute hash of asset.data for deterministic but unique seed
+        size_t seed = 0;
+        std::hash<float> hasher;
+        for (const auto& value : asset.data) {
+            // Hash combine algorithm from boost
+            seed ^= hasher(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
         }
+        
+        std::mt19937 rng(static_cast<unsigned int>(seed));
 
         std::uniform_int_distribution<int> dist(0, 255);
 
