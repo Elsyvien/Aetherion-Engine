@@ -11,6 +11,8 @@
 #include "Aetherion/Runtime/EngineContext.h"
 #include "Aetherion/Scene/AudioListenerComponent.h"
 #include "Aetherion/Scene/AudioSourceComponent.h"
+#include "Aetherion/Scene/AnimationSystem.h"
+#include "Aetherion/Scene/AnimatorComponent.h"
 #include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/ColliderComponent.h"
 #include "Aetherion/Scene/Entity.h"
@@ -192,6 +194,35 @@ bool SceneSerializer::Save(const Scene &scene,
       const auto offset = collider->GetOffset();
       colJson["offset"] = {offset[0], offset[1], offset[2]};
       components["Collider"] = std::move(colJson);
+    }
+
+    if (auto skeleton = entity->GetComponent<SkeletonComponent>()) {
+      Json skeletonJson;
+      skeletonJson["skeletonPath"] = skeleton->GetSkeletonAssetPath();
+      components["Skeleton"] = std::move(skeletonJson);
+    }
+
+    if (auto animator = entity->GetComponent<AnimatorComponent>()) {
+      Json animatorJson;
+      animatorJson["speed"] = animator->GetSpeed();
+      animatorJson["rootMotion"] = animator->IsRootMotionEnabled();
+
+      Json clipArray = Json::array();
+      const auto &sources = animator->GetClipSources();
+      for (const auto &entry : animator->GetClips()) {
+        const auto &name = entry.first;
+        auto sourceIt = sources.find(name);
+        if (sourceIt == sources.end() || sourceIt->second.empty()) {
+          continue;
+        }
+
+        Json clipJson;
+        clipJson["name"] = name;
+        clipJson["path"] = sourceIt->second;
+        clipArray.push_back(std::move(clipJson));
+      }
+      animatorJson["clips"] = std::move(clipArray);
+      components["Animator"] = std::move(animatorJson);
     }
 
     if (auto audioSource = entity->GetComponent<AudioSourceComponent>()) {
@@ -384,11 +415,11 @@ SceneSerializer::Load(const std::filesystem::path &path) const {
       auto rigidbodyIt = components.find("Rigidbody");
       if (rigidbodyIt != components.end() && rigidbodyIt->is_object()) {
         const Json &rbJson = *rigidbodyIt;
-        auto rigidbody = std::make_shared<RigidbodyComponent>();
+      auto rigidbody = std::make_shared<RigidbodyComponent>();
 
-        int motionType = ReadInt(rbJson, "motionType", 2);
-        if (motionType < 0 || motionType > 2)
-          motionType = 2;
+      int motionType = ReadInt(rbJson, "motionType", 2);
+      if (motionType < 0 || motionType > 2)
+        motionType = 2;
         rigidbody->SetMotionType(
             static_cast<RigidbodyComponent::MotionType>(motionType));
         rigidbody->SetMass(ReadNumber(rbJson, "mass", 1.0f));
@@ -429,6 +460,45 @@ SceneSerializer::Load(const std::filesystem::path &path) const {
         }
 
         entity->AddComponent(collider);
+      }
+
+      auto skeletonIt = components.find("Skeleton");
+      if (skeletonIt != components.end() && skeletonIt->is_object()) {
+        const Json &skeletonJson = *skeletonIt;
+        auto skeleton = std::make_shared<SkeletonComponent>();
+        const std::string skeletonPath =
+            ReadString(skeletonJson, "skeletonPath", std::string());
+        if (!skeletonPath.empty()) {
+          skeleton->LoadSkeletonFromFile(skeletonPath);
+        }
+        entity->AddComponent(skeleton);
+      }
+
+      auto animatorIt = components.find("Animator");
+      if (animatorIt != components.end() && animatorIt->is_object()) {
+        const Json &animJson = *animatorIt;
+        auto animator = std::make_shared<AnimatorComponent>();
+        animator->SetSpeed(ReadNumber(animJson, "speed", animator->GetSpeed()));
+        animator->SetRootMotionEnabled(
+            ReadBool(animJson, "rootMotion", animator->IsRootMotionEnabled()));
+
+        auto clipsIt = animJson.find("clips");
+        if (clipsIt != animJson.end() && clipsIt->is_array()) {
+          for (const auto &clipJson : *clipsIt) {
+            if (!clipJson.is_object()) {
+              continue;
+            }
+            std::string clipName =
+                ReadString(clipJson, "name", std::string());
+            std::string clipPath =
+                ReadString(clipJson, "path", std::string());
+            if (!clipPath.empty()) {
+              animator->AddClipFromFile(clipName, clipPath);
+            }
+          }
+        }
+
+        entity->AddComponent(animator);
       }
 
       auto audioSourceIt = components.find("AudioSource");
@@ -484,6 +554,8 @@ SceneSerializer::Load(const std::filesystem::path &path) const {
     parentTransform->AddChild(entity->GetId());
   }
 
+  scene->AddSystem(std::make_shared<AnimationSystem>());
+
   return scene;
 }
 
@@ -534,6 +606,8 @@ std::shared_ptr<Scene> SceneSerializer::CreateDefaultScene() const {
     }
     assets->Scan(root.string());
   }
+
+  scene->AddSystem(std::make_shared<AnimationSystem>());
 
   return scene;
 }

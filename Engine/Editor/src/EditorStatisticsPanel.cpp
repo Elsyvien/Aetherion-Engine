@@ -17,6 +17,7 @@
 #include "Aetherion/Scene/ColliderComponent.h"
 #include "Aetherion/Scene/AudioSourceComponent.h"
 #include "Aetherion/Scene/AIBehaviorComponent.h"
+#include "Aetherion/Scene/AnimatorComponent.h"
 
 namespace Aetherion::Editor {
 
@@ -96,6 +97,9 @@ void EditorStatisticsPanel::RefreshStats()
         int meshCount = 0;
         int lightCount = 0;
         int cameraCount = 0;
+        int animatorCount = 0;
+        int skeletonCount = 0;
+        int boneCount = 0;
         
         for (const auto& entity : entities) {
             if (!entity) continue;
@@ -116,6 +120,17 @@ void EditorStatisticsPanel::RefreshStats()
             }
             if (entity->GetComponent<Scene::RigidbodyComponent>()) componentCount++;
             if (entity->GetComponent<Scene::ColliderComponent>()) componentCount++;
+            if (entity->GetComponent<Scene::AnimatorComponent>()) {
+                componentCount++;
+                animatorCount++;
+            }
+            if (auto skeleton = entity->GetComponent<Scene::SkeletonComponent>()) {
+                componentCount++;
+                skeletonCount++;
+                if (auto skelData = skeleton->GetSkeleton()) {
+                    boneCount += static_cast<int>(skelData->GetBoneCount());
+                }
+            }
             if (entity->GetComponent<Scene::AudioSourceComponent>()) componentCount++;
             if (entity->GetComponent<Scene::AIBehaviorComponent>()) componentCount++;
         }
@@ -125,12 +140,18 @@ void EditorStatisticsPanel::RefreshStats()
         m_meshCountLabel->setText(formatNumber(meshCount));
         m_lightCountLabel->setText(formatNumber(lightCount));
         m_cameraCountLabel->setText(formatNumber(cameraCount));
+        m_animatorCountLabel->setText(formatNumber(animatorCount));
+        m_skeletonCountLabel->setText(formatNumber(skeletonCount));
+        m_boneCountLabel->setText(formatNumber(boneCount));
     } else {
         m_entityCountLabel->setText("0");
         m_componentCountLabel->setText("0");
         m_meshCountLabel->setText("0");
         m_lightCountLabel->setText("0");
         m_cameraCountLabel->setText("0");
+        m_animatorCountLabel->setText("0");
+        m_skeletonCountLabel->setText("0");
+        m_boneCountLabel->setText("0");
     }
     
     // Render stats
@@ -187,7 +208,16 @@ void EditorStatisticsPanel::setupUI()
     
     m_cameraCountLabel = new QLabel("0", sceneGroup);
     sceneLayout->addRow(tr("Cameras:"), m_cameraCountLabel);
-    
+
+    m_animatorCountLabel = new QLabel("0", sceneGroup);
+    sceneLayout->addRow(tr("Animators:"), m_animatorCountLabel);
+
+    m_skeletonCountLabel = new QLabel("0", sceneGroup);
+    sceneLayout->addRow(tr("Skeletons:"), m_skeletonCountLabel);
+
+    m_boneCountLabel = new QLabel("0", sceneGroup);
+    sceneLayout->addRow(tr("Bones:"), m_boneCountLabel);
+
     m_layout->addWidget(sceneGroup);
     
     // Render Group

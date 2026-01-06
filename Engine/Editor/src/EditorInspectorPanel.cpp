@@ -4,6 +4,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QImageReader>
@@ -28,6 +29,7 @@
 #include "Aetherion/Editor/Commands/TransformCommand.h"
 #include "Aetherion/Scene/AIBehaviorComponent.h"
 #include "Aetherion/Scene/AudioSourceComponent.h"
+#include "Aetherion/Scene/AnimatorComponent.h"
 #include "Aetherion/Scene/CameraComponent.h"
 #include "Aetherion/Scene/ColliderComponent.h"
 #include "Aetherion/Scene/Entity.h"
@@ -128,6 +130,10 @@ QString AssetTypeLabel(Aetherion::Assets::AssetRegistry::AssetType type) {
     return "Scene";
   case AssetType::Shader:
     return "Shader";
+  case AssetType::Animation:
+    return "Animation";
+  case AssetType::Skeleton:
+    return "Skeleton";
   default:
     return "Other";
   }
@@ -516,13 +522,15 @@ void EditorInspectorPanel::RebuildUi() {
   auto camera = m_entity->GetComponent<Scene::CameraComponent>();
   auto rigidbody = m_entity->GetComponent<Scene::RigidbodyComponent>();
   auto collider = m_entity->GetComponent<Scene::ColliderComponent>();
+  auto skeleton = m_entity->GetComponent<Scene::SkeletonComponent>();
+  auto animator = m_entity->GetComponent<Scene::AnimatorComponent>();
   auto audioSource = m_entity->GetComponent<Scene::AudioSourceComponent>();
   auto aiBehavior = m_entity->GetComponent<Scene::AIBehaviorComponent>();
   auto particleEmitter =
       m_entity->GetComponent<Scene::ParticleEmitterComponent>();
 
   if (!transform && !mesh && !light && !camera && !rigidbody && !collider &&
-      !audioSource && !aiBehavior && !particleEmitter) {
+      !skeleton && !animator && !audioSource && !aiBehavior && !particleEmitter) {
     auto *noEditable =
         new QLabel(tr("No editable components on selected entity."), m_content);
     noEditable->setAlignment(Qt::AlignTop | Qt::AlignLeft);
@@ -1773,6 +1781,187 @@ void EditorInspectorPanel::RebuildUi() {
         makeComponentHeader(tr("Collider"), collider, formHost));
   }
 
+  // Skeleton Component UI
+  if (skeleton) {
+    auto *formHost = new QWidget(m_content);
+    auto *form = new QFormLayout(formHost);
+    form->setLabelAlignment(Qt::AlignLeft);
+
+    auto *pathEdit = new QLineEdit(m_content);
+    pathEdit->setText(
+        QString::fromStdString(skeleton->GetSkeletonAssetPath()));
+    pathEdit->setPlaceholderText(
+        tr("assets/animations/character.skeleton.json"));
+
+    auto *browseBtn = new QPushButton(tr("Browse"), m_content);
+    browseBtn->setMaximumWidth(70);
+
+    auto *pathRow = new QWidget(m_content);
+    auto *pathLayout = new QHBoxLayout(pathRow);
+    pathLayout->setContentsMargins(0, 0, 0, 0);
+    pathLayout->setSpacing(4);
+    pathLayout->addWidget(pathEdit, 1);
+    pathLayout->addWidget(browseBtn);
+    form->addRow(tr("Skeleton File"), pathRow);
+
+    auto *boneCountLabel = new QLabel(m_content);
+    if (auto skeletonData = skeleton->GetSkeleton()) {
+      boneCountLabel->setText(
+          QString::number(skeletonData->GetBoneCount()));
+    } else {
+      boneCountLabel->setText("0");
+    }
+    form->addRow(tr("Bones"), boneCountLabel);
+
+    auto applySkeleton = [this, skeleton, pathEdit, boneCountLabel]() {
+      if (m_buildingUi || !m_entity) {
+        return;
+      }
+
+      const QString pathText = pathEdit->text().trimmed();
+      if (pathText.isEmpty()) {
+        skeleton->SetSkeleton(nullptr);
+        boneCountLabel->setText("0");
+        emit sceneModified();
+        return;
+      }
+
+      const std::string path = pathText.toStdString();
+      if (!skeleton->LoadSkeletonFromFile(path)) {
+        QMessageBox::warning(
+            this, tr("Skeleton Load Failed"),
+            tr("Failed to load skeleton:\n%1").arg(pathText));
+        pathEdit->setText(
+            QString::fromStdString(skeleton->GetSkeletonAssetPath()));
+        return;
+      }
+
+      if (auto skeletonData = skeleton->GetSkeleton()) {
+        boneCountLabel->setText(
+            QString::number(skeletonData->GetBoneCount()));
+      } else {
+        boneCountLabel->setText("0");
+      }
+      emit sceneModified();
+    };
+
+    connect(pathEdit, &QLineEdit::editingFinished, this,
+            [applySkeleton]() { applySkeleton(); });
+    connect(browseBtn, &QPushButton::clicked, this,
+            [this, pathEdit, applySkeleton]() {
+              const QString filter =
+                  tr("Skeleton (*.skeleton.json);;JSON (*.json);;All Files (*)");
+              QString selected = QFileDialog::getOpenFileName(
+                  this, tr("Load Skeleton"), QString(), filter);
+              if (selected.isEmpty()) {
+                return;
+              }
+              pathEdit->setText(selected);
+              applySkeleton();
+            });
+
+    formHost->setLayout(form);
+    m_contentLayout->addWidget(
+        makeComponentHeader(tr("Skeleton"), skeleton, formHost));
+  }
+
+  // Animator Component UI
+  if (animator) {
+    auto *formHost = new QWidget(m_content);
+    auto *form = new QFormLayout(formHost);
+    form->setLabelAlignment(Qt::AlignLeft);
+
+    auto *speedSpin = makeSpin(0.01, 10.0, 0.1);
+    speedSpin->setValue(animator->GetSpeed());
+    form->addRow(tr("Speed"), speedSpin);
+
+    auto *rootMotionCheck = new QCheckBox(m_content);
+    rootMotionCheck->setChecked(animator->IsRootMotionEnabled());
+    form->addRow(tr("Root Motion"), rootMotionCheck);
+
+    auto *clipCombo = new QComboBox(m_content);
+    const auto &clipSources = animator->GetClipSources();
+    for (const auto &entry : animator->GetClips()) {
+      QString clipName = QString::fromStdString(entry.first);
+      clipCombo->addItem(clipName);
+      auto sourceIt = clipSources.find(entry.first);
+      if (sourceIt != clipSources.end() && !sourceIt->second.empty()) {
+        clipCombo->setItemData(
+            clipCombo->count() - 1,
+            QString::fromStdString(sourceIt->second), Qt::ToolTipRole);
+      }
+    }
+
+    auto *clipRow = new QWidget(m_content);
+    auto *clipLayout = new QHBoxLayout(clipRow);
+    clipLayout->setContentsMargins(0, 0, 0, 0);
+    clipLayout->setSpacing(4);
+
+    auto *addClipBtn = new QPushButton(tr("Add"), m_content);
+    auto *removeClipBtn = new QPushButton(tr("Remove"), m_content);
+
+    clipLayout->addWidget(clipCombo, 1);
+    clipLayout->addWidget(addClipBtn);
+    clipLayout->addWidget(removeClipBtn);
+    form->addRow(tr("Clips"), clipRow);
+
+    auto applyAnimator = [this, animator, speedSpin, rootMotionCheck]() {
+      if (m_buildingUi || !m_entity) {
+        return;
+      }
+      animator->SetSpeed(static_cast<float>(speedSpin->value()));
+      animator->SetRootMotionEnabled(rootMotionCheck->isChecked());
+      emit sceneModified();
+    };
+
+    connect(speedSpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
+            [applyAnimator](double) { applyAnimator(); });
+    connect(rootMotionCheck, &QCheckBox::toggled, this,
+            [applyAnimator](bool) { applyAnimator(); });
+
+    connect(addClipBtn, &QPushButton::clicked, this,
+            [this, animator]() {
+              const QString filter =
+                  tr("Animation (*.anim.json);;JSON (*.json);;All Files (*)");
+              QString selected = QFileDialog::getOpenFileName(
+                  this, tr("Load Animation Clip"), QString(), filter);
+              if (selected.isEmpty()) {
+                return;
+              }
+
+              if (!animator->AddClipFromFile(std::string(),
+                                             selected.toStdString())) {
+                QMessageBox::warning(
+                    this, tr("Animation Load Failed"),
+                    tr("Failed to load animation:\n%1").arg(selected));
+                return;
+              }
+
+              emit sceneModified();
+              RebuildUi();
+            });
+
+    connect(removeClipBtn, &QPushButton::clicked, this,
+            [this, animator, clipCombo]() {
+              const int index = clipCombo->currentIndex();
+              if (index < 0) {
+                return;
+              }
+              const QString clipName = clipCombo->itemText(index);
+              if (clipName.isEmpty()) {
+                return;
+              }
+
+              animator->RemoveClip(clipName.toStdString());
+              emit sceneModified();
+              RebuildUi();
+            });
+
+    formHost->setLayout(form);
+    m_contentLayout->addWidget(
+        makeComponentHeader(tr("Animator"), animator, formHost));
+  }
+
   // Audio Source Component UI
   if (audioSource) {
     auto *formHost = new QWidget(m_content);
@@ -1892,6 +2081,22 @@ void EditorInspectorPanel::RebuildUi() {
     if (!m_entity->GetComponent<Scene::ColliderComponent>()) {
       menu.addAction(tr("Collider"), [this] {
         auto comp = std::make_shared<Scene::ColliderComponent>();
+        if (m_commandExecutor)
+          m_commandExecutor(
+              std::make_unique<AddComponentCommand>(m_entity, comp));
+      });
+    }
+    if (!m_entity->GetComponent<Scene::SkeletonComponent>()) {
+      menu.addAction(tr("Skeleton"), [this] {
+        auto comp = std::make_shared<Scene::SkeletonComponent>();
+        if (m_commandExecutor)
+          m_commandExecutor(
+              std::make_unique<AddComponentCommand>(m_entity, comp));
+      });
+    }
+    if (!m_entity->GetComponent<Scene::AnimatorComponent>()) {
+      menu.addAction(tr("Animator"), [this] {
+        auto comp = std::make_shared<Scene::AnimatorComponent>();
         if (m_commandExecutor)
           m_commandExecutor(
               std::make_unique<AddComponentCommand>(m_entity, comp));

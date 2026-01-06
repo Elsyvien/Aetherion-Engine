@@ -1,5 +1,10 @@
 #include <Aetherion/Assets/AssetRegistry.h>
+#include <Aetherion/Assets/LatentAssetLoader.h>
 #include <Aetherion/Scripting/ScriptingPlaceholder.h>
+#include <Aetherion/Scene/Scene.h>
+#include <Aetherion/Scene/Entity.h>
+#include <Aetherion/Scene/SemanticComponent.h>
+#include <Aetherion/Scene/SemanticGraph.h>
 
 #include <chrono>
 #include <filesystem>
@@ -9,9 +14,70 @@
 #include <thread>
 
 using Aetherion::Assets::AssetRegistry;
+using Aetherion::Assets::LatentAssetLoader;
+using Aetherion::Assets::LatentDecoder;
 using Aetherion::Scripting::ScriptingRuntime;
+using Aetherion::Scene::Scene;
+using Aetherion::Scene::SemanticGraph;
+using Aetherion::Scene::SemanticComponent;
 
 namespace {
+
+bool TestSemanticGraph() {
+    std::cout << "[Test] Semantic Graph\n";
+    Scene scene("TestScene");
+    
+    auto entity = scene.CreateEntity("Chair");
+    auto semantic = std::make_unique<SemanticComponent>();
+    semantic->AddTag("Furniture");
+    semantic->AddTag("Wood");
+    semantic->SetDescription("A sturdy wooden chair.");
+    semantic->SetAttribute("Flammability", 0.8f);
+    
+    // Manually adding component for test since Entity API might be restricted or require shared_ptr
+    // Assuming Entity has AddComponent method taking unique_ptr or shared_ptr
+    // Checking Entity.h... CreateEntity returns shared_ptr.
+    // Entity::AddComponent<T>(args...) is typical.
+    entity->AddComponent<SemanticComponent>(); 
+    auto comp = entity->GetComponent<SemanticComponent>();
+    comp->AddTag("Furniture");
+    comp->AddTag("Wood");
+    comp->SetDescription("A sturdy wooden chair.");
+    comp->SetAttribute("Flammability", 0.8f);
+
+    SemanticGraph graph(&scene);
+    auto furniture = graph.FindEntitiesWithTag("Furniture");
+    if (furniture.empty()) {
+        std::cerr << "Failed to find entity by tag 'Furniture'\n";
+        return false;
+    }
+
+    auto relevant = graph.FindContextuallyRelevantEntities("wooden");
+    if (relevant.empty()) {
+        std::cerr << "Failed to find contextually relevant entity 'wooden'\n";
+        return false;
+    }
+    
+    return true;
+}
+
+bool TestLatentAssets() {
+    std::cout << "[Test] Latent Assets\n";
+    
+    Aetherion::Assets::LatentAsset asset;
+    asset.data.resize(10, 0.5f);
+    asset.modelId = "test-model";
+    
+    int w, h;
+    auto image = LatentDecoder::DecodeToImage(asset, w, h);
+    
+    if (image.empty() || w <= 0 || h <= 0) {
+        std::cerr << "Failed to decode latent asset to image\n";
+        return false;
+    }
+    
+    return true;
+}
 
 bool TestVirtualAssets() {
     std::cout << "[Test] Virtual asset registration\n";
@@ -110,6 +176,12 @@ bool TestScriptingHotReload() {
 
 int main() {
     int failures = 0;
+    if (!TestSemanticGraph()) {
+        ++failures;
+    }
+    if (!TestLatentAssets()) {
+        ++failures;
+    }
     if (!TestVirtualAssets()) {
         ++failures;
     }

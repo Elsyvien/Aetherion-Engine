@@ -3416,13 +3416,13 @@ void EditorMainWindow::RefreshBookmarksList() {
   for (const auto &bm : m_bookmarks) {
     auto *item = new QListWidgetItem(bm.name, m_bookmarkList);
     item->setToolTip(
-        tr("Pos: %.2f, %.2f, %.2f | Rot: %.1f, %.1f | Zoom: %.2f")
-            .arg(bm.posX)
-            .arg(bm.posY)
-            .arg(bm.posZ)
-            .arg(bm.rotY)
-            .arg(bm.rotX)
-            .arg(bm.zoom));
+      tr("Pos: %1, %2, %3 | Rot: %4, %5 | Zoom: %6")
+        .arg(bm.posX, 0, 'f', 2)
+        .arg(bm.posY, 0, 'f', 2)
+        .arg(bm.posZ, 0, 'f', 2)
+        .arg(bm.rotY, 0, 'f', 1)
+        .arg(bm.rotX, 0, 'f', 1)
+        .arg(bm.zoom, 0, 'f', 2));
     m_bookmarkList->addItem(item);
   }
   if (m_renameBookmarkBtn)

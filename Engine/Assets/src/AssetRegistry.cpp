@@ -490,6 +490,14 @@ std::string MakePathKey(const std::filesystem::path &path,
 AssetRegistry::AssetType ClassifyAssetType(const std::filesystem::path &path) {
   const std::string ext =
       Aetherion::Core::String::ToLower(path.extension().string());
+  const std::string filename =
+      Aetherion::Core::String::ToLower(path.filename().string());
+  if (Aetherion::Core::String::HasSuffix(filename, ".anim.json")) {
+    return AssetRegistry::AssetType::Animation;
+  }
+  if (Aetherion::Core::String::HasSuffix(filename, ".skeleton.json")) {
+    return AssetRegistry::AssetType::Skeleton;
+  }
   if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" ||
       ext == ".bmp" || ext == ".gif" || ext == ".dds" || ext == ".ktx" ||
       ext == ".ktx2") {
@@ -1348,17 +1356,21 @@ int AssetTypeOrder(AssetRegistry::AssetType type) {
     return 0;
   case AssetRegistry::AssetType::Mesh:
     return 1;
-  case AssetRegistry::AssetType::Audio:
+  case AssetRegistry::AssetType::Animation:
     return 2;
-  case AssetRegistry::AssetType::Script:
+  case AssetRegistry::AssetType::Skeleton:
     return 3;
-  case AssetRegistry::AssetType::Scene:
+  case AssetRegistry::AssetType::Audio:
     return 4;
-  case AssetRegistry::AssetType::Shader:
+  case AssetRegistry::AssetType::Script:
     return 5;
+  case AssetRegistry::AssetType::Scene:
+    return 6;
+  case AssetRegistry::AssetType::Shader:
+    return 7;
   case AssetRegistry::AssetType::Other:
   default:
-    return 6;
+    return 8;
   }
 }
 } // namespace
@@ -1369,6 +1381,10 @@ const char *AssetRegistry::AssetTypeToString(AssetType type) {
     return "Texture";
   case AssetType::Mesh:
     return "Mesh";
+  case AssetType::Animation:
+    return "Animation";
+  case AssetType::Skeleton:
+    return "Skeleton";
   case AssetType::Audio:
     return "Audio";
   case AssetType::Script:

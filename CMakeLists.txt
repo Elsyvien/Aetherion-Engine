@@ -118,6 +118,10 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/AudioListenerComponent.cpp
     Engine/Scene/src/AIBehaviorComponent.cpp
     Engine/Scene/src/ParticleEmitterComponent.cpp
+    Engine/Scene/src/SemanticComponent.cpp
+    Engine/Scene/src/SemanticGraph.cpp
+    Engine/AI/src/LocalVisionModel.cpp
+    Engine/Assets/src/LatentAssetLoader.cpp
     Engine/Audio/src/AudioEngine.cpp
     Engine/Audio/src/AudioSystem.cpp
     Engine/Scripting/src/ScriptingSystem.cpp
@@ -192,6 +196,7 @@ target_include_directories(AetherionRuntime
         Engine/Runtime/include
         Engine/Scene/include
         Engine/Assets/include
+        Engine/AI/include
         Engine/Platform/include
         Engine/Rendering/include
         Engine/Physics/include
@@ -230,6 +235,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/AICopilotPanel.cpp
     Engine/Editor/src/AICopilotProcessor.cpp
     Engine/Editor/src/AICopilotAgent.cpp
+    Engine/Editor/src/AICopilotTools.cpp
     Engine/Editor/src/EditorAssetGenerationPanel.cpp
     Engine/Editor/src/EditorStatisticsPanel.cpp
     Engine/Editor/src/EditorAnimationPanel.cpp

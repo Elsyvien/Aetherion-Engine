@@ -66,6 +66,9 @@ private:
     QLabel* m_meshCountLabel = nullptr;
     QLabel* m_lightCountLabel = nullptr;
     QLabel* m_cameraCountLabel = nullptr;
+    QLabel* m_animatorCountLabel = nullptr;
+    QLabel* m_skeletonCountLabel = nullptr;
+    QLabel* m_boneCountLabel = nullptr;
 
     // Render section
     QLabel* m_drawCallsLabel = nullptr;

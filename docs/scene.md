@@ -72,6 +72,14 @@ Parent/child bookkeeping is handled by Scene::SetParent and Scene::RemoveEntity.
 - Trigger flag and offset.
 - Dirty flag for physics recreation.
 
+### SkeletonComponent
+- Skeleton asset path (JSON skeleton file).
+- Stores bone hierarchy and current pose.
+
+### AnimatorComponent
+- Animation clip library (clip name + source path).
+- Global playback speed and root motion toggle.
+
 ### AudioSourceComponent
 - Sound path, volume, pitch, looping, spatial, play-on-awake.
 - Play/Stop requests and awake-play tracking.
@@ -111,6 +119,11 @@ Entity object:
       `useGravity`, `friction`, `restitution`
   - Collider
     - `shapeType`, `halfExtents`, `radius`, `height`, `isTrigger`, `offset`
+  - Skeleton
+    - `skeletonPath`
+  - Animator
+    - `speed`, `rootMotion`
+    - `clips`: array of `{ name, path }`
   - AudioSource
     - `soundPath`, `volume`, `pitch`, `loop`, `spatial`, `playOnAwake`
   - AudioListener

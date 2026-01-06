@@ -25,7 +25,9 @@ public:
 
     // Skeleton data
     void SetSkeleton(std::shared_ptr<Assets::Skeleton> skeleton);
+    bool LoadSkeletonFromFile(const std::string& path);
     [[nodiscard]] std::shared_ptr<Assets::Skeleton> GetSkeleton() const noexcept { return m_skeleton; }
+    [[nodiscard]] const std::string& GetSkeletonAssetPath() const noexcept { return m_skeletonAssetPath; }
 
     // Current pose (result of animation sampling)
     [[nodiscard]] Assets::AnimationPose& GetCurrentPose() noexcept { return m_currentPose; }
@@ -42,6 +44,7 @@ public:
 
 private:
     std::shared_ptr<Assets::Skeleton> m_skeleton;
+    std::string m_skeletonAssetPath;
     Assets::AnimationPose m_currentPose;
 };
 
@@ -70,9 +73,11 @@ public:
 
     // Animation clips library
     void AddClip(const std::string& name, std::shared_ptr<Assets::AnimationClip> clip);
+    bool AddClipFromFile(const std::string& name, const std::string& path);
     void RemoveClip(const std::string& name);
     [[nodiscard]] std::shared_ptr<Assets::AnimationClip> GetClip(const std::string& name) const;
     [[nodiscard]] const std::unordered_map<std::string, std::shared_ptr<Assets::AnimationClip>>& GetClips() const noexcept { return m_clips; }
+    [[nodiscard]] const std::unordered_map<std::string, std::string>& GetClipSources() const noexcept { return m_clipSources; }
 
     // Playback control (operates on base layer by default)
     void Play(const std::string& clipName, float blendTime = 0.0f);
@@ -130,6 +135,7 @@ private:
 
     // Animation clips
     std::unordered_map<std::string, std::shared_ptr<Assets::AnimationClip>> m_clips;
+    std::unordered_map<std::string, std::string> m_clipSources;
 
     // Animation layers (layer 0 is base layer)
     std::vector<AnimationLayer> m_layers;

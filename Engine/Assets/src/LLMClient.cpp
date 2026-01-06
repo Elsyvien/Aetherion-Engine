@@ -114,7 +114,7 @@ std::unique_ptr<ILLMClient> LLMClientFactory::Create(const LLMConfig& config) {
 
 std::vector<std::pair<LLMProvider, std::string>> LLMClientFactory::GetAvailableProviders() {
     return {
-        {LLMProvider::OpenAI, "OpenAI (GPT-4, DALL-E)"},
+        {LLMProvider::OpenAI, "OpenAI (GPT-5, IMAGE-GEN)"},
         {LLMProvider::Anthropic, "Anthropic (Claude)"},
         {LLMProvider::StabilityAI, "Stability AI (Stable Diffusion)"},
         {LLMProvider::LocalOllama, "Local Ollama"},
@@ -132,6 +132,29 @@ bool OpenAIClient::Initialize(const LLMConfig& config) {
     // Set defaults if not provided
     if (m_config.endpoint.empty()) {
         m_config.endpoint = LLMConfig::GetDefaultEndpoint(m_config.provider);
+    }
+    // Normalize Ollama endpoint to OpenAI-compatible base
+    if (m_config.provider == LLMProvider::LocalOllama) {
+        // Strip trailing slashes
+        while (!m_config.endpoint.empty() &&
+               m_config.endpoint.back() == '/') {
+            m_config.endpoint.pop_back();
+        }
+        // If user supplied /api/generate or other non-v1 path, trim it
+        const std::string generateSuffix = "/api/generate";
+        if (m_config.endpoint.size() > generateSuffix.size() &&
+            m_config.endpoint.rfind(generateSuffix) ==
+                m_config.endpoint.size() - generateSuffix.size()) {
+            m_config.endpoint.erase(m_config.endpoint.size() -
+                                    generateSuffix.size());
+        }
+        // Ensure /v1 suffix for chat/completions compatibility
+        const std::string v1Suffix = "/v1";
+        if (m_config.endpoint.size() < v1Suffix.size() ||
+            m_config.endpoint.rfind(v1Suffix) !=
+                m_config.endpoint.size() - v1Suffix.size()) {
+            m_config.endpoint += v1Suffix;
+        }
     }
     if (m_config.model.empty()) {
         m_config.model = LLMConfig::GetDefaultModel(m_config.provider);

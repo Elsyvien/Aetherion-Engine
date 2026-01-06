@@ -9,11 +9,13 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QComboBox>
+#include <QFileDialog>
 #include <QSlider>
 #include <QLabel>
 #include <QPushButton>
 #include <QDoubleSpinBox>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QTimerEvent>
 #include <QStyle>
 
@@ -428,8 +430,6 @@ void EditorAnimationPanel::OnLoopModeChanged(int index)
 
 void EditorAnimationPanel::OnAddClipClicked()
 {
-    // TODO: Open file dialog to load animation clip
-    // For now, create a test animation
     auto entity = m_selectedEntity.lock();
     if (!entity) return;
 
@@ -444,12 +444,41 @@ void EditorAnimationPanel::OnAddClipClicked()
     if (!skeleton)
     {
         skeleton = entity->AddComponent<Scene::SkeletonComponent>();
-        skeleton->SetSkeleton(Assets::AnimationLoader::CreateTestSkeleton());
     }
 
-    // Add test animation
-    auto testClip = Assets::AnimationLoader::CreateTestAnimation(2.0f, "Root");
-    animator->AddClip("TestAnim", testClip);
+    if (!skeleton->GetSkeleton())
+    {
+        const QString skelFilter = tr("Skeleton (*.skeleton.json);;JSON (*.json);;All Files (*)");
+        QString skelPath = QFileDialog::getOpenFileName(this, tr("Load Skeleton"), QString(), skelFilter);
+        if (!skelPath.isEmpty())
+        {
+            if (!skeleton->LoadSkeletonFromFile(skelPath.toStdString()))
+            {
+                QMessageBox::warning(this, tr("Skeleton Load Failed"),
+                                     tr("Failed to load skeleton:\n%1").arg(skelPath));
+            }
+        }
+        else
+        {
+            skeleton->SetSkeleton(Assets::AnimationLoader::CreateTestSkeleton());
+        }
+    }
+
+    const QString animFilter = tr("Animation (*.anim.json);;JSON (*.json);;All Files (*)");
+    QString animPath = QFileDialog::getOpenFileName(this, tr("Load Animation Clip"), QString(), animFilter);
+    if (!animPath.isEmpty())
+    {
+        if (!animator->AddClipFromFile(std::string(), animPath.toStdString()))
+        {
+            QMessageBox::warning(this, tr("Animation Load Failed"),
+                                 tr("Failed to load animation:\n%1").arg(animPath));
+        }
+    }
+    else
+    {
+        auto testClip = Assets::AnimationLoader::CreateTestAnimation(2.0f, "Root");
+        animator->AddClip("TestAnim", testClip);
+    }
 
     Refresh();
 }

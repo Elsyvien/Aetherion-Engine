@@ -1,6 +1,8 @@
 #include "Aetherion/Scene/AnimatorComponent.h"
 #include "Aetherion/Scene/Entity.h"
+#include "Aetherion/Assets/AnimationLoader.h"
 #include <algorithm>
+#include <filesystem>
 
 namespace Aetherion::Scene
 {
@@ -12,11 +14,42 @@ namespace Aetherion::Scene
 void SkeletonComponent::SetSkeleton(std::shared_ptr<Assets::Skeleton> skeleton)
 {
     m_skeleton = std::move(skeleton);
+    m_skeletonAssetPath.clear();
     if (m_skeleton)
     {
         m_currentPose.Resize(m_skeleton->GetBoneCount());
         ResetToBindPose();
     }
+    else
+    {
+        m_currentPose.Resize(0);
+    }
+
+    if (m_skeleton && GetEntity())
+    {
+        if (auto animator = GetEntity()->GetComponent<AnimatorComponent>())
+        {
+            for (const auto& [name, clip] : animator->GetClips())
+            {
+                if (clip)
+                {
+                    clip->BindToSkeleton(*m_skeleton);
+                }
+            }
+        }
+    }
+}
+
+bool SkeletonComponent::LoadSkeletonFromFile(const std::string& path)
+{
+    if (path.empty()) return false;
+
+    auto skeleton = Assets::AnimationLoader::LoadSkeleton(path);
+    if (!skeleton) return false;
+
+    SetSkeleton(skeleton);
+    m_skeletonAssetPath = path;
+    return true;
 }
 
 const std::vector<Assets::Mat4>& SkeletonComponent::GetSkinningMatrices() const
@@ -54,16 +87,50 @@ void SkeletonComponent::ResetToBindPose()
 
 void AnimatorComponent::AddClip(const std::string& name, std::shared_ptr<Assets::AnimationClip> clip)
 {
-    if (clip && m_cachedSkeleton && m_cachedSkeleton->GetSkeleton())
+    m_clipSources.erase(name);
+    if (clip)
     {
-        clip->BindToSkeleton(*m_cachedSkeleton->GetSkeleton());
+        if (!m_cachedSkeleton && GetEntity())
+        {
+            m_cachedSkeleton = GetEntity()->GetComponent<SkeletonComponent>().get();
+        }
+
+        if (m_cachedSkeleton && m_cachedSkeleton->GetSkeleton())
+        {
+            clip->BindToSkeleton(*m_cachedSkeleton->GetSkeleton());
+        }
     }
     m_clips[name] = std::move(clip);
+}
+
+bool AnimatorComponent::AddClipFromFile(const std::string& name, const std::string& path)
+{
+    if (path.empty()) return false;
+
+    auto clip = Assets::AnimationLoader::LoadAnimation(path);
+    if (!clip) return false;
+
+    std::string clipName = name;
+    if (clipName.empty())
+    {
+        clipName = clip->GetName();
+    }
+    if (clipName.empty())
+    {
+        std::filesystem::path clipPath(path);
+        clipName = clipPath.stem().string();
+    }
+
+    clip->SetName(clipName);
+    AddClip(clipName, clip);
+    m_clipSources[clipName] = path;
+    return true;
 }
 
 void AnimatorComponent::RemoveClip(const std::string& name)
 {
     m_clips.erase(name);
+    m_clipSources.erase(name);
 }
 
 std::shared_ptr<Assets::AnimationClip> AnimatorComponent::GetClip(const std::string& name) const
