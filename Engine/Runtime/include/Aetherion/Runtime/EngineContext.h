@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
+#include "Aetherion/Assets/LLMClient.h"
 #include "Aetherion/Core/EventBus.h"
 #include "Aetherion/Core/Types.h"
 
@@ -65,12 +67,20 @@ public:
   [[nodiscard]] std::shared_ptr<Scripting::ScriptingRuntime>
   GetScriptingRuntime() const noexcept;
 
-  void SetScriptEngine(std::shared_ptr<Scripting::ScriptEngine> engine);
+  void SetScriptEngine(std::shared_ptr<Scripting::ScriptEngine> engine);        
   [[nodiscard]] std::shared_ptr<Scripting::ScriptEngine>
   GetScriptEngine() const noexcept;
 
+  void SetAIConfig(Assets::LLMConfig config, bool enabled = true);
+  void ClearAIConfig() noexcept;
+  [[nodiscard]] bool HasAIConfig() const noexcept { return m_aiConfigEnabled; }
+  [[nodiscard]] const Assets::LLMConfig& GetAIConfig() const noexcept {
+    return m_aiConfig;
+  }
+  Assets::ILLMClient* GetAIClient();
+
   /// @brief Get the global event bus for inter-system communication
-  [[nodiscard]] Core::EventBus &GetEventBus() noexcept { return m_eventBus; }
+  [[nodiscard]] Core::EventBus &GetEventBus() noexcept { return m_eventBus; }   
   [[nodiscard]] const Core::EventBus &GetEventBus() const noexcept {
     return m_eventBus;
   }
@@ -92,9 +102,13 @@ public:
     m_stepOnceRequested = false;
     return requested;
   }
-  void ClearSimulationStepRequest() noexcept { m_stepOnceRequested = false; }
+  void ClearSimulationStepRequest() noexcept { m_stepOnceRequested = false; }   
+  [[nodiscard]] std::uint64_t GetFrameIndex() const noexcept {
+    return m_frameIndex;
+  }
+  void AdvanceFrame() noexcept { ++m_frameIndex; }
 
-  // EngineContext owns shared references to service singletons. Providers
+  // EngineContext owns shared references to service singletons. Providers      
   // remain alive until replaced or cleared by Set* methods or during
   // EngineApplication::Shutdown().
 private:
@@ -106,9 +120,13 @@ private:
   std::shared_ptr<Audio::AudioEngine> m_audioSystem;
   std::shared_ptr<Scripting::ScriptingRuntime> m_scriptingRuntime;
   std::shared_ptr<Scripting::ScriptEngine> m_scriptEngine;
+  Assets::LLMConfig m_aiConfig{};
+  bool m_aiConfigEnabled{false};
+  std::unique_ptr<Assets::ILLMClient> m_aiClient;
   Core::EventBus m_eventBus;
   bool m_simulationPlaying{false};
   bool m_simulationPaused{false};
   bool m_stepOnceRequested{false};
+  std::uint64_t m_frameIndex{0};
 };
 } // namespace Aetherion::Runtime

@@ -33,7 +33,7 @@ std::string LLMConfig::GetDefaultEndpoint(LLMProvider provider) {
         case LLMProvider::StabilityAI:
             return "https://api.stability.ai/v1";
         case LLMProvider::LocalOllama:
-            return "http://localhost:11434/api";
+            return "http://localhost:11434/v1";
         case LLMProvider::Custom:
         default:
             return "";
@@ -145,7 +145,13 @@ bool OpenAIClient::Initialize(const LLMConfig& config) {
 }
 
 bool OpenAIClient::IsReady() const {
-    return m_initialized && !m_config.apiKey.empty();
+    if (!m_initialized) {
+        return false;
+    }
+    if (m_config.provider == LLMProvider::LocalOllama) {
+        return true;
+    }
+    return !m_config.apiKey.empty();
 }
 
 bool OpenAIClient::TestConnection() {
@@ -155,7 +161,9 @@ bool OpenAIClient::TestConnection() {
     
     // Try a simple models list request
     std::unordered_map<std::string, std::string> headers;
-    headers["Authorization"] = "Bearer " + m_config.apiKey;
+    if (!m_config.apiKey.empty()) {
+        headers["Authorization"] = "Bearer " + m_config.apiKey;
+    }
     headers["Content-Type"] = "application/json";
     
     auto response = DoHttpGet(m_config.endpoint + "/models", headers);
@@ -325,7 +333,9 @@ LLMTextResponse OpenAIClient::GenerateText(const LLMTextRequest& request) {
     std::string body = QJsonDocument(json).toJson(QJsonDocument::Compact).toStdString();
     
     std::unordered_map<std::string, std::string> headers;
-    headers["Authorization"] = "Bearer " + m_config.apiKey;
+    if (!m_config.apiKey.empty()) {
+        headers["Authorization"] = "Bearer " + m_config.apiKey;
+    }
     headers["Content-Type"] = "application/json";
     
     auto response = DoHttpPost(m_config.endpoint + "/chat/completions", body, headers);
@@ -391,7 +401,9 @@ LLMImageResponse OpenAIClient::GenerateImage(const LLMImageRequest& request) {
     std::string body = QJsonDocument(json).toJson(QJsonDocument::Compact).toStdString();
     
     std::unordered_map<std::string, std::string> headers;
-    headers["Authorization"] = "Bearer " + m_config.apiKey;
+    if (!m_config.apiKey.empty()) {
+        headers["Authorization"] = "Bearer " + m_config.apiKey;
+    }
     headers["Content-Type"] = "application/json";
     
     auto response = DoHttpPost(m_config.endpoint + "/images/generations", body, headers);

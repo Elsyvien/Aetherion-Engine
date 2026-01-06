@@ -125,6 +125,7 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/ScriptComponent.cpp
     Engine/Scripting/src/ScriptingPlaceholder.cpp
     Engine/Scripting/src/LogicCopilot.cpp
+    Engine/Scripting/src/ModuleLoader.cpp
     Engine/Runtime/src/SystemScheduler.cpp
 )
 
@@ -206,6 +207,7 @@ target_link_libraries(AetherionRuntime
         Jolt
         Qt6::Network
         $<$<BOOL:${AETHERION_ENABLE_PYTHON}>:Python3::Python>
+        $<$<NOT:$<PLATFORM_ID:Windows>>:${CMAKE_DL_LIBS}>
 )
 target_compile_definitions(AetherionRuntime
     PUBLIC
@@ -227,6 +229,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorCommandPalette.cpp
     Engine/Editor/src/AICopilotPanel.cpp
     Engine/Editor/src/AICopilotProcessor.cpp
+    Engine/Editor/src/AICopilotAgent.cpp
     Engine/Editor/src/EditorAssetGenerationPanel.cpp
     Engine/Editor/src/EditorStatisticsPanel.cpp
     Engine/Editor/src/EditorAnimationPanel.cpp

@@ -515,6 +515,9 @@ public:
     ConfigureSceneSystems();
 
     if (auto scene = m_scene.lock()) {
+      scene->Tick(deltaTime, context.IsSimulationPlaying(),
+                  context.IsSimulationPaused(),
+                  context.IsSimulationStepRequested());
       for (const auto &system : scene->GetSystems()) {
         if (system) {
           system->Update(*scene, deltaTime);
@@ -1111,9 +1114,11 @@ void EngineApplication::Tick() {
     const size_t systemsCount = m_runtimeSystems.size();
     DebugPrint("Main loop started. Registered runtime systems: " +
                std::to_string(systemsCount) +
-               (m_activeScene ? " (scene bound)" : " (no active scene)"));
+               (m_activeScene ? " (scene bound)" : " (no active scene)"));      
     s_loggedFirstTick = true;
   }
+
+  m_context->AdvanceFrame();
 
   const auto now = std::chrono::steady_clock::now();
   const float deltaTime =

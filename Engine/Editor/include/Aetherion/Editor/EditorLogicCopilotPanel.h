@@ -61,6 +61,8 @@ private slots:
     void OnCopySourceClicked();
     void OnSaveClicked();
     void OnAddToProjectClicked();
+    void OnCompileAndLoadClicked();
+    void OnReloadModuleClicked();
     void OnHistoryItemSelected(QListWidgetItem* item);
     void OnSystemTypeChanged(int index);
     void OnTemplateSelected(int index);
@@ -90,6 +92,8 @@ private:
     QPushButton* m_copySourceBtn{nullptr};
     QPushButton* m_saveBtn{nullptr};
     QPushButton* m_addToProjectBtn{nullptr};
+    QPushButton* m_compileAndLoadBtn{nullptr};
+    QPushButton* m_reloadModuleBtn{nullptr};
 
     // UI Elements - Status
     QProgressBar* m_progressBar{nullptr};
@@ -101,6 +105,7 @@ private:
     Scripting::LogicCopilot* m_copilot{nullptr};
     QString m_currentRequestId;
     QString m_lastGeneratedClassName;
+    QString m_lastLoadedModuleId;
 
     struct HistoryEntry
     {

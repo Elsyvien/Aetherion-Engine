@@ -1,5 +1,7 @@
 #include "Aetherion/Scripting/LogicCopilot.h"
+#include "Aetherion/Scripting/ModuleLoader.h"
 #include "Aetherion/Assets/LLMClient.h"
+#include "Aetherion/Scene/Scene.h"
 #include <nlohmann/json.hpp>
 #include <regex>
 #include <fstream>
@@ -258,12 +260,14 @@ struct LogicCopilot::Impl
     std::string contextCode;
     
     std::unique_ptr<Assets::ILLMClient> llmClient;
+    std::unique_ptr<ModuleLoader> moduleLoader;
     
     uint64_t nextRequestId{1};
 };
 
 LogicCopilot::LogicCopilot() : m_impl(std::make_unique<Impl>())
 {
+    m_impl->moduleLoader = std::make_unique<ModuleLoader>();
 }
 
 LogicCopilot::~LogicCopilot() = default;
@@ -1049,6 +1053,104 @@ CodeCompiler::CompileResult CodeCompiler::RebuildProject()
     result.success = false;
     result.errors.push_back("Full project rebuild not yet implemented");
     return result;
+}
+
+// ============================================================================
+// LogicCopilot Hot-Reload Implementation
+// ============================================================================
+
+bool LogicCopilot::CompileToModule(const GeneratedCode& code, std::string& moduleId, std::vector<std::string>& errors)
+{
+    if (m_impl->projectRoot.empty() || m_impl->outputDir.empty())
+    {
+        errors.push_back("Project root or output directory not set");
+        return false;
+    }
+
+    // Save the generated code first
+    if (!SaveGeneratedCode(code))
+    {
+        errors.push_back("Failed to save generated code");
+        return false;
+    }
+
+    // Prepare source files
+    std::vector<std::filesystem::path> sources;
+    auto sourcePath = m_impl->outputDir / (code.className + ".cpp");
+    sources.push_back(sourcePath);
+
+    // Output library path
+    auto modulesDir = m_impl->outputDir / "modules";
+    std::filesystem::create_directories(modulesDir);
+    
+    auto outputLib = modulesDir / code.className;
+#ifdef _WIN32
+    outputLib += ".dll";
+#else
+    outputLib += ".so";
+#endif
+
+    // Compile to library
+    CodeCompiler compiler(m_impl->projectRoot);
+    auto result = compiler.CompileToLibrary(sources, outputLib);
+
+    if (!result.success)
+    {
+        errors = result.errors;
+        return false;
+    }
+
+    moduleId = code.className;
+    return true;
+}
+
+bool LogicCopilot::CompileAndLoadModule(const GeneratedCode& code, Scene::Scene* scene, 
+                                        std::string& moduleId, std::vector<std::string>& errors)
+{
+    if (!m_impl->moduleLoader)
+    {
+        errors.push_back("Module loader not initialized");
+        return false;
+    }
+
+    // Compile the code to a module
+    if (!CompileToModule(code, moduleId, errors))
+    {
+        return false;
+    }
+
+    // Get the library path
+    auto modulesDir = m_impl->outputDir / "modules";
+    auto libPath = modulesDir / moduleId;
+#ifdef _WIN32
+    libPath += ".dll";
+#else
+    libPath += ".so";
+#endif
+
+    // Set scene context
+    m_impl->moduleLoader->SetSceneContext(scene);
+
+    // Load the module
+    std::string loadedId = m_impl->moduleLoader->LoadModule(libPath, moduleId);
+    if (loadedId.empty())
+    {
+        errors.push_back("Failed to load compiled module");
+        return false;
+    }
+
+    moduleId = loadedId;
+    return true;
+}
+
+bool LogicCopilot::ReloadModule(const std::string& moduleId)
+{
+    if (!m_impl->moduleLoader)
+    {
+        return false;
+    }
+
+    return m_impl->moduleLoader->ReloadModule(moduleId);
 }
 
 } // namespace Aetherion::Scripting

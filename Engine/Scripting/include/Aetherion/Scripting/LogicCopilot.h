@@ -7,6 +7,11 @@
 #include <unordered_map>
 #include <filesystem>
 
+namespace Aetherion::Scene
+{
+    class Scene;
+}
+
 namespace Aetherion::Scripting
 {
 
@@ -120,6 +125,11 @@ public:
     bool SaveGeneratedCode(const GeneratedCode& code);
     bool AddToProject(const GeneratedCode& code);
     bool RemoveFromProject(const std::string& className);
+
+    // Hot-Reload & Module Compilation
+    bool CompileToModule(const GeneratedCode& code, std::string& moduleId, std::vector<std::string>& errors);
+    bool CompileAndLoadModule(const GeneratedCode& code, Scene::Scene* scene, std::string& moduleId, std::vector<std::string>& errors);
+    bool ReloadModule(const std::string& moduleId);
 
     // Prompt Enhancement
     std::string EnhancePrompt(const std::string& userPrompt, const std::string& systemType);

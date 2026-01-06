@@ -1,4 +1,6 @@
 #include "Aetherion/Editor/AICopilotProcessor.h"
+#include "Aetherion/Editor/AICopilotAgent.h"
+#include "Aetherion/Editor/AICopilotTools.h"
 #include "Aetherion/Editor/Commands/EntityCommands.h"
 #include "Aetherion/Editor/Commands/TransformCommand.h"
 #include "Aetherion/Scene/Scene.h"
@@ -239,10 +241,52 @@ namespace {
 AICopilotProcessor::AICopilotProcessor(CommandExecutor executor)
     : m_executor(std::move(executor))
 {
+    InitializeAgent();
+}
+
+AICopilotProcessor::~AICopilotProcessor() = default;
+
+void AICopilotProcessor::InitializeAgent() {
+    m_agent = std::make_unique<AICopilotAgent>();
+    
+    // Configure agent with LLM settings
+    AgentConfig config;
+    config.endpoint = m_llmConfig.endpoint;
+    config.model = m_llmConfig.model;
+    config.temperature = m_llmConfig.temperature;
+    config.maxTokens = m_llmConfig.maxTokens;
+    m_agent->Configure(config);
+}
+
+void AICopilotProcessor::ConfigureLLM(const CopilotLLMConfig& config) {
+    m_llmConfig = config;
+    if (m_agent) {
+        AgentConfig agentConfig;
+        agentConfig.endpoint = config.endpoint;
+        agentConfig.model = config.model;
+        agentConfig.temperature = config.temperature;
+        agentConfig.maxTokens = config.maxTokens;
+        m_agent->Configure(agentConfig);
+    }
+}
+
+void AICopilotProcessor::SetLLMEnabled(bool enabled) {
+    m_llmConfig.enabled = enabled;
+}
+
+void AICopilotProcessor::ClearHistory() {
+    if (m_agent) {
+        m_agent->ClearHistory();
+    }
 }
 
 void AICopilotProcessor::SetScene(std::shared_ptr<Scene::Scene> scene) {
     m_scene = std::move(scene);
+    
+    // Re-register tools with updated scene context
+    if (m_agent && m_scene) {
+        AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_executor);
+    }
 }
 
 void AICopilotProcessor::SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry) {
@@ -251,6 +295,11 @@ void AICopilotProcessor::SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry>
 
 void AICopilotProcessor::SetSelectedEntity(std::shared_ptr<Scene::Entity> selected) {
     m_selectedEntity = std::move(selected);
+    
+    // Re-register tools with updated selection context
+    if (m_agent && m_scene) {
+        AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_executor);
+    }
 }
 
 CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allowDryRun) {        
@@ -263,6 +312,15 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
 
     const QString trimmed = prompt.trimmed();
     if (trimmed.isEmpty()) return result;
+    
+    // Try LLM-based processing first if enabled
+    if (m_llmConfig.enabled && m_agent) {
+        auto llmResult = ProcessWithAgent(trimmed);
+        if (!llmResult.response.isEmpty() && llmResult.usedLLM) {
+            return llmResult;
+        }
+        // Fall through to pattern matching if LLM failed
+    }
 
     const QString lowered = trimmed.toLower();
     result.dryRun = allowDryRun &&
@@ -928,6 +986,38 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
     const SpawnPattern pattern = ResolvePattern(patternName, grid, count);
     executeSpawn(type, count, pattern, spacing, radius, 0.0f, 0.0f, 0.0f);
 
+    return result;
+}
+
+CopilotResult AICopilotProcessor::ProcessWithAgent(const QString& prompt) {
+    CopilotResult result;
+    result.usedLLM = false;
+    
+    if (!m_agent) {
+        result.response = "AI Agent not initialized.";
+        return result;
+    }
+    
+    if (!m_scene) {
+        result.response = "No active scene loaded.";
+        return result;
+    }
+    
+    // Ensure tools are registered with current context
+    AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_executor);
+    
+    // Process the request through the agent
+    std::string response = m_agent->ProcessAgenticRequest(prompt.toStdString());
+    
+    if (!response.empty()) {
+        result.response = QString::fromStdString(response);
+        result.usedLLM = true;
+    } else {
+        // LLM returned empty, will fall back to pattern matching
+        result.response = "";
+        result.usedLLM = false;
+    }
+    
     return result;
 }
 

@@ -206,7 +206,7 @@ void EditorSettingsDialog::updateAIFieldsFromProvider(LLMProviderType provider)
             m_imageModel->setPlaceholderText("stable-diffusion-xl-1024-v1-0");
             break;
         case LLMProviderType::LocalOllama:
-            m_endpoint->setPlaceholderText("http://localhost:11434/api");
+            m_endpoint->setPlaceholderText("http://localhost:11434/v1");
             m_model->setPlaceholderText("llama3.1");
             m_imageModel->setPlaceholderText("(Not supported locally)");
             break;

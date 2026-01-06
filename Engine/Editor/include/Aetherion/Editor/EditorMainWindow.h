@@ -235,6 +235,7 @@ private:
     std::filesystem::path GetDefaultScenePath() const;
     void ApplySettings(const EditorSettings& settings, bool persist);
     void UpdateRenderTimerInterval(bool viewportReady);
+    void ApplyRuntimeAISettings();
     void OpenSettingsDialog();
     void RefreshAssetBrowser();
     void RescanAssets();

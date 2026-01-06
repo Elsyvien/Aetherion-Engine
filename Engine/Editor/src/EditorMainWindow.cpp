@@ -3,6 +3,7 @@
 #include "Aetherion/Editor/AICopilotProcessor.h"
 #include "Aetherion/Editor/EditorAssetGenerationPanel.h"
 #include "Aetherion/Editor/EditorStatisticsPanel.h"
+#include "Aetherion/Editor/EditorLogicCopilotPanel.h"
 #include "Aetherion/Scripting/LogicCopilot.h"
 
 #include <QAction>
@@ -49,6 +50,7 @@
 #include <filesystem>
 
 #include "Aetherion/Assets/AssetRegistry.h"
+#include "Aetherion/Assets/LLMClient.h"
 #include "Aetherion/Editor/EditorAssetBrowser.h"
 #include "Aetherion/Editor/EditorCameraPreview.h"
 #include "Aetherion/Editor/EditorConsole.h"
@@ -186,7 +188,7 @@ void FocusBottomTab(TabPanelManager *manager, QWidget *widget) {
   SetCurrentTab(manager->GetBottomPanel(), widget);
 }
 
-void FocusSideTab(TabPanelManager *manager, QWidget *widget, bool useRight) {
+void FocusSideTab(TabPanelManager *manager, QWidget *widget, bool useRight) {   
   if (!manager || !widget) {
     return;
   }
@@ -195,8 +197,51 @@ void FocusSideTab(TabPanelManager *manager, QWidget *widget, bool useRight) {
   SetCurrentTab(tabs, widget);
 }
 
+Assets::LLMProvider ConvertProvider(LLMProviderType provider) {
+  switch (provider) {
+  case LLMProviderType::OpenAI:
+    return Assets::LLMProvider::OpenAI;
+  case LLMProviderType::Anthropic:
+    return Assets::LLMProvider::Anthropic;
+  case LLMProviderType::StabilityAI:
+    return Assets::LLMProvider::StabilityAI;
+  case LLMProviderType::LocalOllama:
+    return Assets::LLMProvider::LocalOllama;
+  case LLMProviderType::Custom:
+    return Assets::LLMProvider::Custom;
+  default:
+    return Assets::LLMProvider::OpenAI;
+  }
+}
+
+bool BuildAIConfig(const LLMSettings &settings, Assets::LLMConfig &config) {
+  if (settings.provider == LLMProviderType::None) {
+    return false;
+  }
+
+  config.provider = ConvertProvider(settings.provider);
+  config.apiKey = settings.apiKey;
+  config.endpoint = settings.endpoint;
+  config.model = settings.model;
+  config.imageModel = settings.imageModel;
+  config.timeoutMs = settings.timeoutMs;
+  config.enableLogging = settings.enableLogging;
+
+  if (config.endpoint.empty()) {
+    config.endpoint = Assets::LLMConfig::GetDefaultEndpoint(config.provider);
+  }
+  if (config.model.empty()) {
+    config.model = Assets::LLMConfig::GetDefaultModel(config.provider);
+  }
+  if (config.imageModel.empty()) {
+    config.imageModel = Assets::LLMConfig::GetDefaultImageModel(config.provider);
+  }
+
+  return true;
+}
+
 // Returns t for L1 (P1 + t*D1) closest to L2 (P2 + s*D2)
-float ClosestPointLineLine(const Vec3 &p1, const Vec3 &d1, const Vec3 &p2,
+float ClosestPointLineLine(const Vec3 &p1, const Vec3 &d1, const Vec3 &p2,      
                            const Vec3 &d2) {
   Vec3 r = p1 - p2;
   float a = Dot(d1, d1);
@@ -500,6 +545,7 @@ EditorMainWindow::EditorMainWindow(
       std::max(1, 1000 / std::max(1, m_settings.targetFps));
   m_headlessSleepMs = m_settings.headlessSleepMs;
   m_selection = new EditorSelection(this);
+  ApplyRuntimeAISettings();
   InitializeCommandPalette();
 
   setWindowTitle("Aetherion Editor");
@@ -1691,7 +1737,23 @@ void EditorMainWindow::ApplySettings(const EditorSettings &settings,
     m_assetGenPanel->ConfigureLLMGenerator(m_settings.llm);
   }
 
-  UpdateRenderTimerInterval(m_vulkanViewport && m_vulkanViewport->IsReady());
+  ApplyRuntimeAISettings();
+
+  UpdateRenderTimerInterval(m_vulkanViewport && m_vulkanViewport->IsReady());   
+}
+
+void EditorMainWindow::ApplyRuntimeAISettings() {
+  auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+  if (!ctx) {
+    return;
+  }
+
+  Assets::LLMConfig config;
+  if (BuildAIConfig(m_settings.llm, config)) {
+    ctx->SetAIConfig(std::move(config), true);
+  } else {
+    ctx->ClearAIConfig();
+  }
 }
 
 void EditorMainWindow::UpdateRenderTimerInterval(bool viewportReady) {
@@ -3031,6 +3093,8 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation) {
     m_runtimeApp->SetSimulationPaused(false);
   }
 
+  ApplyRuntimeAISettings();
+
   m_scene = m_runtimeApp->GetActiveScene();
   ClearPlaySessionSnapshot();
   if (m_selection) {
@@ -3505,6 +3569,14 @@ void EditorMainWindow::CreateTabPanels() {
   m_copilotPanel = new AICopilotPanel(m_panelManager);
   m_auxPanel = new EditorAuxPanel(m_panelManager);
 
+  // Initialize Logic Copilot for code generation
+  m_logicCopilot = std::make_unique<Scripting::LogicCopilot>();
+  m_logicCopilot->SetOutputDirectory(std::filesystem::path("Engine/Generated"));
+  m_logicCopilot->SetProjectRoot(std::filesystem::path("."));
+  
+  m_logicCopilotPanel = new EditorLogicCopilotPanel(m_panelManager);
+  m_logicCopilotPanel->SetLogicCopilot(m_logicCopilot.get());
+  
   m_assetGenPanel = new EditorAssetGenerationPanel(m_panelManager);
   m_assetGenPanel->setObjectName("AssetGenerationPanel");
   m_assetGenPanel->setFeatures(QDockWidget::NoDockWidgetFeatures);
@@ -3526,6 +3598,7 @@ void EditorMainWindow::CreateTabPanels() {
   m_panelManager->AddToRightPanel(m_meshPreview, tr("Mesh Preview"));
   m_panelManager->AddToRightPanel(m_cameraPreview, tr("Camera Preview"));
   m_panelManager->AddToRightPanel(m_copilotPanel, tr("AI Copilot"));
+  m_panelManager->AddToRightPanel(m_logicCopilotPanel, tr("Logic Copilot"));
   m_panelManager->AddToRightPanel(m_assetGenPanel, tr("Asset Generation"));
   m_panelManager->AddToRightPanel(bookmarkContainer, tr("Bookmarks"));
   m_panelManager->AddToRightPanel(m_auxPanel, tr("Quick Info"));

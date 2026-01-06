@@ -173,8 +173,16 @@ void EditorLogicCopilotPanel::SetupUI()
     m_addToProjectBtn = new QPushButton(tr("Add to Project"));
     m_addToProjectBtn->setEnabled(false);
     m_addToProjectBtn->setMaximumHeight(26);
+    m_compileAndLoadBtn = new QPushButton(tr("Compile & Load"));
+    m_compileAndLoadBtn->setEnabled(false);
+    m_compileAndLoadBtn->setMaximumHeight(26);
+    m_reloadModuleBtn = new QPushButton(tr("Reload"));
+    m_reloadModuleBtn->setEnabled(false);
+    m_reloadModuleBtn->setMaximumHeight(26);
     saveLayout->addWidget(m_saveBtn);
     saveLayout->addWidget(m_addToProjectBtn);
+    saveLayout->addWidget(m_compileAndLoadBtn);
+    saveLayout->addWidget(m_reloadModuleBtn);
     saveLayout->addStretch();
     layout->addLayout(saveLayout);
 
@@ -201,6 +209,8 @@ void EditorLogicCopilotPanel::SetupConnections()
     connect(m_copySourceBtn, &QPushButton::clicked, this, &EditorLogicCopilotPanel::OnCopySourceClicked);
     connect(m_saveBtn, &QPushButton::clicked, this, &EditorLogicCopilotPanel::OnSaveClicked);
     connect(m_addToProjectBtn, &QPushButton::clicked, this, &EditorLogicCopilotPanel::OnAddToProjectClicked);
+    connect(m_compileAndLoadBtn, &QPushButton::clicked, this, &EditorLogicCopilotPanel::OnCompileAndLoadClicked);
+    connect(m_reloadModuleBtn, &QPushButton::clicked, this, &EditorLogicCopilotPanel::OnReloadModuleClicked);
     connect(m_historyList, &QListWidget::itemClicked, this, &EditorLogicCopilotPanel::OnHistoryItemSelected);
     connect(m_systemTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &EditorLogicCopilotPanel::OnSystemTypeChanged);
@@ -509,6 +519,11 @@ void EditorLogicCopilotPanel::UpdateOutputDisplay(const Scripting::CodeGeneratio
             statusText += " (Kompiliert)";
         }
         m_statusLabel->setText(statusText);
+        
+        // Enable all action buttons
+        m_saveBtn->setEnabled(true);
+        m_addToProjectBtn->setEnabled(true);
+        m_compileAndLoadBtn->setEnabled(true);
     }
     else if (result.status == Scripting::CodeGenerationStatus::Failed)
     {
@@ -522,6 +537,11 @@ void EditorLogicCopilotPanel::UpdateOutputDisplay(const Scripting::CodeGeneratio
         }
         m_headerOutput->setPlainText(errorText);
         m_sourceOutput->setPlainText(errorText);
+        
+        // Disable action buttons
+        m_saveBtn->setEnabled(false);
+        m_addToProjectBtn->setEnabled(false);
+        m_compileAndLoadBtn->setEnabled(false);
     }
 }
 
@@ -558,6 +578,101 @@ void EditorLogicCopilotPanel::UpdateUIState(bool generating)
     m_classNameInput->setEnabled(!generating);
     m_systemTypeCombo->setEnabled(!generating);
     m_templateCombo->setEnabled(!generating);
+}
+
+void EditorLogicCopilotPanel::OnCompileAndLoadClicked()
+{
+    if (!m_copilot || !m_scene)
+    {
+        QMessageBox::warning(this, tr("Compile & Load"),
+                           tr("Logic Copilot or Scene not available"));
+        return;
+    }
+
+    if (m_lastGeneratedClassName.isEmpty())
+    {
+        QMessageBox::warning(this, tr("Compile & Load"),
+                           tr("No code generated yet. Please generate code first."));
+        return;
+    }
+
+    // Get the last generated result
+    auto* result = m_copilot->GetResult(m_currentRequestId.toStdString());
+    if (!result || !result->code.syntaxValid)
+    {
+        QMessageBox::warning(this, tr("Compile & Load"),
+                           tr("Generated code is not valid. Please regenerate."));
+        return;
+    }
+
+    m_statusLabel->setText(tr("Compiling to module..."));
+    m_statusLabel->setVisible(true);
+    m_progressBar->setVisible(true);
+    m_progressBar->setValue(50);
+
+    // Compile and load the module
+    std::string moduleId;
+    std::vector<std::string> errors;
+    bool success = m_copilot->CompileAndLoadModule(result->code, m_scene, moduleId, errors);
+
+    m_progressBar->setVisible(false);
+
+    if (success)
+    {
+        m_lastLoadedModuleId = QString::fromStdString(moduleId);
+        m_statusLabel->setText(tr("Module compiled and loaded: %1").arg(m_lastLoadedModuleId));
+        m_reloadModuleBtn->setEnabled(true);
+
+        QMessageBox::information(this, tr("Success"),
+                               tr("Module '%1' has been compiled and loaded!\n\n"
+                                  "The behavior is now available and will execute on entities.").arg(m_lastLoadedModuleId));
+    }
+    else
+    {
+        QString errorMsg = tr("Compilation failed:\n");
+        for (const auto& err : errors)
+        {
+            errorMsg += QString::fromStdString(err) + "\n";
+        }
+        m_statusLabel->setText(tr("Compilation failed"));
+
+        QMessageBox::critical(this, tr("Compilation Error"), errorMsg);
+    }
+}
+
+void EditorLogicCopilotPanel::OnReloadModuleClicked()
+{
+    if (!m_copilot)
+    {
+        QMessageBox::warning(this, tr("Reload Module"),
+                           tr("Logic Copilot not available"));
+        return;
+    }
+
+    if (m_lastLoadedModuleId.isEmpty())
+    {
+        QMessageBox::warning(this, tr("Reload Module"),
+                           tr("No module loaded yet"));
+        return;
+    }
+
+    m_statusLabel->setText(tr("Reloading module..."));
+    m_statusLabel->setVisible(true);
+
+    bool success = m_copilot->ReloadModule(m_lastLoadedModuleId.toStdString());
+
+    if (success)
+    {
+        m_statusLabel->setText(tr("Module reloaded: %1").arg(m_lastLoadedModuleId));
+        QMessageBox::information(this, tr("Success"),
+                               tr("Module '%1' has been reloaded successfully!").arg(m_lastLoadedModuleId));
+    }
+    else
+    {
+        m_statusLabel->setText(tr("Module reload failed"));
+        QMessageBox::critical(this, tr("Reload Error"),
+                            tr("Failed to reload module '%1'").arg(m_lastLoadedModuleId));
+    }
 }
 
 } // namespace Aetherion::Editor

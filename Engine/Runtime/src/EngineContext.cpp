@@ -1,6 +1,7 @@
 #include "Aetherion/Runtime/EngineContext.h"
 
 #include "Aetherion/Assets/AssetRegistry.h"
+#include "Aetherion/Assets/LLMClient.h"
 #include "Aetherion/Audio/AudioEngine.h"
 #include "Aetherion/Physics/PhysicsWorld.h"
 #include "Aetherion/Rendering/RenderView.h"
@@ -90,7 +91,30 @@ EngineContext::GetScriptEngine() const noexcept {
   return m_scriptEngine;
 }
 
-void EngineContext::SetSimulationState(bool playing, bool paused) noexcept {
+void EngineContext::SetAIConfig(Assets::LLMConfig config, bool enabled) {
+  m_aiConfig = std::move(config);
+  m_aiConfigEnabled = enabled;
+  m_aiClient.reset();
+}
+
+void EngineContext::ClearAIConfig() noexcept {
+  m_aiConfigEnabled = false;
+  m_aiClient.reset();
+}
+
+Assets::ILLMClient* EngineContext::GetAIClient() {
+  if (!m_aiConfigEnabled) {
+    return nullptr;
+  }
+
+  if (!m_aiClient) {
+    m_aiClient = Assets::LLMClientFactory::Create(m_aiConfig);
+  }
+
+  return m_aiClient.get();
+}
+
+void EngineContext::SetSimulationState(bool playing, bool paused) noexcept {    
   m_simulationPlaying = playing;
   m_simulationPaused = paused;
 }
