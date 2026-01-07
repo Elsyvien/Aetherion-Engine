@@ -4,6 +4,7 @@
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
+#include "Aetherion/Scene/MeshRendererComponent.h"
 
 using namespace Aetherion;
 
@@ -25,6 +26,17 @@ int main(int argc, char **argv) {
 
     auto parentRes = processor.ProcessPrompt("parent selection to 1", false);
     if (parentRes.response.isEmpty()) {
+        return 1;
+    }
+
+    // Spin selection (continuous rotation)
+    entity->AddComponent(std::make_shared<Scene::MeshRendererComponent>());
+    auto spinRes = processor.ProcessPrompt("make selection spinning 45", false);
+    if (spinRes.response.isEmpty()) {
+        return 1;
+    }
+    auto mesh = entity->GetComponent<Scene::MeshRendererComponent>();
+    if (!mesh || std::abs(mesh->GetRotationSpeedDegPerSec() - 45.0f) > 0.001f) {
         return 1;
     }
 

@@ -353,8 +353,10 @@ void AICopilotToolFactory::RegisterAllTools(AICopilotAgent &agent,
        {"entityName", {{"type", "string"}, {"description", "Name of the entity (alternative to ID)"}}},
        {"position", {{"type", "object"}, {"properties", {{"x", {{"type", "number"}}}, {"y", {{"type", "number"}}}, {"z", {{"type", "number"}}}}}}},
        {"scale", {{"type", "object"}, {"properties", {{"x", {{"type", "number"}}}, {"y", {{"type", "number"}}}, {"z", {{"type", "number"}}}}}}},
-       {"color", {{"type", "object"}, {"properties", {{"r", {{"type", "number"}}}, {"g", {{"type", "number"}}}, {"b", {{"type", "number"}}}}}}}});
-  modifyTool.execute = [scene, highlightCallback](const nlohmann::json& params) -> nlohmann::json {
+      {"color", {{"type", "object"}, {"properties", {{"r", {{"type", "number"}}}, {"g", {{"type", "number"}}}, {"b", {{"type", "number"}}}}}}},
+      {"rotationSpeedDegPerSec", {{"type", "number"}, {"description", "Continuous spin speed (MeshRenderer) in degrees/sec. Use 0 to stop."}}},
+      {"rotationSpeed", {{"type", "number"}, {"description", "Alias for rotationSpeedDegPerSec."}}}});
+    modifyTool.execute = [scene, selected, highlightCallback](const nlohmann::json& params) -> nlohmann::json {
     std::shared_ptr<Scene::Entity> targetEntity = nullptr;
     
     if (params.contains("entityId")) {
@@ -369,6 +371,10 @@ void AICopilotToolFactory::RegisterAllTools(AICopilotAgent &agent,
           break;
         }
       }
+    }
+
+    if (!targetEntity && !params.contains("entityId") && !params.contains("entityName") && selected) {
+      targetEntity = scene->GetEntityById(static_cast<Core::EntityId>(selected->GetId()));
     }
     
     if (!targetEntity) {
@@ -405,6 +411,12 @@ void AICopilotToolFactory::RegisterAllTools(AICopilotAgent &agent,
       float b = col.value("b", 1.0f);
       meshRenderer->SetColor(r, g, b);
       changes.push_back("color");
+    }
+
+    if (meshRenderer && (params.contains("rotationSpeedDegPerSec") || params.contains("rotationSpeed"))) {
+      const float speed = params.value("rotationSpeedDegPerSec", params.value("rotationSpeed", 0.0f));
+      meshRenderer->SetRotationSpeedDegPerSec(speed);
+      changes.push_back("rotationSpeed");
     }
     
     if (changes.empty()) {

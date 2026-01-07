@@ -9,6 +9,7 @@
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Core/Math.h"
 #include "Aetherion/Runtime/EngineContext.h"
+#include "Aetherion/Scene/AIBehaviorComponent.h"
 #include "Aetherion/Scene/AudioListenerComponent.h"
 #include "Aetherion/Scene/AudioSourceComponent.h"
 #include "Aetherion/Scene/AnimationSystem.h"
@@ -19,6 +20,7 @@
 #include "Aetherion/Scene/LightComponent.h"
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/RigidbodyComponent.h"
+#include "Aetherion/Scene/ScriptComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
 #include "nlohmann/json.hpp"
@@ -236,10 +238,30 @@ bool SceneSerializer::Save(const Scene &scene,
       components["AudioSource"] = std::move(audioJson);
     }
 
-    if (auto listener = entity->GetComponent<AudioListenerComponent>()) {
+    if (auto listener = entity->GetComponent<AudioListenerComponent>()) {       
       Json listenerJson;
       listenerJson["active"] = listener->IsActive();
       components["AudioListener"] = std::move(listenerJson);
+    }
+
+    if (auto aiBehavior = entity->GetComponent<AIBehaviorComponent>()) {
+      Json aiJson;
+      aiJson["executionMode"] =
+          static_cast<int>(aiBehavior->GetExecutionMode());
+      aiJson["decisionInterval"] = aiBehavior->GetDecisionInterval();
+      aiJson["promptAssetId"] = aiBehavior->GetPromptAssetId();
+      aiJson["inlinePrompt"] = aiBehavior->GetInlinePrompt();
+      aiJson["personality"] = aiBehavior->GetPersonality();
+      aiJson["knowledgeBase"] = aiBehavior->GetKnowledgeBase();
+      aiJson["context"] = aiBehavior->GetContext();
+      components["AIBehavior"] = std::move(aiJson);
+    }
+
+    if (auto script = entity->GetComponent<ScriptComponent>()) {
+      Json scriptJson;
+      scriptJson["scriptAssetId"] = script->GetScriptAssetId();
+      scriptJson["scriptSource"] = script->GetScriptSource();
+      components["Script"] = std::move(scriptJson);
     }
 
     entityJson["components"] = std::move(components);
@@ -522,6 +544,53 @@ SceneSerializer::Load(const std::filesystem::path &path) const {
         auto listener = std::make_shared<AudioListenerComponent>();
         listener->SetActive(ReadBool(listenerJson, "active", true));
         entity->AddComponent(listener);
+      }
+
+      auto aiBehaviorIt = components.find("AIBehavior");
+      if (aiBehaviorIt != components.end() && aiBehaviorIt->is_object()) {
+        const Json &aiJson = *aiBehaviorIt;
+        auto aiBehavior = std::make_shared<AIBehaviorComponent>();
+
+        aiBehavior->SetPersonality(
+            ReadString(aiJson, "personality", aiBehavior->GetPersonality()));
+        aiBehavior->SetKnowledgeBase(
+            ReadString(aiJson, "knowledgeBase",
+                       aiBehavior->GetKnowledgeBase()));
+        aiBehavior->SetContext(
+            ReadString(aiJson, "context", aiBehavior->GetContext()));
+
+        int mode = ReadInt(aiJson, "executionMode",
+                           static_cast<int>(aiBehavior->GetExecutionMode()));
+        if (mode < 0 || mode > 2) {
+          mode = 0;
+        }
+        aiBehavior->SetExecutionMode(
+            static_cast<AIBehaviorComponent::ExecutionMode>(mode));
+
+        float decisionInterval = ReadNumber(
+            aiJson, "decisionInterval", aiBehavior->GetDecisionInterval());
+        if (decisionInterval <= 0.0f) {
+          decisionInterval = aiBehavior->GetDecisionInterval();
+        }
+        aiBehavior->SetDecisionInterval(decisionInterval);
+
+        aiBehavior->SetPromptAssetId(
+            ReadString(aiJson, "promptAssetId", std::string()));
+        aiBehavior->SetInlinePrompt(
+            ReadString(aiJson, "inlinePrompt", std::string()));
+
+        entity->AddComponent(aiBehavior);
+      }
+
+      auto scriptIt = components.find("Script");
+      if (scriptIt != components.end() && scriptIt->is_object()) {
+        const Json &scriptJson = *scriptIt;
+        auto script = std::make_shared<ScriptComponent>();
+        script->SetScriptAssetId(
+            ReadString(scriptJson, "scriptAssetId", std::string()));
+        script->SetScriptSource(
+            ReadString(scriptJson, "scriptSource", std::string()));
+        entity->AddComponent(script);
       }
     }
 

@@ -1,0 +1,198 @@
+{
+  "name": "Scripting Example",
+  "entities": [
+    {
+      "id": 1,
+      "name": "Ground Plane",
+      "components": {
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            12.0,
+            1.0,
+            12.0
+          ],
+          "parent": 0
+        },
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.6,
+            0.62,
+            0.68
+          ],
+          "rotationSpeed": 0.0,
+          "materialId": "",
+          "meshId": "meshes/plane.obj"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Scripted Spinner",
+      "components": {
+        "Transform": {
+          "position": [
+            0.0,
+            0.5,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.2,
+            1.2,
+            1.2
+          ],
+          "parent": 0
+        },
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.2,
+            0.7,
+            1.0
+          ],
+          "rotationSpeed": 0.0,
+          "materialId": "",
+          "meshId": "meshes/cube.obj"
+        },
+        "Script": {
+          "scriptAssetId": "",
+          "scriptSource": "# Example inline script (stub)\n# Planned API: on_update(entity, delta_time)\n\ndef on_update(entity, delta_time):\n    transform = entity.get_component(\"Transform\")\n    transform[\"rotation\"][1] += 30.0 * delta_time\n    entity.set_component(\"Transform\", transform)\n"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "AI Sentinel",
+      "components": {
+        "Transform": {
+          "position": [
+            3.0,
+            0.5,
+            -1.5
+          ],
+          "rotation": [
+            0.0,
+            25.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.2,
+            1.0
+          ],
+          "parent": 0
+        },
+        "MeshRenderer": {
+          "visible": true,
+          "color": [
+            0.9,
+            0.6,
+            0.3
+          ],
+          "rotationSpeed": 0.0,
+          "materialId": "",
+          "meshId": "meshes/cylinder.obj"
+        },
+        "AIBehavior": {
+          "executionMode": 0,
+          "decisionInterval": 0.5,
+          "promptAssetId": "",
+          "inlinePrompt": "Patrol the platform and stay alert for intruders.",
+          "personality": "Watchful",
+          "knowledgeBase": "Training: keep to the perimeter and report threats.",
+          "context": "Patrol this area. If you detect an enemy, switch to attack."
+        }
+      }
+    },
+    {
+      "id": 4,
+      "name": "Main Camera",
+      "components": {
+        "Transform": {
+          "position": [
+            0.0,
+            4.0,
+            9.0
+          ],
+          "rotation": [
+            -15.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        },
+        "Camera": {
+          "projectionType": 0,
+          "verticalFov": 55.0,
+          "nearClip": 0.1,
+          "farClip": 200.0,
+          "orthographicSize": 10.0,
+          "isPrimary": true
+        }
+      }
+    },
+    {
+      "id": 5,
+      "name": "Sun Light",
+      "components": {
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            -45.0,
+            45.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "parent": 0
+        },
+        "Light": {
+          "lightEnabled": true,
+          "lightType": 0,
+          "lightColor": [
+            1.0,
+            0.95,
+            0.88
+          ],
+          "lightIntensity": 1.2,
+          "lightRange": 50.0,
+          "innerConeAngle": 15.0,
+          "outerConeAngle": 30.0,
+          "lightPrimary": true,
+          "ambientColor": [
+            0.1,
+            0.1,
+            0.12
+          ]
+        }
+      }
+    }
+  ]
+}

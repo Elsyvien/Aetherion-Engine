@@ -220,6 +220,7 @@ std::string AICopilotAgent::CallLLM(const std::string &prompt) {
   } else {
     reply->abort();
     reply->deleteLater();
+    qWarning() << "[AICopilot] Request timed out. Is Ollama running?";
     return "Request timed out. Is Ollama running?";
   }
 

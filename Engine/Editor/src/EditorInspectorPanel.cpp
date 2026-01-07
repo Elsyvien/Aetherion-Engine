@@ -2101,6 +2101,7 @@ void EditorInspectorPanel::RebuildUi() {
         if (m_commandExecutor)
           m_commandExecutor(
               std::make_unique<AddComponentCommand>(m_entity, comp));
+        RebuildUi();
       });
     }
 

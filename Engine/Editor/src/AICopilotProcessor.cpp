@@ -835,9 +835,16 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
     }
 
     // Basic intent classification
+    const bool addVerb = lowered.contains("add");
+    const bool addToRequest = addVerb && lowered.contains(" to ");
+    const bool addEntityRequest =
+        addVerb && !addToRequest &&
+        ContainsAny(lowered, {"cube", "box", "sphere", "plane", "cylinder",
+                              "cone", "pyramid", "octahedron", "wedge",
+                              "prism", "light", "camera"});
     const bool spawnRequest = lowered.contains("spawn") ||
                               lowered.contains("create") ||
-                              lowered.contains("add");
+                              addEntityRequest;
     const bool deleteRequest =
         lowered.contains("delete") || lowered.contains("remove");
     const bool duplicateRequest =
@@ -847,11 +854,15 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
                              lowered.contains("translate");
     const bool rotateRequest =
         lowered.contains("rotate") || lowered.contains("turn");
+    const bool spinRequest =
+        lowered.contains("spin") || lowered.contains("spinning");
     const bool scaleRequest =
         lowered.contains("scale") || lowered.contains("resize");
     const bool focusRequest = lowered.contains("focus") ||
                               lowered.contains("frame");
-    const bool parentRequest = lowered.contains("parent");
+    const bool parentRequest = lowered.contains("parent") ||
+                               lowered.contains("attach") ||
+                               addToRequest;
 
     if (deleteRequest && m_selectedEntity) {
         executeDelete();
@@ -920,6 +931,39 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
             ContainsAny(lowered, {" by ", " x ", " times", " multiply"});
         const std::array<float, 3> scale{value, value, value};
         executeScale(scale, absolute || !multiply);
+        return result;
+    }
+
+    if (spinRequest && m_selectedEntity) {
+        auto mesh = m_selectedEntity->GetComponent<Scene::MeshRendererComponent>();
+        if (!mesh) {
+            result.response = "Selected entity has no mesh renderer to spin.";
+            return result;
+        }
+
+        float speed = 90.0f;
+        QRegularExpression numberRegex(R"(\b(-?\d+(?:\.\d+)?)\b)");
+        auto matchIt = numberRegex.globalMatch(trimmed);
+        if (matchIt.hasNext()) {
+            speed = matchIt.next().captured(1).toFloat();
+        }
+        if (ContainsAny(lowered, {"stop", "disable", "no spin", "not spin"})) {
+            speed = 0.0f;
+        }
+
+        if (result.dryRun) {
+            result.previewActions.push_back(
+                QString("Would set spin speed of '%1' to %2 deg/sec")
+                    .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                    .arg(speed));
+            result.response = "Dry-run: spin selection.";
+            return result;
+        }
+
+        mesh->SetRotationSpeedDegPerSec(speed);
+        result.response = QString("Set '%1' spin speed to %2 deg/sec.")
+                              .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                              .arg(speed);
         return result;
     }
 
