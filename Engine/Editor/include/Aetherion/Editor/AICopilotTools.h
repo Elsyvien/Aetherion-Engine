@@ -11,6 +11,10 @@ class Scene;
 class Entity;
 } // namespace Aetherion::Scene
 
+namespace Aetherion::Assets {
+class AssetRegistry;
+}
+
 namespace Aetherion::Editor {
 
 // Forward declaration for command executor type
@@ -53,6 +57,7 @@ public:
    * @param agent The AI agent to register tools with
    * @param scene The current scene (can be null)
    * @param selected The currently selected entity (can be null)
+   * @param assetRegistry The asset registry for asset operations (can be null)
    * @param executor Command executor for undo/redo support (can be null)
    * @param highlightCallback Callback to highlight entities during AI operations
    * @param activityCallback Callback to update activity status in the UI
@@ -60,6 +65,7 @@ public:
    */
   static void RegisterAllTools(AICopilotAgent &agent, Scene::Scene *scene,
                                Scene::Entity *selected,
+                               std::shared_ptr<Assets::AssetRegistry> assetRegistry,
                                const CommandExecutor &executor,
                                const EntityHighlightCallback &highlightCallback = nullptr,
                                const ActivityCallback &activityCallback = nullptr,

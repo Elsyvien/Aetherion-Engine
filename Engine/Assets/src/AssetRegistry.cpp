@@ -3,6 +3,8 @@
 #include "Aetherion/Core/UUID.h"
 
 #include <algorithm>
+#include <ctime>
+#include <chrono>
 #include <cctype>
 #include <cmath>
 #include <filesystem>

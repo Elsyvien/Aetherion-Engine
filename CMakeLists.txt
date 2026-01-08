@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 project(Aetherion
     VERSION 0.0.1
     DESCRIPTION "Aetherion 3D engine scaffolding (architecture only)"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 add_compile_definitions(AETHERION_APP_VERSION="${PROJECT_VERSION}")
@@ -21,6 +21,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 include(CMake/ProjectOptions.cmake OPTIONAL)
 
 option(AETHERION_ENABLE_PYTHON "Enable embedded Python scripting runtime" OFF)
+option(AETHERION_ENABLE_LUA "Enable Lua scripting runtime (recommended)" ON)
 
 # Platform-specific Qt configuration
 if(WIN32)
@@ -76,6 +77,81 @@ if(AETHERION_ENABLE_PYTHON)
     find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 endif()
 
+# Lua scripting with sol2 (header-only C++ bindings)
+if(AETHERION_ENABLE_LUA)
+    include(FetchContent)
+    
+    # sol2 - Modern C++ bindings for Lua
+    FetchContent_Declare(
+        sol2
+        GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+        GIT_TAG v3.3.0
+    )
+    FetchContent_MakeAvailable(sol2)
+    
+    # Lua 5.4 (bundled with sol2 or system)
+    find_package(Lua QUIET)
+    if(NOT Lua_FOUND)
+        # Use bundled lua if system lua not found
+        FetchContent_Declare(
+            lua
+            GIT_REPOSITORY https://github.com/lua/lua.git
+            GIT_TAG v5.4.6
+        )
+        FetchContent_MakeAvailable(lua)
+
+        # The upstream Lua repo doesn't ship CMake targets.
+        # Provide a minimal static library + include path so sol2 can compile.
+        if(NOT TARGET lua_static)
+            set(LUA_BUNDLED_SOURCES
+                ${lua_SOURCE_DIR}/lapi.c
+                ${lua_SOURCE_DIR}/lauxlib.c
+                ${lua_SOURCE_DIR}/lbaselib.c
+                ${lua_SOURCE_DIR}/lcode.c
+                ${lua_SOURCE_DIR}/lcorolib.c
+                ${lua_SOURCE_DIR}/lctype.c
+                ${lua_SOURCE_DIR}/ldblib.c
+                ${lua_SOURCE_DIR}/ldebug.c
+                ${lua_SOURCE_DIR}/ldo.c
+                ${lua_SOURCE_DIR}/ldump.c
+                ${lua_SOURCE_DIR}/lfunc.c
+                ${lua_SOURCE_DIR}/lgc.c
+                ${lua_SOURCE_DIR}/linit.c
+                ${lua_SOURCE_DIR}/liolib.c
+                ${lua_SOURCE_DIR}/llex.c
+                ${lua_SOURCE_DIR}/lmathlib.c
+                ${lua_SOURCE_DIR}/lmem.c
+                ${lua_SOURCE_DIR}/loadlib.c
+                ${lua_SOURCE_DIR}/lobject.c
+                ${lua_SOURCE_DIR}/lopcodes.c
+                ${lua_SOURCE_DIR}/loslib.c
+                ${lua_SOURCE_DIR}/lparser.c
+                ${lua_SOURCE_DIR}/lstate.c
+                ${lua_SOURCE_DIR}/lstring.c
+                ${lua_SOURCE_DIR}/lstrlib.c
+                ${lua_SOURCE_DIR}/ltable.c
+                ${lua_SOURCE_DIR}/ltablib.c
+                ${lua_SOURCE_DIR}/ltm.c
+                ${lua_SOURCE_DIR}/lundump.c
+                ${lua_SOURCE_DIR}/lutf8lib.c
+                ${lua_SOURCE_DIR}/lvm.c
+                ${lua_SOURCE_DIR}/lzio.c
+            )
+
+            add_library(lua_static STATIC ${LUA_BUNDLED_SOURCES})
+            target_include_directories(lua_static PUBLIC ${lua_SOURCE_DIR})
+
+            if(WIN32)
+                target_compile_definitions(lua_static PUBLIC LUA_USE_WINDOWS)
+            endif()
+        endif()
+
+        set(LUA_INCLUDE_DIR ${lua_SOURCE_DIR})
+        set(LUA_LIBRARIES lua_static)
+        set(Lua_FOUND TRUE)
+    endif()
+endif()
+
 # Jolt Physics
 set(PHYSICS_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/Engine/ThirdParty/JoltPhysics)
 set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
@@ -117,6 +193,7 @@ set(RUNTIME_SOURCES
     Engine/Scene/src/AudioSourceComponent.cpp
     Engine/Scene/src/AudioListenerComponent.cpp
     Engine/Scene/src/AIBehaviorComponent.cpp
+    Engine/Scene/src/AIBehaviorSystem.cpp
     Engine/Scene/src/ParticleEmitterComponent.cpp
     Engine/Scene/src/SemanticComponent.cpp
     Engine/Scene/src/SemanticGraph.cpp
@@ -130,6 +207,9 @@ set(RUNTIME_SOURCES
     Engine/Scripting/src/ScriptingPlaceholder.cpp
     Engine/Scripting/src/LogicCopilot.cpp
     Engine/Scripting/src/ModuleLoader.cpp
+    Engine/Scripting/src/LuaScriptEngine.cpp
+    Engine/Scripting/src/LuaScriptInstance.cpp
+    Engine/Scripting/src/LuaBindings.cpp
     Engine/Runtime/src/SystemScheduler.cpp
 )
 
@@ -212,11 +292,17 @@ target_link_libraries(AetherionRuntime
         Jolt
         Qt6::Network
         $<$<BOOL:${AETHERION_ENABLE_PYTHON}>:Python3::Python>
+        $<$<BOOL:${AETHERION_ENABLE_LUA}>:sol2::sol2>
+        $<$<AND:$<BOOL:${AETHERION_ENABLE_LUA}>,$<BOOL:${Lua_FOUND}>>:${LUA_LIBRARIES}>
         $<$<NOT:$<PLATFORM_ID:Windows>>:${CMAKE_DL_LIBS}>
 )
+if(AETHERION_ENABLE_LUA AND Lua_FOUND)
+    target_include_directories(AetherionRuntime PUBLIC ${LUA_INCLUDE_DIR})
+endif()
 target_compile_definitions(AetherionRuntime
     PUBLIC
         $<$<BOOL:${AETHERION_ENABLE_PYTHON}>:AETHERION_ENABLE_PYTHON=1>
+        $<$<BOOL:${AETHERION_ENABLE_LUA}>:AETHERION_ENABLE_LUA=1>
 )
 
 set(EDITOR_SOURCES

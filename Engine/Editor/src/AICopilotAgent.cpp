@@ -1,9 +1,10 @@
 #include "Aetherion/Editor/AICopilotAgent.h"
+#include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <regex>
 #include <sstream>
-#include <algorithm>
-#include <cctype>
+
 
 #include <QByteArray>
 #include <QDebug>
@@ -23,7 +24,7 @@ AICopilotAgent::AICopilotAgent(const AgentConfig &config)
       m_networkManager(std::make_unique<QNetworkAccessManager>()) {
   // Set default system prompt for Aetherion Engine
   m_systemPrompt =
-      R"(You are an AI assistant for the Aetherion Game Engine. You help users create, modify, and manage game entities, scenes, and components.
+      R"(You are an AI assistant for the Aetherion Game Engine. You help users create, modify, and manage game entities, scenes, and components. You can also generate and attach scripts to entities.
 
 You have access to tools that let you interact with the engine. When a user asks you to create, spawn, move, modify, or delete something in the scene, YOU MUST IMMEDIATELY USE THE APPROPRIATE TOOL.
 
@@ -42,8 +43,15 @@ CRITICAL TOOL USAGE RULES:
 4. For multiple actions, use multiple tool blocks
 5. Example sequences:
    - User: "Make a cube" → spawn_entity tool call → confirm creation
-   - User: "Add component" → add_component tool call → confirm addition
-   - User: "Show entities" → list_scene_entities tool call → show list
+   - User: "Make it spin" → generate_script with rotation → attach_script to entity
+
+SCRIPTING CAPABILITIES:
+- Use generate_script for simple behaviors (rotation, movement, bounce) - generates Lua
+- For complex systems, suggest the Logic Copilot panel for C++ code generation
+- Use attach_script to add scripts to entities
+- Language selection:
+  * LUA: Simple entity behaviors like rotation, movement, bounce, float, blink
+  * C++: Complex systems, multi-entity coordination, physics, pathfinding
 
 AVAILABLE ENTITY TYPES:
 - Cube, Sphere, Cylinder, Plane, Cone, Pyramid (primitives)
@@ -54,7 +62,9 @@ AVAILABLE TOOLS (USE THESE FOR SCENE MANIPULATION):
 - add_component: Add a component to an entity
 - modify_entity: Change entity properties
 - list_scene_entities: Show all entities
-- list_behaviors: Show available behaviors
+- generate_script: Generate Lua/C++ script from description (use language: auto, lua, or cpp)
+- attach_script: Attach a script to an entity
+- list_scripts: Show available script templates
 
 WHEN USER REQUESTS SCENE CHANGES: FIRST OUTPUT TOOL BLOCKS, THEN EXPLAIN RESULTS)";
 }
@@ -84,7 +94,7 @@ std::string AICopilotAgent::FormatToolsAsContext() const {
     ss << "Description: " << tool.description << "\n";
     ss << "Parameters:\n" << tool.parameters.dump(2) << "\n\n";
   }
-  
+
   ss << "=== USAGE EXAMPLE ===\n";
   ss << "When user says 'make a cube':\n";
   ss << "```tool\n";
@@ -143,15 +153,15 @@ std::string AICopilotAgent::CallLLM(const std::string &prompt) {
     requestUrl.pop_back();
   }
 
-  const bool hasGenerate = requestUrl.size() >= 13 &&
-                           requestUrl.rfind("/api/generate") ==
-                               requestUrl.size() - 13;
-  const bool hasChatApi = requestUrl.size() >= 9 &&
-                          requestUrl.rfind("/api/chat") ==
-                              requestUrl.size() - 9;
-  const bool hasChatCompletions = requestUrl.size() >= 18 &&
-                                  requestUrl.rfind("/chat/completions") ==
-                                      requestUrl.size() - 18;
+  const bool hasGenerate =
+      requestUrl.size() >= 13 &&
+      requestUrl.rfind("/api/generate") == requestUrl.size() - 13;
+  const bool hasChatApi =
+      requestUrl.size() >= 9 &&
+      requestUrl.rfind("/api/chat") == requestUrl.size() - 9;
+  const bool hasChatCompletions =
+      requestUrl.size() >= 18 &&
+      requestUrl.rfind("/chat/completions") == requestUrl.size() - 18;
 
   bool useGenerate = hasGenerate;
 
@@ -188,7 +198,8 @@ std::string AICopilotAgent::CallLLM(const std::string &prompt) {
   QNetworkRequest httpRequest(QUrl(QString::fromStdString(requestUrl)));
   httpRequest.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
-  qDebug() << "[AICopilot] Sending request to:" << QString::fromStdString(requestUrl);
+  qDebug() << "[AICopilot] Sending request to:"
+           << QString::fromStdString(requestUrl);
   qDebug() << "[AICopilot] Model:" << QString::fromStdString(m_config.model);
 
   // Synchronous request using event loop (matches LLMClient.cpp pattern)
@@ -266,8 +277,10 @@ json AICopilotAgent::ParseLLMResponse(const std::string &response) {
   result["toolCalls"] = json::array();
 
   // Look for tool call blocks
-  // Allow optional language hints after ```tool and tolerate Windows line endings
-  std::regex toolRegex("```tool[^\\n]*\\r?\\n([\\s\\S]*?)```", std::regex::icase);
+  // Allow optional language hints after ```tool and tolerate Windows line
+  // endings
+  std::regex toolRegex("```tool[^\\n]*\\r?\\n([\\s\\S]*?)```",
+                       std::regex::icase);
   std::smatch match;
   std::string remaining = response;
 
@@ -275,13 +288,15 @@ json AICopilotAgent::ParseLLMResponse(const std::string &response) {
     try {
       std::string block = match[1].str();
       // Trim leading/trailing whitespace to reduce parse failures
-      block.erase(block.begin(), std::find_if(block.begin(), block.end(), [](unsigned char ch) {
-        return !std::isspace(ch);
-      }));
-      block.erase(std::find_if(block.rbegin(), block.rend(), [](unsigned char ch) {
-                   return !std::isspace(ch);
-                 }).base(),
-                 block.end());
+      block.erase(block.begin(), std::find_if(block.begin(), block.end(),
+                                              [](unsigned char ch) {
+                                                return !std::isspace(ch);
+                                              }));
+      block.erase(
+          std::find_if(block.rbegin(), block.rend(),
+                       [](unsigned char ch) { return !std::isspace(ch); })
+              .base(),
+          block.end());
 
       json toolCall = json::parse(block);
       result["toolCalls"].push_back(toolCall);
@@ -370,7 +385,7 @@ AICopilotAgent::ProcessAgenticRequest(const std::string &userMessage) {
       json params = call.value("params", json::object());
 
       json result = ExecuteToolCall(toolName, params);
-      
+
       // Track what was done for user summary
       if (result.contains("message")) {
         actionsSummary.push_back(result["message"].get<std::string>());
@@ -389,8 +404,9 @@ AICopilotAgent::ProcessAgenticRequest(const std::string &userMessage) {
   // If we executed tools, provide a clean summary
   if (!actionsSummary.empty()) {
     std::string summary;
-    for (const auto& action : actionsSummary) {
-      if (!summary.empty()) summary += "\n";
+    for (const auto &action : actionsSummary) {
+      if (!summary.empty())
+        summary += "\n";
       summary += action;
     }
     // Append any remaining cleaned response
@@ -404,22 +420,22 @@ AICopilotAgent::ProcessAgenticRequest(const std::string &userMessage) {
   return finalResponse;
 }
 
-std::string AICopilotAgent::CleanResponseForUser(const std::string& response) {
+std::string AICopilotAgent::CleanResponseForUser(const std::string &response) {
   // Remove tool call blocks from the response
   std::string cleaned = response;
-  
+
   // Remove ```tool ... ``` blocks
   std::regex toolBlockRegex("```tool[^`]*```", std::regex::icase);
   cleaned = std::regex_replace(cleaned, toolBlockRegex, "");
-  
+
   // Remove any JSON blocks that look like tool calls
   std::regex jsonToolRegex("```json[^`]*\"tool\"[^`]*```", std::regex::icase);
   cleaned = std::regex_replace(cleaned, jsonToolRegex, "");
-  
+
   // Clean up excessive whitespace
   std::regex multiNewline("\n{3,}");
   cleaned = std::regex_replace(cleaned, multiNewline, "\n\n");
-  
+
   // Trim leading/trailing whitespace
   auto start = cleaned.find_first_not_of(" \t\n\r");
   auto end = cleaned.find_last_not_of(" \t\n\r");
@@ -428,7 +444,7 @@ std::string AICopilotAgent::CleanResponseForUser(const std::string& response) {
   } else {
     cleaned.clear();
   }
-  
+
   return cleaned;
 }
 
