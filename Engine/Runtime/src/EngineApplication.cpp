@@ -1022,7 +1022,10 @@ void EngineApplication::Initialize(bool enableValidationLayers,
   }
   if (const auto scripting = m_context->GetScriptingRuntime()) {
     scripting->Initialize();
-    DebugPrint("Scripting placeholder initialized.");
+    DebugPrint("Scripting runtime initialized.");
+#ifdef AETHERION_ENABLE_LUA
+    DebugPrint("Lua scripting support compiled in (AETHERION_ENABLE_LUA=ON).");
+#endif
   }
 
   Scene::SceneSerializer serializer(*m_context);

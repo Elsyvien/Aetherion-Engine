@@ -1,3 +1,7 @@
+#ifdef AETHERION_ENABLE_LUA
+#include <sol/sol.hpp>
+#endif
+
 #include "Aetherion/Scripting/LuaBindings.h"
 #include "Aetherion/Scene/AudioSourceComponent.h"
 #include "Aetherion/Scene/CameraComponent.h"
@@ -9,11 +13,6 @@
 #include "Aetherion/Scene/RigidbodyComponent.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
-
-#ifdef AETHERION_ENABLE_LUA
-#define SOL_ALL_SAFETIES_ON 1
-#include <sol/sol.hpp>
-#endif
 
 #include <iostream>
 
@@ -169,11 +168,12 @@ void LuaBindings::RegisterComponents(sol::state &lua) {
           [](Scene::TransformComponent &t, float s) { t.SetScale(s, s, s); }),
       "getRotation",
       [](Scene::TransformComponent &t) {
-        return Vec3{t.GetRotationX(), t.GetRotationY(), t.GetRotationZ()};
+        return Vec3{t.GetRotationXDegrees(), t.GetRotationYDegrees(),
+                    t.GetRotationZDegrees()};
       },
       "setRotation",
       [](Scene::TransformComponent &t, float x, float y, float z) {
-        t.SetRotation(x, y, z);
+        t.SetRotationDegrees(x, y, z);
       },
       "translate",
       [](Scene::TransformComponent &t, float dx, float dy, float dz) {
@@ -182,8 +182,9 @@ void LuaBindings::RegisterComponents(sol::state &lua) {
       },
       "rotate",
       [](Scene::TransformComponent &t, float dx, float dy, float dz) {
-        t.SetRotation(t.GetRotationX() + dx, t.GetRotationY() + dy,
-                      t.GetRotationZ() + dz);
+        t.SetRotationDegrees(t.GetRotationXDegrees() + dx,
+                             t.GetRotationYDegrees() + dy,
+                             t.GetRotationZDegrees() + dz);
       });
 
   // MeshRendererComponent binding

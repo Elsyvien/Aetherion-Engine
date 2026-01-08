@@ -7,7 +7,6 @@
 // Forward declare sol types
 namespace sol {
 class state;
-class table;
 } // namespace sol
 
 namespace Aetherion::Scripting {

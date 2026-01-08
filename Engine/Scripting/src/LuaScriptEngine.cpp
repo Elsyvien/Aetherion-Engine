@@ -1,14 +1,12 @@
+#ifdef AETHERION_ENABLE_LUA
+#include <sol/sol.hpp>
+#endif
+
 #include "Aetherion/Scripting/LuaScriptEngine.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scripting/LuaBindings.h"
 #include "Aetherion/Scripting/LuaScriptInstance.h"
-
-
-#ifdef AETHERION_ENABLE_LUA
-#define SOL_ALL_SAFETIES_ON 1
-#include <sol/sol.hpp>
-#endif
 
 #include <iostream>
 #include <sstream>
