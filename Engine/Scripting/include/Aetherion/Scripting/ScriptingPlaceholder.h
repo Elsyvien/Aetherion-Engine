@@ -10,6 +10,9 @@
 #ifdef AETHERION_ENABLE_PYTHON
 #include <Python.h>
 #endif
+namespace Aetherion::Scene {
+class Entity;
+}
 namespace Aetherion::Scripting {
 
 enum class BehaviorExecutionMode { Stub, LocalModel, RemoteService };
@@ -82,12 +85,16 @@ public:
     [[nodiscard]] std::optional<BehaviorScript>
     GetScript(const std::string& assetId) const;
     [[nodiscard]] BehaviorDecision RunBehavior(const std::string& assetId,
+                                               Scene::Entity* entity,
+                                               const std::string& contextJson);
+    [[nodiscard]] BehaviorDecision RunBehavior(const std::string& assetId,
                                                const std::string& contextJson);
     [[nodiscard]] bool HasPrompt(const std::string& assetId) const noexcept;
 
 private:
     void InitializePython();
     BehaviorDecision RunBehaviorPython(const BehaviorScript& script,
+                                       Scene::Entity* entity,
                                        const std::string& contextJson);
     BehaviorPrompt LoadPromptFromDisk(const std::string& assetId,
                                       const std::filesystem::path& path) const;

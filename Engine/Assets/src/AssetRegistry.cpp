@@ -513,6 +513,12 @@ AssetRegistry::AssetType ClassifyAssetType(const std::filesystem::path &path) {
       ext == ".aiff") {
     return AssetRegistry::AssetType::Audio;
   }
+  if (Aetherion::Core::String::HasSuffix(filename, ".behavior.json") ||
+      Aetherion::Core::String::HasSuffix(filename, ".prompt.json") ||
+      Aetherion::Core::String::HasSuffix(filename, ".behavior.txt") ||
+      Aetherion::Core::String::HasSuffix(filename, ".prompt.txt")) {
+    return AssetRegistry::AssetType::BehaviorPrompt;
+  }
   if (ext == ".lua" || ext == ".py" || ext == ".js" || ext == ".cs") {
     return AssetRegistry::AssetType::Script;
   }
@@ -1366,13 +1372,15 @@ int AssetTypeOrder(AssetRegistry::AssetType type) {
     return 4;
   case AssetRegistry::AssetType::Script:
     return 5;
-  case AssetRegistry::AssetType::Scene:
+  case AssetRegistry::AssetType::BehaviorPrompt:
     return 6;
-  case AssetRegistry::AssetType::Shader:
+  case AssetRegistry::AssetType::Scene:
     return 7;
+  case AssetRegistry::AssetType::Shader:
+    return 8;
   case AssetRegistry::AssetType::Other:
   default:
-    return 8;
+    return 9;
   }
 }
 } // namespace
@@ -1391,6 +1399,8 @@ const char *AssetRegistry::AssetTypeToString(AssetType type) {
     return "Audio";
   case AssetType::Script:
     return "Script";
+  case AssetType::BehaviorPrompt:
+    return "BehaviorPrompt";
   case AssetType::Scene:
     return "Scene";
   case AssetType::Shader:

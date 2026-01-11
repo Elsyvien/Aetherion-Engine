@@ -1,8 +1,9 @@
 #pragma once
 
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
-#include <functional>
 #include <QString>
 
 #include <vector>
@@ -91,7 +92,8 @@ private:
     
     // Pattern-based processing (fallback)
     CopilotResult ProcessWithPatterns(const QString& prompt, bool allowDryRun);
+
+    std::uint64_t m_requestSequence{0};
 };
 
 } // namespace Aetherion::Editor
-

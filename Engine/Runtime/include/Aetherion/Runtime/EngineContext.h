@@ -7,6 +7,8 @@
 #include "Aetherion/Assets/LLMClient.h"
 #include "Aetherion/Core/EventBus.h"
 #include "Aetherion/Core/Types.h"
+#include "Aetherion/Runtime/AIInferenceBudget.h"
+#include "Aetherion/Runtime/OnDeviceInference.h"
 
 namespace Aetherion::Rendering {
 class RenderView;
@@ -79,6 +81,20 @@ public:
   }
   Assets::ILLMClient* GetAIClient();
 
+  void SetOnDeviceInferenceBackend(
+      std::shared_ptr<OnDeviceInferenceBackend> backend);
+  [[nodiscard]] std::shared_ptr<OnDeviceInferenceBackend>
+  GetOnDeviceInferenceBackend() const noexcept {
+    return m_onDeviceBackend;
+  }
+
+  [[nodiscard]] AIInferenceBudget& GetInferenceBudget() noexcept {
+    return m_inferenceBudget;
+  }
+  [[nodiscard]] const AIInferenceBudget& GetInferenceBudget() const noexcept {
+    return m_inferenceBudget;
+  }
+
   /// @brief Get the global event bus for inter-system communication
   [[nodiscard]] Core::EventBus &GetEventBus() noexcept { return m_eventBus; }   
   [[nodiscard]] const Core::EventBus &GetEventBus() const noexcept {
@@ -123,6 +139,8 @@ private:
   Assets::LLMConfig m_aiConfig{};
   bool m_aiConfigEnabled{false};
   std::unique_ptr<Assets::ILLMClient> m_aiClient;
+  std::shared_ptr<OnDeviceInferenceBackend> m_onDeviceBackend;
+  AIInferenceBudget m_inferenceBudget;
   Core::EventBus m_eventBus;
   bool m_simulationPlaying{false};
   bool m_simulationPaused{false};

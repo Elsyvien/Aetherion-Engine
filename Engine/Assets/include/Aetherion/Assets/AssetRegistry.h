@@ -19,7 +19,18 @@ public:
   void Scan(const std::string &rootPath);
   void Rescan();
   [[nodiscard]] bool HasAsset(const std::string &assetId) const;
-  enum class AssetType { Texture, Mesh, Audio, Script, Scene, Shader, Animation, Skeleton, Other };
+  enum class AssetType {
+    Texture,
+    Mesh,
+    Audio,
+    Script,
+    BehaviorPrompt,
+    Scene,
+    Shader,
+    Animation,
+    Skeleton,
+    Other
+  };
 
   static const char *AssetTypeToString(AssetType type);
 

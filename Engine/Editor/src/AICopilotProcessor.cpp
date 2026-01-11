@@ -1,7 +1,10 @@
 #include "Aetherion/Editor/AICopilotProcessor.h"
 #include "Aetherion/Editor/AICopilotAgent.h"
 #include "Aetherion/Editor/AICopilotTools.h"
+#include "Aetherion/Editor/Command.h"
+#include "Aetherion/Editor/Commands/CompositeCommand.h"
 #include "Aetherion/Editor/Commands/EntityCommands.h"
+#include "Aetherion/Editor/Commands/MeshRendererCommand.h"
 #include "Aetherion/Editor/Commands/TransformCommand.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/Entity.h"
@@ -15,6 +18,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
+#include <QStringList>
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -43,6 +47,7 @@ namespace {
         MoveSelection,
         RotateSelection,
         ScaleSelection,
+        SpinSelection,
         DeleteSelection,
         DuplicateSelection,
         ParentSelection,
@@ -87,6 +92,74 @@ namespace {
             auto match = regex.match(text);
             if (match.hasMatch()) {
                 return match.captured(1).toFloat();
+            }
+        }
+        return std::nullopt;
+    }
+
+    QStringList SplitClauses(const QString& text) {
+        const QRegularExpression splitRegex(
+            R"(\b(?:and then|then|after that)\b|[;])",
+            QRegularExpression::CaseInsensitiveOption);
+        QStringList parts = text.split(splitRegex, Qt::SkipEmptyParts);
+        QStringList trimmedParts;
+        trimmedParts.reserve(parts.size());
+        for (const auto& part : parts) {
+            const QString trimmed = part.trimmed();
+            if (!trimmed.isEmpty()) {
+                trimmedParts.push_back(trimmed);
+            }
+        }
+        return trimmedParts;
+    }
+
+    std::optional<std::array<float, 3>> ExtractVector3(const QString& text) {
+        QRegularExpression atRegex(
+            R"(\b(?:at|position)\s*\(?\s*([-\d]+(?:\.\d+)?)\s*,\s*([-\d]+(?:\.\d+)?)\s*,\s*([-\d]+(?:\.\d+)?)\s*\)?)",
+            QRegularExpression::CaseInsensitiveOption);
+        auto match = atRegex.match(text);
+        if (match.hasMatch()) {
+            return std::array<float, 3>{
+                match.captured(1).toFloat(),
+                match.captured(2).toFloat(),
+                match.captured(3).toFloat()
+            };
+        }
+
+        auto extractAxis = [&](const QString& axis) -> std::optional<float> {
+            QRegularExpression regex(
+                QString(R"(\b%1\s*[:=]\s*([-\d]+(?:\.\d+)?))").arg(axis),
+                QRegularExpression::CaseInsensitiveOption);
+            auto axisMatch = regex.match(text);
+            if (axisMatch.hasMatch()) {
+                return axisMatch.captured(1).toFloat();
+            }
+            return std::nullopt;
+        };
+
+        auto x = extractAxis("x");
+        auto y = extractAxis("y");
+        auto z = extractAxis("z");
+        if (x || y || z) {
+            return std::array<float, 3>{
+                x.value_or(0.0f),
+                y.value_or(0.0f),
+                z.value_or(0.0f)
+            };
+        }
+
+        return std::nullopt;
+    }
+
+    std::optional<int> ExtractGridCount(const QString& text) {
+        QRegularExpression gridRegex(
+            R"(\b(\d+)\s*[xX]\s*(\d+)\b)");
+        auto match = gridRegex.match(text);
+        if (match.hasMatch()) {
+            const int rows = match.captured(1).toInt();
+            const int cols = match.captured(2).toInt();
+            if (rows > 0 && cols > 0) {
+                return rows * cols;
             }
         }
         return std::nullopt;
@@ -184,6 +257,9 @@ namespace {
         }
         if (tool == "focus_selection" || tool == "focus") {
             return PlanTool::FocusSelection;
+        }
+        if (tool == "spin_selection" || tool == "spin") {
+            return PlanTool::SpinSelection;
         }
         return PlanTool::Unknown;
     }
@@ -285,7 +361,7 @@ void AICopilotProcessor::SetScene(std::shared_ptr<Scene::Scene> scene) {
     
     // Re-register tools with updated scene context
     if (m_agent && m_scene) {
-        AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_assetRegistry, m_executor, m_highlightCallback, m_activityCallback, m_toolStatusCallback);
+        AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene, m_selectedEntity, m_assetRegistry, m_executor, m_highlightCallback, m_activityCallback, m_toolStatusCallback);
     }
 }
 
@@ -298,7 +374,7 @@ void AICopilotProcessor::SetSelectedEntity(std::shared_ptr<Scene::Entity> select
     
     // Re-register tools with updated selection context
     if (m_agent && m_scene) {
-        AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_assetRegistry, m_executor, m_highlightCallback, m_activityCallback, m_toolStatusCallback);
+        AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene, m_selectedEntity, m_assetRegistry, m_executor, m_highlightCallback, m_activityCallback, m_toolStatusCallback);
     }
 }
 
@@ -322,9 +398,74 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
         // Fall through to pattern matching if LLM failed
     }
 
+    return ProcessWithPatterns(trimmed, allowDryRun);
+}
+
+CopilotResult AICopilotProcessor::ProcessWithPatterns(const QString& prompt, bool allowDryRun) {
+    CopilotResult result;
+
+    if (!m_scene) {
+        result.response = "No active scene loaded. Create or open a scene first.";
+        return result;
+    }
+
+    const QString trimmed = prompt.trimmed();
+    if (trimmed.isEmpty()) return result;
+
     const QString lowered = trimmed.toLower();
     result.dryRun = allowDryRun &&
                     (lowered.contains("preview") || lowered.contains("dry run"));
+
+    std::vector<std::unique_ptr<Command>> commandBatch;
+    QStringList actionSummaries;
+
+    const std::string requestId =
+        "copilot-" + std::to_string(++m_requestSequence);
+    auto buildContext = [&](const QString& summary) {
+        CommandContext context;
+        context.source = "Copilot";
+        context.summary = summary.left(180).toStdString();
+        context.requestId = requestId;
+        return context;
+    };
+
+    auto queueCommand = [&](std::unique_ptr<Command> cmd) {
+        if (result.dryRun || !cmd) {
+            return;
+        }
+        commandBatch.push_back(std::move(cmd));
+    };
+
+    auto addSummary = [&](const QString& summary) {
+        if (!summary.isEmpty()) {
+            actionSummaries.push_back(summary);
+        }
+    };
+
+    auto executeBatch = [&](const QString& summaryText) {
+        if (result.dryRun || commandBatch.empty() || !m_executor) {
+            return;
+        }
+
+        QString label = summaryText.trimmed();
+        if (label.isEmpty()) {
+            label = "Copilot Actions";
+        }
+
+        CommandContext context = buildContext(label);
+        std::string name = label.left(60).toStdString();
+
+        if (commandBatch.size() == 1) {
+            commandBatch.front()->SetContext(context);
+            m_executor(std::move(commandBatch.front()));
+            return;
+        }
+
+        auto batch = std::make_unique<CompositeCommand>(name,
+                                                        std::move(commandBatch));
+        batch->SetContext(context);
+        m_executor(std::move(batch));
+    };
 
     auto executeSpawn = [&](SpawnType type, int count, SpawnPattern pattern,
                             float spacing, float radius, float originX,
@@ -424,49 +565,51 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
                 }
             }
 
-            if (m_executor) {
-                if (result.dryRun) {
-                    result.previewActions.push_back(
-                        QString("Would create '%1' at (%2, %3, %4)")
-                            .arg(name)
-                            .arg(x)
-                            .arg(y)
-                            .arg(z));
-                } else {
-                    m_executor(std::make_unique<CreateEntityCommand>(m_scene, newEntity));
-                }
+            if (result.dryRun) {
+                result.previewActions.push_back(
+                    QString("Would create '%1' at (%2, %3, %4)")
+                        .arg(name)
+                        .arg(x)
+                        .arg(y)
+                        .arg(z));
+            } else {
+                queueCommand(std::make_unique<CreateEntityCommand>(m_scene, newEntity));
+                result.createdEntityIds.push_back(newEntity->GetId());
             }
-
-            result.createdEntityIds.push_back(newEntity->GetId());
         }
 
         QString typeName = (count == 1) ? GetLabelName(type) : GetLabelPlural(type);
+        QString summary;
         if (result.dryRun) {
-            result.response = QString("Dry-run: would spawn %1 %2.")
-                                  .arg(count)
-                                  .arg(typeName);
+            summary = QString("Dry-run: would spawn %1 %2.")
+                          .arg(count)
+                          .arg(typeName);
         } else if (pattern == SpawnPattern::Grid) {
-            result.response = QString("Spawned a grid of %1 %2.").arg(count).arg(typeName);
+            summary = QString("Spawned a grid of %1 %2.").arg(count).arg(typeName);
         } else if (pattern == SpawnPattern::Circle) {
-            result.response = QString("Spawned a circle of %1 %2.").arg(count).arg(typeName);
+            summary = QString("Spawned a circle of %1 %2.").arg(count).arg(typeName);
         } else if (pattern == SpawnPattern::Random) {
-            result.response = QString("Spawned a scatter of %1 %2.").arg(count).arg(typeName);
+            summary = QString("Spawned a scatter of %1 %2.").arg(count).arg(typeName);
         } else if (pattern == SpawnPattern::Line && count > 1) {
-            result.response = QString("Spawned a line of %1 %2.").arg(count).arg(typeName);
+            summary = QString("Spawned a line of %1 %2.").arg(count).arg(typeName);
         } else {
-            result.response = QString("Spawned %1 %2.").arg(count).arg(typeName);
+            summary = QString("Spawned %1 %2.").arg(count).arg(typeName);
         }
+        result.response = summary;
+        addSummary(summary);
     };
 
     auto executeMove = [&](const std::array<float, 3>& offset) {
         if (!m_selectedEntity) {
             result.response = "No entity selected.";
+            addSummary(result.response);
             return;
         }
 
         auto transform = m_selectedEntity->GetComponent<Scene::TransformComponent>();
         if (!transform) {
             result.response = "Selected entity has no transform to move.";
+            addSummary(result.response);
             return;
         }
 
@@ -488,28 +631,30 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
                     .arg(offset[1])
                     .arg(offset[2]));
             result.response = "Dry-run: move selection.";
+            addSummary(result.response);
             return;
         }
 
-        if (m_executor) {
-            m_executor(std::make_unique<TransformCommand>(m_selectedEntity, oldTrans, newTrans));
-            result.response = QString("Moved '%1' by (%2, %3, %4).")
-                                  .arg(QString::fromStdString(m_selectedEntity->GetName()))
-                                  .arg(offset[0])
-                                  .arg(offset[1])
-                                  .arg(offset[2]);
-        }
+        queueCommand(std::make_unique<TransformCommand>(m_selectedEntity, oldTrans, newTrans));
+        result.response = QString("Moved '%1' by (%2, %3, %4).")
+                              .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                              .arg(offset[0])
+                              .arg(offset[1])
+                              .arg(offset[2]);
+        addSummary(result.response);
     };
 
     auto executeRotate = [&](const std::array<float, 3>& offset, bool absolute) {
         if (!m_selectedEntity) {
             result.response = "No entity selected.";
+            addSummary(result.response);
             return;
         }
 
         auto transform = m_selectedEntity->GetComponent<Scene::TransformComponent>();
         if (!transform) {
             result.response = "Selected entity has no transform to rotate.";
+            addSummary(result.response);
             return;
         }
 
@@ -535,28 +680,30 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
                     .arg(offset[1])
                     .arg(offset[2]));
             result.response = "Dry-run: rotate selection.";
+            addSummary(result.response);
             return;
         }
 
-        if (m_executor) {
-            m_executor(std::make_unique<TransformCommand>(m_selectedEntity, oldTrans, newTrans));
-            result.response = QString("Rotated '%1' by (%2, %3, %4).")
-                                  .arg(QString::fromStdString(m_selectedEntity->GetName()))
-                                  .arg(offset[0])
-                                  .arg(offset[1])
-                                  .arg(offset[2]);
-        }
+        queueCommand(std::make_unique<TransformCommand>(m_selectedEntity, oldTrans, newTrans));
+        result.response = QString("Rotated '%1' by (%2, %3, %4).")
+                              .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                              .arg(offset[0])
+                              .arg(offset[1])
+                              .arg(offset[2]);
+        addSummary(result.response);
     };
 
     auto executeScale = [&](const std::array<float, 3>& scale, bool absolute) {
         if (!m_selectedEntity) {
             result.response = "No entity selected.";
+            addSummary(result.response);
             return;
         }
 
         auto transform = m_selectedEntity->GetComponent<Scene::TransformComponent>();
         if (!transform) {
             result.response = "Selected entity has no transform to scale.";
+            addSummary(result.response);
             return;
         }
 
@@ -582,22 +729,23 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
                     .arg(scale[1])
                     .arg(scale[2]));
             result.response = "Dry-run: scale selection.";
+            addSummary(result.response);
             return;
         }
 
-        if (m_executor) {
-            m_executor(std::make_unique<TransformCommand>(m_selectedEntity, oldTrans, newTrans));
-            result.response = QString("Scaled '%1' by (%2, %3, %4).")
-                                  .arg(QString::fromStdString(m_selectedEntity->GetName()))
-                                  .arg(scale[0])
-                                  .arg(scale[1])
-                                  .arg(scale[2]);
-        }
+        queueCommand(std::make_unique<TransformCommand>(m_selectedEntity, oldTrans, newTrans));
+        result.response = QString("Scaled '%1' by (%2, %3, %4).")
+                              .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                              .arg(scale[0])
+                              .arg(scale[1])
+                              .arg(scale[2]);
+        addSummary(result.response);
     };
 
     auto executeDelete = [&]() {
         if (!m_selectedEntity) {
             result.response = "No entity selected.";
+            addSummary(result.response);
             return;
         }
         if (result.dryRun) {
@@ -605,18 +753,19 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
                 QString("Would delete entity '%1'")
                     .arg(QString::fromStdString(m_selectedEntity->GetName())));
             result.response = "Dry-run: delete selection.";
+            addSummary(result.response);
             return;
         }
-        if (m_executor) {
-            m_executor(std::make_unique<DeleteEntityCommand>(m_scene, m_selectedEntity));
-            result.response = QString("Deleted '%1'.")
-                                  .arg(QString::fromStdString(m_selectedEntity->GetName()));
-        }
+        queueCommand(std::make_unique<DeleteEntityCommand>(m_scene, m_selectedEntity));
+        result.response = QString("Deleted '%1'.")
+                              .arg(QString::fromStdString(m_selectedEntity->GetName()));
+        addSummary(result.response);
     };
 
     auto executeDuplicate = [&]() {
         if (!m_selectedEntity) {
             result.response = "No entity selected.";
+            addSummary(result.response);
             return;
         }
 
@@ -657,27 +806,22 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
                     .arg(QString::fromStdString(m_selectedEntity->GetName()))
                     .arg(QString::fromStdString(newName)));
             result.response = "Dry-run: duplicate selection.";
+            addSummary(result.response);
             return;
         }
 
-        if (m_executor) {
-            m_executor(std::make_unique<CreateEntityCommand>(m_scene, clone));
-            result.response = QString("Duplicated '%1' as '%2'.")
-                                  .arg(QString::fromStdString(m_selectedEntity->GetName()))
-                                  .arg(QString::fromStdString(newName));
-            result.createdEntityIds.push_back(newId);
-        }
+        queueCommand(std::make_unique<CreateEntityCommand>(m_scene, clone));
+        result.response = QString("Duplicated '%1' as '%2'.")
+                              .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                              .arg(QString::fromStdString(newName));
+        result.createdEntityIds.push_back(newId);
+        addSummary(result.response);
     };
 
     auto executeParent = [&](Core::EntityId targetId) {
         if (!m_selectedEntity) {
             result.response = "No entity selected.";
-            return;
-        }
-
-        if (targetId == 0 && !result.dryRun) {
-            m_scene->SetParent(m_selectedEntity->GetId(), 0);
-            result.response = "Detached selection to world.";
+            addSummary(result.response);
             return;
         }
 
@@ -687,27 +831,64 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
                     .arg(QString::fromStdString(m_selectedEntity->GetName()))
                     .arg(targetId));
             result.response = "Dry-run: parent selection.";
+            addSummary(result.response);
             return;
         }
 
-        const bool ok = m_scene->SetParent(m_selectedEntity->GetId(), targetId);
-        if (ok) {
-            result.response =
-                QString("Parented '%1' to entity %2.")
-                    .arg(QString::fromStdString(m_selectedEntity->GetName()))
-                    .arg(targetId);
-        } else {
-            result.response = "Parent operation failed (check target id).";
+        queueCommand(std::make_unique<ParentEntityCommand>(
+            m_scene, m_selectedEntity->GetId(), targetId));
+        result.response = (targetId == 0)
+                              ? "Detached selection to world."
+                              : QString("Parented '%1' to entity %2.")
+                                    .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                                    .arg(targetId);
+        addSummary(result.response);
+    };
+
+    auto executeSpin = [&](float speed) {
+        if (!m_selectedEntity) {
+            result.response = "No entity selected.";
+            addSummary(result.response);
+            return;
         }
+
+        auto mesh = m_selectedEntity->GetComponent<Scene::MeshRendererComponent>();
+        if (!mesh) {
+            result.response = "Selected entity has no mesh renderer to spin.";
+            addSummary(result.response);
+            return;
+        }
+
+        if (result.dryRun) {
+            result.previewActions.push_back(
+                QString("Would set spin speed of '%1' to %2 deg/sec")
+                    .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                    .arg(speed));
+            result.response = "Dry-run: spin selection.";
+            addSummary(result.response);
+            return;
+        }
+
+        MeshRendererState oldState = CaptureMeshRendererState(*mesh);
+        MeshRendererState newState = oldState;
+        newState.rotationSpeedDegPerSec = speed;
+        queueCommand(std::make_unique<MeshRendererCommand>(
+            m_selectedEntity, oldState, newState));
+        result.response = QString("Set '%1' spin speed to %2 deg/sec.")
+                              .arg(QString::fromStdString(m_selectedEntity->GetName()))
+                              .arg(speed);
+        addSummary(result.response);
     };
 
     auto executeFocus = [&]() {
         if (!m_selectedEntity) {
             result.response = "No entity selected.";
+            addSummary(result.response);
             return;
         }
         result.requestFocus = true;
         result.response = "Focusing camera on selection.";
+        addSummary(result.response);
     };
 
     if (auto plan = TryParseCopilotPlan(trimmed)) {
@@ -715,7 +896,7 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
             switch (step.tool) {
                 case PlanTool::SpawnEntity: {
                     const QString typeName = step.args.value("type").toString("entity").toLower();
-                    const int count = step.args.value("count").toInt(1);
+                    int count = step.args.value("count").toInt(1);
                     const bool grid = step.args.value("grid").toBool(false);
                     const QString patternName =
                         step.args.value("pattern").toString(grid ? "grid" : "");
@@ -799,6 +980,13 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
                     executeScale(scale, absolute);
                     break;
                 }
+                case PlanTool::SpinSelection: {
+                    float speed = static_cast<float>(step.args.value("speed").toDouble(90.0));
+                    speed = static_cast<float>(
+                        step.args.value("degrees_per_sec").toDouble(speed));
+                    executeSpin(speed);
+                    break;
+                }
                 case PlanTool::DeleteSelection:
                     executeDelete();
                     break;
@@ -826,210 +1014,241 @@ CopilotResult AICopilotProcessor::ProcessPrompt(const QString& prompt, bool allo
             }
         }
 
+        if (!actionSummaries.isEmpty()) {
+            if (plan->summary.isEmpty()) {
+                result.response = actionSummaries.join("\n");
+            }
+        }
         if (result.response.isEmpty()) {
             result.response = plan->summary.isEmpty()
                                   ? "Executed copilot plan."
                                   : plan->summary;
         }
+
+        executeBatch(plan->summary.isEmpty() ? result.response : plan->summary);
         return result;
     }
 
-    // Basic intent classification
-    const bool addVerb = lowered.contains("add");
-    const bool addToRequest = addVerb && lowered.contains(" to ");
-    const bool addEntityRequest =
-        addVerb && !addToRequest &&
-        ContainsAny(lowered, {"cube", "box", "sphere", "plane", "cylinder",
-                              "cone", "pyramid", "octahedron", "wedge",
-                              "prism", "light", "camera"});
-    const bool spawnRequest = lowered.contains("spawn") ||
-                              lowered.contains("create") ||
-                              addEntityRequest;
-    const bool deleteRequest =
-        lowered.contains("delete") || lowered.contains("remove");
-    const bool duplicateRequest =
-        lowered.contains("duplicate") || lowered.contains("copy");
-    const bool moveRequest = lowered.contains("move") ||
-                             lowered.contains("offset") ||
-                             lowered.contains("translate");
-    const bool rotateRequest =
-        lowered.contains("rotate") || lowered.contains("turn");
-    const bool spinRequest =
-        lowered.contains("spin") || lowered.contains("spinning");
-    const bool scaleRequest =
-        lowered.contains("scale") || lowered.contains("resize");
-    const bool focusRequest = lowered.contains("focus") ||
-                              lowered.contains("frame");
-    const bool parentRequest = lowered.contains("parent") ||
-                               lowered.contains("attach") ||
-                               addToRequest;
-
-    if (deleteRequest && m_selectedEntity) {
-        executeDelete();
-        return result;
-    }
-
-    if (duplicateRequest && m_selectedEntity) {
-        executeDuplicate();
-        return result;
-    }
-
-    if (moveRequest && m_selectedEntity) {
-        float magnitude = 1.0f;
-        QRegularExpression numberRegex(R"(\b(-?\d+(\.\d+)?)\b)");
-        auto matchIt = numberRegex.globalMatch(trimmed);
-        if (matchIt.hasNext()) {
-            magnitude = matchIt.next().captured(1).toFloat();
+    auto processClause = [&](const QString& clause) -> bool {
+        if (clause.trimmed().isEmpty()) {
+            return false;
         }
 
-        std::array<float, 3> offset{magnitude, 0.0f, 0.0f};
-        if (lowered.contains("up"))
-            offset = {0.0f, magnitude, 0.0f};
-        else if (lowered.contains("down"))
-            offset = {0.0f, -magnitude, 0.0f};
-        else if (lowered.contains("forward"))
-            offset = {0.0f, 0.0f, -magnitude};
-        else if (lowered.contains("back") || lowered.contains("backward"))
-            offset = {0.0f, 0.0f, magnitude};
-        else if (lowered.contains("left"))
-            offset = {-magnitude, 0.0f, 0.0f};
-        else if (lowered.contains("right"))
-            offset = {magnitude, 0.0f, 0.0f};
-        executeMove(offset);
-        return result;
-    }
+        const QString clauseLower = clause.toLower();
 
-    if (rotateRequest && m_selectedEntity) {
-        float degrees = 15.0f;
-        QRegularExpression numberRegex(R"(\b(-?\d+(\.\d+)?)\b)");
-        auto matchIt = numberRegex.globalMatch(trimmed);
-        if (matchIt.hasNext()) {
-            degrees = matchIt.next().captured(1).toFloat();
+        const bool addVerb = clauseLower.contains("add");
+        const bool addToRequest = addVerb && clauseLower.contains(" to ");
+        const bool addEntityRequest =
+            addVerb && !addToRequest &&
+            ContainsAny(clauseLower, {"cube", "box", "sphere", "plane", "cylinder",
+                                      "cone", "pyramid", "octahedron", "wedge",
+                                      "prism", "light", "camera"});
+        const bool spawnRequest = clauseLower.contains("spawn") ||
+                                  clauseLower.contains("create") ||
+                                  addEntityRequest;
+        const bool deleteRequest =
+            clauseLower.contains("delete") || clauseLower.contains("remove");
+        const bool duplicateRequest =
+            clauseLower.contains("duplicate") || clauseLower.contains("copy");
+        const bool moveRequest = clauseLower.contains("move") ||
+                                 clauseLower.contains("offset") ||
+                                 clauseLower.contains("translate");
+        const bool rotateRequest =
+            clauseLower.contains("rotate") || clauseLower.contains("turn");
+        const bool spinRequest =
+            clauseLower.contains("spin") || clauseLower.contains("spinning");
+        const bool scaleRequest =
+            clauseLower.contains("scale") || clauseLower.contains("resize");
+        const bool focusRequest = clauseLower.contains("focus") ||
+                                  clauseLower.contains("frame");
+        const bool parentRequest = clauseLower.contains("parent") ||
+                                   clauseLower.contains("attach") ||
+                                   addToRequest;
+
+        if (deleteRequest && m_selectedEntity) {
+            executeDelete();
+            return true;
         }
 
-        std::array<float, 3> delta{0.0f, degrees, 0.0f};
-        if (ContainsAny(lowered, {"x axis", "x-axis", "pitch"})) {
-            delta = {degrees, 0.0f, 0.0f};
-        } else if (ContainsAny(lowered, {"z axis", "z-axis", "roll"})) {
-            delta = {0.0f, 0.0f, degrees};
+        if (duplicateRequest && m_selectedEntity) {
+            executeDuplicate();
+            return true;
         }
 
-        executeRotate(delta, false);
-        return result;
-    }
+        if (moveRequest && m_selectedEntity) {
+            float magnitude = 1.0f;
+            QRegularExpression numberRegex(R"(\b(-?\d+(\.\d+)?)\b)");
+            auto matchIt = numberRegex.globalMatch(clause);
+            if (matchIt.hasNext()) {
+                magnitude = matchIt.next().captured(1).toFloat();
+            }
 
-    if (scaleRequest && m_selectedEntity) {
-        float value = 1.0f;
-        QRegularExpression numberRegex(R"(\b(-?\d+(\.\d+)?)\b)");
-        auto matchIt = numberRegex.globalMatch(trimmed);
-        if (matchIt.hasNext()) {
-            value = matchIt.next().captured(1).toFloat();
+            std::array<float, 3> offset{magnitude, 0.0f, 0.0f};
+            if (clauseLower.contains("up"))
+                offset = {0.0f, magnitude, 0.0f};
+            else if (clauseLower.contains("down"))
+                offset = {0.0f, -magnitude, 0.0f};
+            else if (clauseLower.contains("forward"))
+                offset = {0.0f, 0.0f, -magnitude};
+            else if (clauseLower.contains("back") || clauseLower.contains("backward"))
+                offset = {0.0f, 0.0f, magnitude};
+            else if (clauseLower.contains("left"))
+                offset = {-magnitude, 0.0f, 0.0f};
+            else if (clauseLower.contains("right"))
+                offset = {magnitude, 0.0f, 0.0f};
+            executeMove(offset);
+            return true;
         }
 
-        const bool absolute = lowered.contains(" to ");
-        const bool multiply =
-            ContainsAny(lowered, {" by ", " x ", " times", " multiply"});
-        const std::array<float, 3> scale{value, value, value};
-        executeScale(scale, absolute || !multiply);
-        return result;
-    }
+        if (rotateRequest && m_selectedEntity) {
+            float degrees = 15.0f;
+            QRegularExpression numberRegex(R"(\b(-?\d+(\.\d+)?)\b)");
+            auto matchIt = numberRegex.globalMatch(clause);
+            if (matchIt.hasNext()) {
+                degrees = matchIt.next().captured(1).toFloat();
+            }
 
-    if (spinRequest && m_selectedEntity) {
-        auto mesh = m_selectedEntity->GetComponent<Scene::MeshRendererComponent>();
-        if (!mesh) {
-            result.response = "Selected entity has no mesh renderer to spin.";
-            return result;
+            std::array<float, 3> delta{0.0f, degrees, 0.0f};
+            if (ContainsAny(clauseLower, {"x axis", "x-axis", "pitch"})) {
+                delta = {degrees, 0.0f, 0.0f};
+            } else if (ContainsAny(clauseLower, {"z axis", "z-axis", "roll"})) {
+                delta = {0.0f, 0.0f, degrees};
+            }
+
+            executeRotate(delta, false);
+            return true;
         }
 
-        float speed = 90.0f;
-        QRegularExpression numberRegex(R"(\b(-?\d+(?:\.\d+)?)\b)");
-        auto matchIt = numberRegex.globalMatch(trimmed);
-        if (matchIt.hasNext()) {
-            speed = matchIt.next().captured(1).toFloat();
-        }
-        if (ContainsAny(lowered, {"stop", "disable", "no spin", "not spin"})) {
-            speed = 0.0f;
-        }
+        if (scaleRequest && m_selectedEntity) {
+            float value = 1.0f;
+            QRegularExpression numberRegex(R"(\b(-?\d+(\.\d+)?)\b)");
+            auto matchIt = numberRegex.globalMatch(clause);
+            if (matchIt.hasNext()) {
+                value = matchIt.next().captured(1).toFloat();
+            }
 
-        if (result.dryRun) {
-            result.previewActions.push_back(
-                QString("Would set spin speed of '%1' to %2 deg/sec")
-                    .arg(QString::fromStdString(m_selectedEntity->GetName()))
-                    .arg(speed));
-            result.response = "Dry-run: spin selection.";
-            return result;
+            const bool absolute = clauseLower.contains(" to ");
+            const bool multiply =
+                ContainsAny(clauseLower, {" by ", " x ", " times", " multiply"});
+            const std::array<float, 3> scale{value, value, value};
+            executeScale(scale, absolute || !multiply);
+            return true;
         }
 
-        mesh->SetRotationSpeedDegPerSec(speed);
-        result.response = QString("Set '%1' spin speed to %2 deg/sec.")
-                              .arg(QString::fromStdString(m_selectedEntity->GetName()))
-                              .arg(speed);
-        return result;
-    }
+        if (spinRequest && m_selectedEntity) {
+            float speed = 90.0f;
+            QRegularExpression numberRegex(R"(\b(-?\d+(?:\.\d+)?)\b)");
+            auto matchIt = numberRegex.globalMatch(clause);
+            if (matchIt.hasNext()) {
+                speed = matchIt.next().captured(1).toFloat();
+            }
+            if (ContainsAny(clauseLower, {"stop", "disable", "no spin", "not spin"})) {
+                speed = 0.0f;
+            }
 
-    if (parentRequest && m_selectedEntity) {
-        Core::EntityId targetId = 0;
+            executeSpin(speed);
+            return true;
+        }
+
+        if (parentRequest && m_selectedEntity) {
+            Core::EntityId targetId = 0;
+            QRegularExpression numberRegex(R"(\b(\d+)\b)");
+            auto matchIt = numberRegex.globalMatch(clause);
+            if (matchIt.hasNext()) {
+                targetId = matchIt.next().captured(1).toLongLong();
+            }
+
+            if (clauseLower.contains("world") || clauseLower.contains("root")) {
+                targetId = 0;
+            }
+
+            if (targetId != 0 || clauseLower.contains("world") || clauseLower.contains("root")) {
+                executeParent(targetId);
+                return true;
+            }
+        }
+
+        if (focusRequest && m_selectedEntity) {
+            executeFocus();
+            return true;
+        }
+
+        if (!spawnRequest) {
+            return false;
+        }
+
+        int count = 1;
         QRegularExpression numberRegex(R"(\b(\d+)\b)");
-        auto matchIt = numberRegex.globalMatch(trimmed);
+        auto matchIt = numberRegex.globalMatch(clause);
         if (matchIt.hasNext()) {
-            targetId = matchIt.next().captured(1).toLongLong();
+            count = matchIt.next().captured(1).toInt();
         }
-
-        if (lowered.contains("world") || lowered.contains("root")) {
-            targetId = 0;
+        if (auto gridCount = ExtractGridCount(clause)) {
+            count = gridCount.value();
         }
+        count = std::clamp(count, 1, 64);
 
-        if (targetId != 0 || lowered.contains("world") || lowered.contains("root")) {
-            executeParent(targetId);
-            return result;
+        SpawnType type = SpawnType::Empty;
+        if (clauseLower.contains("light")) type = SpawnType::Light;
+        else if (clauseLower.contains("camera")) type = SpawnType::Camera;
+        else if (clauseLower.contains("cube") || clauseLower.contains("box")) type = SpawnType::Cube;
+        else if (clauseLower.contains("sphere")) type = SpawnType::Sphere;
+        else if (clauseLower.contains("plane")) type = SpawnType::Plane;
+        else if (clauseLower.contains("cylinder")) type = SpawnType::Cylinder;
+        else if (clauseLower.contains("cone")) type = SpawnType::Cone;
+        else if (clauseLower.contains("pyramid")) type = SpawnType::Pyramid;
+        else if (clauseLower.contains("octahedron")) type = SpawnType::Octahedron;
+        else if (clauseLower.contains("wedge")) type = SpawnType::Wedge;
+        else if (clauseLower.contains("prism")) type = SpawnType::TriPrism;
+
+        const bool grid = clauseLower.contains("grid") || ExtractGridCount(clause).has_value();
+        const QString patternName = grid ? "grid" :
+            (ContainsAny(clauseLower, {"circle", "ring"}) ? "circle" :
+                (ContainsAny(clauseLower, {"random", "scatter", "sprinkle"}) ? "random" :
+                    (ContainsAny(clauseLower, {"line", "row"}) ? "line" : "")));
+        const float spacing =
+            ExtractNamedFloat(clauseLower, {"spacing", "gap", "spread"}).value_or(2.5f);
+        const float radius =
+            ExtractNamedFloat(clauseLower, {"radius", "r"}).value_or(0.0f);
+        const SpawnPattern pattern = ResolvePattern(patternName, grid, count);
+        float originX = 0.0f;
+        float originY = 0.0f;
+        float originZ = 0.0f;
+        if (auto origin = ExtractVector3(clause)) {
+            originX = origin->at(0);
+            originY = origin->at(1);
+            originZ = origin->at(2);
+        }
+        executeSpawn(type, count, pattern, spacing, radius, originX, originY, originZ);
+        return true;
+    };
+
+    bool handled = false;
+    const QStringList clauses = SplitClauses(trimmed);
+    if (clauses.empty()) {
+        handled = processClause(trimmed);
+    } else {
+        for (const auto& clause : clauses) {
+            if (processClause(clause)) {
+                handled = true;
+            }
         }
     }
 
-    if (focusRequest && m_selectedEntity) {
-        executeFocus();
-        return result;
-    }
-
-    if (!spawnRequest) {
+    if (!handled) {
         result.response = "Try spawn/move/rotate/scale/duplicate/delete commands like 'spawn a cube', 'move selection up 2', 'rotate selection 45', 'scale selection 1.5'.";
         return result;
     }
 
-    // Extract count
-    int count = 1;
-    QRegularExpression numberRegex(R"(\b(\d+)\b)");
-    auto matchIt = numberRegex.globalMatch(trimmed);
-    if (matchIt.hasNext()) {
-        count = matchIt.next().captured(1).toInt();
+    if (!actionSummaries.isEmpty()) {
+        if (actionSummaries.size() == 1) {
+            result.response = actionSummaries.front();
+        } else {
+            result.response = actionSummaries.join("\n");
+        }
     }
-    count = std::clamp(count, 1, 64);
 
-    // Identify type
-    SpawnType type = SpawnType::Empty;
-    if (lowered.contains("light")) type = SpawnType::Light;
-    else if (lowered.contains("camera")) type = SpawnType::Camera;
-    else if (lowered.contains("cube") || lowered.contains("box")) type = SpawnType::Cube;
-    else if (lowered.contains("sphere")) type = SpawnType::Sphere;
-    else if (lowered.contains("plane")) type = SpawnType::Plane;
-    else if (lowered.contains("cylinder")) type = SpawnType::Cylinder;
-    else if (lowered.contains("cone")) type = SpawnType::Cone;
-    else if (lowered.contains("pyramid")) type = SpawnType::Pyramid;
-    else if (lowered.contains("octahedron")) type = SpawnType::Octahedron;
-    else if (lowered.contains("wedge")) type = SpawnType::Wedge;
-    else if (lowered.contains("prism")) type = SpawnType::TriPrism;
-
-    const bool grid = lowered.contains("grid");
-    const QString patternName = grid ? "grid" :
-        (ContainsAny(lowered, {"circle", "ring"}) ? "circle" :
-            (ContainsAny(lowered, {"random", "scatter", "sprinkle"}) ? "random" :
-                (ContainsAny(lowered, {"line", "row"}) ? "line" : "")));
-    const float spacing =
-        ExtractNamedFloat(lowered, {"spacing", "gap", "spread"}).value_or(2.5f);
-    const float radius =
-        ExtractNamedFloat(lowered, {"radius", "r"}).value_or(0.0f);
-    const SpawnPattern pattern = ResolvePattern(patternName, grid, count);
-    executeSpawn(type, count, pattern, spacing, radius, 0.0f, 0.0f, 0.0f);
-
+    executeBatch(result.response);
     return result;
 }
 
@@ -1048,7 +1267,7 @@ CopilotResult AICopilotProcessor::ProcessWithAgent(const QString& prompt) {
     }
     
     // Ensure tools are registered with current context
-    AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene.get(), m_selectedEntity.get(), m_assetRegistry, m_executor, m_highlightCallback, m_activityCallback, m_toolStatusCallback);
+    AICopilotToolFactory::RegisterAllTools(*m_agent, m_scene, m_selectedEntity, m_assetRegistry, m_executor, m_highlightCallback, m_activityCallback, m_toolStatusCallback);
     
     // Process the request through the agent
     std::string response = m_agent->ProcessAgenticRequest(prompt.toStdString());

@@ -843,6 +843,10 @@ EditorMainWindow::EditorMainWindow(
         m_fpsTimer.restart();
       }
     }
+
+    if (m_inspectorPanel) {
+      m_inspectorPanel->UpdateAIStatus();
+    }
   });
 
   connect(
@@ -1991,6 +1995,7 @@ void EditorMainWindow::RefreshAssetBrowser() {
       {Assets::AssetRegistry::AssetType::Mesh, "Meshes/"},
       {Assets::AssetRegistry::AssetType::Audio, "Audio/"},
       {Assets::AssetRegistry::AssetType::Script, "Scripts/"},
+      {Assets::AssetRegistry::AssetType::BehaviorPrompt, "Behavior Prompts/"},
       {Assets::AssetRegistry::AssetType::Scene, "Scenes/"},
       {Assets::AssetRegistry::AssetType::Shader, "Shaders/"},
       {Assets::AssetRegistry::AssetType::Other, "Misc/"}};

@@ -1,6 +1,12 @@
 #include "Aetherion/Editor/AICopilotTools.h"
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Editor/AICopilotAgent.h"
+#include "Aetherion/Editor/Command.h"
+#include "Aetherion/Editor/Commands/ComponentCommands.h"
+#include "Aetherion/Editor/Commands/CompositeCommand.h"
+#include "Aetherion/Editor/Commands/EntityCommands.h"
+#include "Aetherion/Editor/Commands/MeshRendererCommand.h"
+#include "Aetherion/Editor/Commands/TransformCommand.h"
 #include "Aetherion/Physics/PhysicsWorld.h"
 #include "Aetherion/Scene/AIBehaviorComponent.h"
 #include "Aetherion/Scene/CameraComponent.h"
@@ -14,11 +20,13 @@
 #include "Aetherion/Scene/TransformComponent.h"
 #include <algorithm>
 #include <sstream>
+#include <vector>
 
 namespace Aetherion::Editor {
 
 void AICopilotToolFactory::RegisterAllTools(
-    AICopilotAgent &agent, Scene::Scene *scene, Scene::Entity *selected,
+    AICopilotAgent &agent, std::shared_ptr<Scene::Scene> scene,
+    std::shared_ptr<Scene::Entity> selected,
     std::shared_ptr<Assets::AssetRegistry> assetRegistry,
     const CommandExecutor &executor,
     const EntityHighlightCallback &highlightCallback,
@@ -28,6 +36,15 @@ void AICopilotToolFactory::RegisterAllTools(
   if (!scene) {
     return;
   }
+
+  static std::uint64_t s_toolRequestId = 0;
+  auto makeToolContext = [&](const char *toolName) {
+    CommandContext context;
+    context.source = "CopilotTool";
+    context.summary = toolName ? toolName : "Copilot Tool";
+    context.requestId = "tool-" + std::to_string(++s_toolRequestId);
+    return context;
+  };
 
   // Helper to report activity
   auto reportActivity = [activityCallback](ActivityType type,
@@ -172,8 +189,8 @@ void AICopilotToolFactory::RegisterAllTools(
          {"description", "Additional components to add: collider, rigidbody"},
          {"items", {{"type", "string"}}}}}});
   spawnTool.execute =
-      [scene, executor, highlightCallback, reportActivity,
-       reportTool](const nlohmann::json &params) -> nlohmann::json {
+      [scene, executor, highlightCallback, reportActivity, reportTool,
+       makeToolContext](const nlohmann::json &params) -> nlohmann::json {
     std::string type = params.value("type", "cube");
     std::string name = params.value("name", type);
 
@@ -271,7 +288,13 @@ void AICopilotToolFactory::RegisterAllTools(
       }
     }
 
-    scene->AddEntity(newEntity);
+    if (executor) {
+      auto cmd = std::make_unique<CreateEntityCommand>(scene, newEntity);
+      cmd->SetContext(makeToolContext("spawn_entity"));
+      executor(std::move(cmd));
+    } else {
+      scene->AddEntity(newEntity);
+    }
 
     std::stringstream msg;
     msg << "Created '" << name << "' at (" << x << ", " << y << ", " << z
@@ -309,8 +332,9 @@ void AICopilotToolFactory::RegisterAllTools(
         {{"type", "string"},
          {"description",
           "Component type: collider, rigidbody, light, camera"}}}});
-  addCompTool.execute = [scene, highlightCallback](
-                            const nlohmann::json &params) -> nlohmann::json {
+  addCompTool.execute = [scene, highlightCallback, executor,
+                         makeToolContext](const nlohmann::json &params)
+                            -> nlohmann::json {
     std::shared_ptr<Scene::Entity> targetEntity = nullptr;
 
     if (params.contains("entityId")) {
@@ -339,7 +363,13 @@ void AICopilotToolFactory::RegisterAllTools(
       if (!targetEntity->GetComponent<Scene::ColliderComponent>()) {
         auto collider = std::make_shared<Scene::ColliderComponent>();
         collider->SetShapeType(Physics::ShapeType::Box);
-        targetEntity->AddComponent(collider);
+        if (executor) {
+          auto cmd = std::make_unique<AddComponentCommand>(targetEntity, collider);
+          cmd->SetContext(makeToolContext("add_component"));
+          executor(std::move(cmd));
+        } else {
+          targetEntity->AddComponent(collider);
+        }
 
         if (highlightCallback) {
           highlightCallback(targetEntity->GetId(), 1.2f);
@@ -356,7 +386,13 @@ void AICopilotToolFactory::RegisterAllTools(
       if (!targetEntity->GetComponent<Scene::RigidbodyComponent>()) {
         auto rb = std::make_shared<Scene::RigidbodyComponent>();
         rb->SetMass(1.0f);
-        targetEntity->AddComponent(rb);
+        if (executor) {
+          auto cmd = std::make_unique<AddComponentCommand>(targetEntity, rb);
+          cmd->SetContext(makeToolContext("add_component"));
+          executor(std::move(cmd));
+        } else {
+          targetEntity->AddComponent(rb);
+        }
         return {{"success", true},
                 {"message", "Added Rigidbody to " + targetEntity->GetName()}};
       }
@@ -367,7 +403,13 @@ void AICopilotToolFactory::RegisterAllTools(
       if (!targetEntity->GetComponent<Scene::LightComponent>()) {
         auto light = std::make_shared<Scene::LightComponent>();
         light->SetType(Scene::LightComponent::LightType::Point);
-        targetEntity->AddComponent(light);
+        if (executor) {
+          auto cmd = std::make_unique<AddComponentCommand>(targetEntity, light);
+          cmd->SetContext(makeToolContext("add_component"));
+          executor(std::move(cmd));
+        } else {
+          targetEntity->AddComponent(light);
+        }
         return {{"success", true},
                 {"message", "Added Light to " + targetEntity->GetName()}};
       }
@@ -416,8 +458,9 @@ void AICopilotToolFactory::RegisterAllTools(
        {"rotationSpeed",
         {{"type", "number"},
          {"description", "Alias for rotationSpeedDegPerSec."}}}});
-  modifyTool.execute = [scene, selected, highlightCallback](
-                           const nlohmann::json &params) -> nlohmann::json {
+  modifyTool.execute = [scene, selected, highlightCallback, executor,
+                        makeToolContext](const nlohmann::json &params)
+                           -> nlohmann::json {
     std::shared_ptr<Scene::Entity> targetEntity = nullptr;
 
     if (params.contains("entityId")) {
@@ -445,48 +488,107 @@ void AICopilotToolFactory::RegisterAllTools(
     }
 
     std::vector<std::string> changes;
+    std::vector<std::unique_ptr<Command>> commands;
 
     auto transform = targetEntity->GetComponent<Scene::TransformComponent>();
+    TransformData oldTrans{};
+    TransformData newTrans{};
+    bool transformChanged = false;
     if (transform) {
+      oldTrans.position = {transform->GetPositionX(), transform->GetPositionY(),
+                           transform->GetPositionZ()};
+      oldTrans.rotation = {transform->GetRotationXDegrees(),
+                           transform->GetRotationYDegrees(),
+                           transform->GetRotationZDegrees()};
+      oldTrans.scale = {transform->GetScaleX(), transform->GetScaleY(),
+                        transform->GetScaleZ()};
+      newTrans = oldTrans;
+
       if (params.contains("position")) {
         auto &pos = params["position"];
-        float x = pos.value("x", transform->GetPositionX());
-        float y = pos.value("y", transform->GetPositionY());
-        float z = pos.value("z", transform->GetPositionZ());
-        transform->SetPosition(x, y, z);
+        newTrans.position[0] = pos.value("x", newTrans.position[0]);
+        newTrans.position[1] = pos.value("y", newTrans.position[1]);
+        newTrans.position[2] = pos.value("z", newTrans.position[2]);
         changes.push_back("position");
       }
       if (params.contains("scale")) {
         auto &sc = params["scale"];
-        float x = sc.value("x", transform->GetScaleX());
-        float y = sc.value("y", transform->GetScaleY());
-        float z = sc.value("z", transform->GetScaleZ());
-        transform->SetScale(x, y, z);
+        newTrans.scale[0] = sc.value("x", newTrans.scale[0]);
+        newTrans.scale[1] = sc.value("y", newTrans.scale[1]);
+        newTrans.scale[2] = sc.value("z", newTrans.scale[2]);
         changes.push_back("scale");
+      }
+
+      transformChanged = !(newTrans == oldTrans);
+      if (transformChanged && executor) {
+        commands.push_back(
+            std::make_unique<TransformCommand>(targetEntity, oldTrans, newTrans));
       }
     }
 
     auto meshRenderer =
         targetEntity->GetComponent<Scene::MeshRendererComponent>();
-    if (meshRenderer && params.contains("color")) {
-      auto &col = params["color"];
-      float r = col.value("r", 1.0f);
-      float g = col.value("g", 1.0f);
-      float b = col.value("b", 1.0f);
-      meshRenderer->SetColor(r, g, b);
-      changes.push_back("color");
+    MeshRendererState oldMesh{};
+    MeshRendererState newMesh{};
+    bool meshChanged = false;
+    if (meshRenderer) {
+      oldMesh = CaptureMeshRendererState(*meshRenderer);
+      newMesh = oldMesh;
+
+      if (params.contains("color")) {
+        auto &col = params["color"];
+        newMesh.color[0] = col.value("r", newMesh.color[0]);
+        newMesh.color[1] = col.value("g", newMesh.color[1]);
+        newMesh.color[2] = col.value("b", newMesh.color[2]);
+        changes.push_back("color");
+        meshChanged = true;
+      }
+
+      if (params.contains("rotationSpeedDegPerSec") ||
+          params.contains("rotationSpeed")) {
+        const float speed = params.value("rotationSpeedDegPerSec",
+                                         params.value("rotationSpeed", 0.0f));
+        newMesh.rotationSpeedDegPerSec = speed;
+        changes.push_back("rotationSpeed");
+        meshChanged = true;
+      }
+
+      if (meshChanged && executor) {
+        commands.push_back(
+            std::make_unique<MeshRendererCommand>(targetEntity, oldMesh, newMesh));
+      }
     }
 
-    if (meshRenderer && (params.contains("rotationSpeedDegPerSec") ||
-                         params.contains("rotationSpeed"))) {
-      const float speed = params.value("rotationSpeedDegPerSec",
-                                       params.value("rotationSpeed", 0.0f));
-      meshRenderer->SetRotationSpeedDegPerSec(speed);
-      changes.push_back("rotationSpeed");
-    }
-
-    if (changes.empty()) {
+    if (changes.empty() || (!executor && !(transformChanged || meshChanged)) ||
+        (executor && commands.empty())) {
       return {{"success", false}, {"error", "No valid properties to modify"}};
+    }
+
+    if (executor) {
+      auto context = makeToolContext("modify_entity");
+      if (commands.size() == 1) {
+        commands.front()->SetContext(context);
+        executor(std::move(commands.front()));
+      } else {
+        auto batch = std::make_unique<CompositeCommand>("Modify Entity",
+                                                        std::move(commands));
+        batch->SetContext(context);
+        executor(std::move(batch));
+      }
+    } else {
+      if (transformChanged && transform) {
+        transform->SetPosition(newTrans.position[0], newTrans.position[1],
+                               newTrans.position[2]);
+        transform->SetRotationDegrees(newTrans.rotation[0], newTrans.rotation[1],
+                                      newTrans.rotation[2]);
+        transform->SetScale(newTrans.scale[0], newTrans.scale[1],
+                            newTrans.scale[2]);
+      }
+      if (meshChanged && meshRenderer) {
+        meshRenderer->SetColor(newMesh.color[0], newMesh.color[1],
+                               newMesh.color[2]);
+        meshRenderer->SetRotationSpeedDegPerSec(newMesh.rotationSpeedDegPerSec);
+      }
     }
 
     std::stringstream msg;
@@ -610,8 +712,9 @@ void AICopilotToolFactory::RegisterAllTools(
        {"context",
         {{"type", "string"},
          {"description", "Initial context/instructions"}}}});
-  addAiTool.execute = [scene, highlightCallback, reportActivity](
-                          const nlohmann::json &params) -> nlohmann::json {
+  addAiTool.execute = [scene, highlightCallback, reportActivity, executor,
+                       makeToolContext](const nlohmann::json &params)
+                          -> nlohmann::json {
     std::shared_ptr<Scene::Entity> targetEntity = nullptr;
 
     if (params.contains("entityId")) {
@@ -635,7 +738,13 @@ void AICopilotToolFactory::RegisterAllTools(
     auto aiComp = targetEntity->GetComponent<Scene::AIBehaviorComponent>();
     if (!aiComp) {
       aiComp = std::make_shared<Scene::AIBehaviorComponent>();
-      targetEntity->AddComponent(aiComp);
+      if (executor) {
+        auto cmd = std::make_unique<AddComponentCommand>(targetEntity, aiComp);
+        cmd->SetContext(makeToolContext("add_ai_behavior"));
+        executor(std::move(cmd));
+      } else {
+        targetEntity->AddComponent(aiComp);
+      }
     }
 
     std::string personality = params.value("personality", "Helpful Assistant");

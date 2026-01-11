@@ -45,6 +45,14 @@ public:
         if (!typedOther) return false;
         
         if (m_entity != typedOther->m_entity) return false;
+
+        const auto& myContext = GetContext();
+        const auto& otherContext = typedOther->GetContext();
+        if (myContext.source != otherContext.source) return false;
+        if (!myContext.requestId.empty() && !otherContext.requestId.empty() &&
+            myContext.requestId != otherContext.requestId) {
+            return false;
+        }
         
         // Update new state to the other's new state
         m_new = typedOther->m_new;

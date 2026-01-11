@@ -21,6 +21,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 include(CMake/ProjectOptions.cmake OPTIONAL)
 
 option(AETHERION_ENABLE_PYTHON "Enable embedded Python scripting runtime" OFF)
+option(AETHERION_ENABLE_PYBIND11 "Enable pybind11 bindings for Python scripting" OFF)
 option(AETHERION_ENABLE_LUA "Enable Lua scripting runtime (recommended)" ON)
 
 # Platform-specific Qt configuration
@@ -75,6 +76,21 @@ find_package(Qt6 6.2 COMPONENTS Widgets Concurrent Network REQUIRED)
 find_package(Vulkan REQUIRED)
 if(AETHERION_ENABLE_PYTHON)
     find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+endif()
+
+if(AETHERION_ENABLE_PYBIND11 AND NOT AETHERION_ENABLE_PYTHON)
+    message(WARNING "AETHERION_ENABLE_PYBIND11 requires AETHERION_ENABLE_PYTHON. Disabling pybind11 bindings.")
+    set(AETHERION_ENABLE_PYBIND11 OFF)
+endif()
+
+if(AETHERION_ENABLE_PYBIND11)
+    include(FetchContent)
+    FetchContent_Declare(
+        pybind11
+        GIT_REPOSITORY https://github.com/pybind/pybind11.git
+        GIT_TAG v2.13.6
+    )
+    FetchContent_MakeAvailable(pybind11)
 endif()
 
 # Lua scripting with sol2 (header-only C++ bindings)
@@ -205,12 +221,14 @@ set(RUNTIME_SOURCES
     Engine/Scripting/src/NullScriptEngine.cpp
     Engine/Scene/src/ScriptComponent.cpp
     Engine/Scripting/src/ScriptingPlaceholder.cpp
+    Engine/Scripting/src/PythonBindings.cpp
     Engine/Scripting/src/LogicCopilot.cpp
     Engine/Scripting/src/ModuleLoader.cpp
     Engine/Scripting/src/LuaScriptEngine.cpp
     Engine/Scripting/src/LuaScriptInstance.cpp
     Engine/Scripting/src/LuaBindings.cpp
     Engine/Runtime/src/SystemScheduler.cpp
+    Engine/Runtime/src/OnDeviceInference.cpp
 )
 
 # Compile Vulkan shaders to SPIR-V (output: <build>/shaders/*.spv)
@@ -292,6 +310,7 @@ target_link_libraries(AetherionRuntime
         Jolt
         Qt6::Network
         $<$<BOOL:${AETHERION_ENABLE_PYTHON}>:Python3::Python>
+        $<$<BOOL:${AETHERION_ENABLE_PYBIND11}>:pybind11::embed>
         $<$<BOOL:${AETHERION_ENABLE_LUA}>:sol2::sol2>
         $<$<AND:$<BOOL:${AETHERION_ENABLE_LUA}>,$<BOOL:${Lua_FOUND}>>:${LUA_LIBRARIES}>
         $<$<NOT:$<PLATFORM_ID:Windows>>:${CMAKE_DL_LIBS}>
@@ -302,6 +321,7 @@ endif()
 target_compile_definitions(AetherionRuntime
     PUBLIC
         $<$<BOOL:${AETHERION_ENABLE_PYTHON}>:AETHERION_ENABLE_PYTHON=1>
+        $<$<BOOL:${AETHERION_ENABLE_PYBIND11}>:AETHERION_ENABLE_PYBIND11=1>
         $<$<BOOL:${AETHERION_ENABLE_LUA}>:AETHERION_ENABLE_LUA=1>
 )
 

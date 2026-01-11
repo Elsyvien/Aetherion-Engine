@@ -63,8 +63,9 @@ public:
    * @param activityCallback Callback to update activity status in the UI
    * @param toolStatusCallback Callback to show current tool in the UI
    */
-  static void RegisterAllTools(AICopilotAgent &agent, Scene::Scene *scene,
-                               Scene::Entity *selected,
+  static void RegisterAllTools(AICopilotAgent &agent,
+                               std::shared_ptr<Scene::Scene> scene,
+                               std::shared_ptr<Scene::Entity> selected,
                                std::shared_ptr<Assets::AssetRegistry> assetRegistry,
                                const CommandExecutor &executor,
                                const EntityHighlightCallback &highlightCallback = nullptr,

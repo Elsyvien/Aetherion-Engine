@@ -127,6 +127,8 @@ QString AssetTypeLabel(Aetherion::Assets::AssetRegistry::AssetType type) {
     return "Audio";
   case AssetType::Script:
     return "Script";
+  case AssetType::BehaviorPrompt:
+    return "Behavior Prompt";
   case AssetType::Scene:
     return "Scene";
   case AssetType::Shader:
@@ -168,6 +170,43 @@ void EditorInspectorPanel::SetSelectedEntity(
   m_showingAsset = false;
   m_assetId.clear();
   RebuildUi();
+}
+
+void EditorInspectorPanel::UpdateAIStatus() {
+  if (!m_entity) {
+    return;
+  }
+  auto aiBehavior = m_entity->GetComponent<Scene::AIBehaviorComponent>();
+  if (!aiBehavior) {
+    return;
+  }
+
+  if (m_aiStateLabel) {
+    m_aiStateLabel->setText(
+        tr("State: %1")
+            .arg(QString::fromStdString(aiBehavior->GetCurrentState())));
+  }
+  if (m_aiReasonLabel) {
+    m_aiReasonLabel->setText(
+        tr("Reason: %1")
+            .arg(QString::fromStdString(aiBehavior->GetLastReason())));
+  }
+  if (m_aiInferenceLabel) {
+    m_aiInferenceLabel->setText(
+        tr("Inference: %1")
+            .arg(QString::fromStdString(aiBehavior->GetLastInferenceSource())));
+  }
+  if (m_aiLatencyLabel) {
+    m_aiLatencyLabel->setText(
+        tr("Latency: %1 ms")
+            .arg(static_cast<qulonglong>(
+                aiBehavior->GetLastInferenceLatencyMs())));
+  }
+  if (m_aiBudgetLabel) {
+    m_aiBudgetLabel->setText(
+        tr("Budget Remaining: %1")
+            .arg(aiBehavior->GetLastBudgetRemaining()));
+  }
 }
 
 void EditorInspectorPanel::SetSelectedAsset(QString assetId) {
@@ -236,6 +275,9 @@ void EditorInspectorPanel::RebuildUi() {
   m_aiDecisionInterval = nullptr;
   m_aiStateLabel = nullptr;
   m_aiReasonLabel = nullptr;
+  m_aiInferenceLabel = nullptr;
+  m_aiLatencyLabel = nullptr;
+  m_aiBudgetLabel = nullptr;
 
   auto addMeshStatsRows = [this](
                               QFormLayout *form, QWidget *parent,
@@ -1360,6 +1402,10 @@ void EditorInspectorPanel::RebuildUi() {
         static_cast<int>(
             Scene::AIBehaviorComponent::ExecutionMode::LocalModel));
     m_aiMode->addItem(
+        tr("On-Device"),
+        static_cast<int>(
+            Scene::AIBehaviorComponent::ExecutionMode::OnDevice));
+    m_aiMode->addItem(
         tr("Remote Service"),
         static_cast<int>(
             Scene::AIBehaviorComponent::ExecutionMode::RemoteService));
@@ -1374,6 +1420,7 @@ void EditorInspectorPanel::RebuildUi() {
     if (m_assetRegistry) {
       for (const auto &entry : m_assetRegistry->GetEntries()) {
         if (entry.type == Assets::AssetRegistry::AssetType::Script ||
+            entry.type == Assets::AssetRegistry::AssetType::BehaviorPrompt ||
             entry.type == Assets::AssetRegistry::AssetType::Other) {
           const QString id = QString::fromStdString(entry.id);
           QString label =
@@ -1420,6 +1467,20 @@ void EditorInspectorPanel::RebuildUi() {
             .arg(QString::fromStdString(aiBehavior->GetLastReason())),
         m_content);
     m_aiReasonLabel->setWordWrap(true);
+    m_aiInferenceLabel = new QLabel(
+        tr("Inference: %1")
+            .arg(QString::fromStdString(
+                aiBehavior->GetLastInferenceSource())),
+        m_content);
+    m_aiLatencyLabel = new QLabel(
+        tr("Latency: %1 ms")
+            .arg(static_cast<qulonglong>(
+                aiBehavior->GetLastInferenceLatencyMs())),
+        m_content);
+    m_aiBudgetLabel = new QLabel(
+        tr("Budget Remaining: %1")
+            .arg(aiBehavior->GetLastBudgetRemaining()),
+        m_content);
 
     form->addRow(tr("Execution"), m_aiMode);
     form->addRow(tr("Prompt Asset"), m_aiPromptAsset);
@@ -1430,6 +1491,9 @@ void EditorInspectorPanel::RebuildUi() {
     form->addRow(tr("Decision Interval (s)"), m_aiDecisionInterval);
     form->addRow(m_aiStateLabel);
     form->addRow(m_aiReasonLabel);
+    form->addRow(m_aiInferenceLabel);
+    form->addRow(m_aiLatencyLabel);
+    form->addRow(m_aiBudgetLabel);
 
     auto updateBehavior = [this, aiBehavior]() {
       aiBehavior->SetPersonality(m_aiPersonality->text().toStdString());

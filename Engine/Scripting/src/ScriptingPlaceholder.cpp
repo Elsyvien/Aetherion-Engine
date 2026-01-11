@@ -1,4 +1,5 @@
 #include "Aetherion/Scripting/ScriptingPlaceholder.h"
+#include "Aetherion/Scripting/PythonBindings.h"
 
 #include <fstream>
 #include <iostream>
@@ -221,6 +222,7 @@ ScriptingRuntime::GetScript(const std::string& assetId) const {
 }
 
 BehaviorDecision ScriptingRuntime::RunBehavior(const std::string& assetId,
+                                               Scene::Entity* entity,
                                                const std::string& contextJson) {
     BehaviorDecision decision{};
     decision.reason = "Executed stub behavior";
@@ -240,7 +242,7 @@ BehaviorDecision ScriptingRuntime::RunBehavior(const std::string& assetId,
     }
 
     if (m_pythonEnabled) {
-        return RunBehaviorPython(it->second, contextJson);
+        return RunBehaviorPython(it->second, entity, contextJson);
     }
 
     // Stub: Inspect context for simple state hints
@@ -256,18 +258,27 @@ BehaviorDecision ScriptingRuntime::RunBehavior(const std::string& assetId,
     return decision;
 }
 
+BehaviorDecision ScriptingRuntime::RunBehavior(const std::string& assetId,
+                                               const std::string& contextJson) {
+    return RunBehavior(assetId, nullptr, contextJson);
+}
+
 void ScriptingRuntime::InitializePython() {
 #ifdef AETHERION_ENABLE_PYTHON
     static std::once_flag once;
     std::call_once(once, []() { Py_Initialize(); });
     m_pythonInitialized = Py_IsInitialized();
+    if (m_pythonInitialized) {
+        InitializePythonBindings();
+    }
 #else
     m_pythonInitialized = false;
 #endif
 }
 
 BehaviorDecision ScriptingRuntime::RunBehaviorPython(
-    const BehaviorScript& script, const std::string& contextJson) {
+    const BehaviorScript& script, Scene::Entity* entity,
+    const std::string& contextJson) {
     BehaviorDecision decision{};
     decision.reason = "Python bridge disabled";
 
@@ -315,6 +326,15 @@ BehaviorDecision ScriptingRuntime::RunBehaviorPython(
 
     PyObject* updateFunc = PyDict_GetItemString(globals, "update");
     if (updateFunc && PyCallable_Check(updateFunc)) {
+        PyObject* entityObj = Py_None;
+        Py_INCREF(Py_None);
+        if (entity) {
+            PyObject* proxy = CreateEntityProxy(entity);
+            if (proxy) {
+                Py_DECREF(entityObj);
+                entityObj = proxy;
+            }
+        }
         PyObject* contextObj = nullptr;
         try {
             const auto parsed = nlohmann::json::parse(contextJson);
@@ -325,7 +345,8 @@ BehaviorDecision ScriptingRuntime::RunBehaviorPython(
             contextObj = PyUnicode_FromString(contextJson.c_str());
         }
         PyObject* result =
-            PyObject_CallFunctionObjArgs(updateFunc, Py_None, contextObj, nullptr);
+            PyObject_CallFunctionObjArgs(updateFunc, entityObj, contextObj, nullptr);
+        Py_DECREF(entityObj);
         Py_DECREF(contextObj);
         if (result && PyDict_Check(result)) {
             PyObject* stateObj = PyDict_GetItemString(result, "state");

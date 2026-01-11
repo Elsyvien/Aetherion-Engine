@@ -38,6 +38,7 @@ public:
   ~EditorInspectorPanel() override = default;
 
   void SetSelectedEntity(std::shared_ptr<Scene::Entity> entity);
+  void UpdateAIStatus();
   void SetSelectedAsset(QString assetId);
   void SetAssetRegistry(std::shared_ptr<Assets::AssetRegistry> registry);
 
@@ -111,6 +112,9 @@ private:
   QDoubleSpinBox *m_aiDecisionInterval = nullptr;
   QLabel *m_aiStateLabel = nullptr;
   QLabel *m_aiReasonLabel = nullptr;
+  QLabel *m_aiInferenceLabel = nullptr;
+  QLabel *m_aiLatencyLabel = nullptr;
+  QLabel *m_aiBudgetLabel = nullptr;
 
   bool m_buildingUi = false;
   CommandExecutor m_commandExecutor;

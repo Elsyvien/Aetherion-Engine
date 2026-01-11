@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Aetherion/Scene/Component.h"
+#include <cstdint>
 #include <string>
 
 namespace Aetherion::Scene {
@@ -10,7 +11,8 @@ public:
   enum class ExecutionMode {
     Stub,         // Use simple keyword matching (default, no LLM)
     LocalModel,   // Use local Ollama model
-    RemoteService // Use remote LLM service
+    RemoteService, // Use remote LLM service
+    OnDevice       // Use on-device inference backend (llama.cpp/ONNX)
   };
 
   AIBehaviorComponent();
@@ -63,6 +65,16 @@ public:
     return m_lastReason;
   }
 
+  [[nodiscard]] const std::string &GetLastInferenceSource() const {
+    return m_lastInferenceSource;
+  }
+  [[nodiscard]] std::uint64_t GetLastInferenceLatencyMs() const noexcept {
+    return m_lastInferenceMs;
+  }
+  [[nodiscard]] int GetLastBudgetRemaining() const noexcept {
+    return m_lastBudgetRemaining;
+  }
+
   // Runtime state (public for AIBehaviorSystem access)
   float m_timeSinceLastThought{0.0f};
 
@@ -84,6 +96,9 @@ private:
 
   std::string m_currentState{"Idle"};
   std::string m_lastReason;
+  std::string m_lastInferenceSource{"Stub"};
+  std::uint64_t m_lastInferenceMs{0};
+  int m_lastBudgetRemaining{0};
 
   ExecutionMode m_mode{ExecutionMode::Stub};
   float m_decisionInterval{2.0f}; // Seconds between AI updates

@@ -172,23 +172,18 @@ void AIBehaviorComponent::OnUpdate(float deltaTime) {
         return;
     }
 
-    static std::uint64_t s_lastFrame = 0;
-    static int s_budgetCounter = 0;
-    constexpr int kBudgetPerFrame = 8;
     std::uint64_t frameIndex = 0;
     if (auto* scene = GetScene()) {
         if (auto* context = scene->GetContext()) {
             frameIndex = context->GetFrameIndex();
+            auto& budget = context->GetInferenceBudget();
+            if (!budget.TryConsume(frameIndex)) {
+                m_lastBudgetRemaining = budget.GetRemainingRequests();
+                return;
+            }
+            m_lastBudgetRemaining = budget.GetRemainingRequests();
         }
     }
-    if (frameIndex != s_lastFrame) {
-        s_lastFrame = frameIndex;
-        s_budgetCounter = 0;
-    }
-    if (s_budgetCounter >= kBudgetPerFrame) {
-        return;
-    }
-    ++s_budgetCounter;
 
     m_timeSinceDecision = 0.0f;
     EvaluateBehavior();
@@ -274,33 +269,18 @@ void AIBehaviorComponent::EvaluateBehavior() {
     std::string nextState = stubState;
     std::string reason = stubReason;
     bool decided = false;
+    m_lastInferenceMs = 0;
 
     if (m_mode == ExecutionMode::Stub) {
         reason += " (stub policy)";
         decided = true;
+        m_lastInferenceSource = "Stub";
     } else {
-        Assets::ILLMClient* llmClient = nullptr;
-        if (m_mode == ExecutionMode::RemoteService) {
-            if (context && context->HasAIConfig()) {
-                llmClient = context->GetAIClient();
-            }
-        } else if (m_mode == ExecutionMode::LocalModel) {
-            if (context && context->HasAIConfig() &&
-                context->GetAIConfig().provider ==
-                    Assets::LLMProvider::LocalOllama) {
-                llmClient = context->GetAIClient();
-            }
-            if (!llmClient) {
-                llmClient = GetLocalOllamaClient();
-            }
-        }
-
-        if (llmClient && llmClient->IsReady()) {
-            const std::string systemPrompt = BuildBehaviorSystemPrompt();
-            const std::string userPrompt =
-                BuildBehaviorUserPrompt(promptText, contextJson, m_currentState,
-                                        stubState);
-            const std::string schema = R"({
+        const std::string systemPrompt = BuildBehaviorSystemPrompt();
+        const std::string userPrompt =
+            BuildBehaviorUserPrompt(promptText, contextJson, m_currentState,
+                                    stubState);
+        const std::string schema = R"({
   "type": "object",
   "properties": {
     "state": {"type": "string"},
@@ -308,29 +288,82 @@ void AIBehaviorComponent::EvaluateBehavior() {
   },
   "required": ["state", "reason"]
 })";
-            const auto response =
-                llmClient->GenerateJSON(systemPrompt, userPrompt, schema);
-            if (response.success) {
-                std::string llmState;
-                std::string llmReason;
-                if (ParseDecisionJson(response.content, llmState, llmReason)) {
-                    nextState = llmState;
-                    reason = llmReason.empty() ? "LLM decision" : llmReason;
+
+        if (m_mode == ExecutionMode::OnDevice) {
+            auto backend = context ? context->GetOnDeviceInferenceBackend()
+                                   : nullptr;
+            if (backend && backend->IsReady()) {
+                const auto response =
+                    backend->EvaluateBehavior(systemPrompt, userPrompt, schema);
+                if (response.success && !response.state.empty()) {
+                    nextState = response.state;
+                    reason = response.reason.empty()
+                                 ? "On-device decision"
+                                 : response.reason;
                     if (response.latencyMs > 0) {
-                        reason += " (LLM " +
+                        reason += " (on-device " +
                                   std::to_string(response.latencyMs) + "ms)";
                     }
+                    m_lastInferenceSource = "OnDevice";
+                    m_lastInferenceMs = response.latencyMs;
                     decided = true;
                 } else {
-                    reason = "LLM response missing state; using fallback.";
+                    reason = response.errorMessage.empty()
+                                 ? "On-device inference failed."
+                                 : response.errorMessage;
+                    m_lastInferenceSource = "OnDevice";
                 }
             } else {
-                reason = "LLM request failed: " + response.errorMessage;
+                reason = "On-device inference not available.";
+                m_lastInferenceSource = "OnDevice";
             }
-        } else if (m_mode == ExecutionMode::RemoteService) {
-            reason = "Remote LLM not configured.";
         } else {
-            reason = "Local LLM not available.";
+            Assets::ILLMClient* llmClient = nullptr;
+            if (m_mode == ExecutionMode::RemoteService) {
+                if (context && context->HasAIConfig()) {
+                    llmClient = context->GetAIClient();
+                }
+            } else if (m_mode == ExecutionMode::LocalModel) {
+                if (context && context->HasAIConfig() &&
+                    context->GetAIConfig().provider ==
+                        Assets::LLMProvider::LocalOllama) {
+                    llmClient = context->GetAIClient();
+                }
+                if (!llmClient) {
+                    llmClient = GetLocalOllamaClient();
+                }
+            }
+
+            if (llmClient && llmClient->IsReady()) {
+                const auto response =
+                    llmClient->GenerateJSON(systemPrompt, userPrompt, schema);
+                if (response.success) {
+                    std::string llmState;
+                    std::string llmReason;
+                    if (ParseDecisionJson(response.content, llmState, llmReason)) {
+                        nextState = llmState;
+                        reason = llmReason.empty() ? "LLM decision" : llmReason;
+                        if (response.latencyMs > 0) {
+                            reason += " (LLM " +
+                                      std::to_string(response.latencyMs) + "ms)";
+                        }
+                        m_lastInferenceSource =
+                            (m_mode == ExecutionMode::RemoteService)
+                                ? "RemoteService"
+                                : "LocalModel";
+                        m_lastInferenceMs = response.latencyMs;
+                        decided = true;
+                    } else {
+                        reason = "LLM response missing state; using fallback.";
+                    }
+                } else {
+                    reason = "LLM request failed: " + response.errorMessage;
+                }
+            } else if (m_mode == ExecutionMode::RemoteService) {
+                reason = "Remote LLM not configured.";
+            } else {
+                reason = "Local LLM not available.";
+            }
         }
 
         if (!decided && context) {
@@ -339,10 +372,11 @@ void AIBehaviorComponent::EvaluateBehavior() {
                                                  ? m_promptAssetId
                                                  : "inline_behavior";
                 auto decision =
-                    scripting->RunBehavior(scriptId, contextJson);              
+                    scripting->RunBehavior(scriptId, GetEntity(), contextJson);
                 if (decision.success) {
                     nextState = decision.state;
                     reason = decision.reason;
+                    m_lastInferenceSource = "Python";
                     decided = true;
                 }
             }
@@ -350,6 +384,7 @@ void AIBehaviorComponent::EvaluateBehavior() {
 
         if (!decided) {
             nextState = stubState;
+            m_lastInferenceSource = "Stub";
             if (reason == stubReason) {
                 reason += " (fallback)";
             } else {

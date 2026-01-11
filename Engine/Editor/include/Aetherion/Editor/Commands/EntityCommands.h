@@ -3,6 +3,8 @@
 #include "Aetherion/Editor/Command.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/Scene.h"
+#include "Aetherion/Scene/TransformComponent.h"
+#include "Aetherion/Core/Types.h"
 #include <memory>
 #include <string>
 
@@ -94,5 +96,54 @@ public:
 private:
     std::shared_ptr<Scene::Scene> m_scene;
     std::shared_ptr<Scene::Entity> m_entity;
+};
+
+class ParentEntityCommand : public Command
+{
+public:
+    ParentEntityCommand(std::shared_ptr<Scene::Scene> scene, Core::EntityId childId,
+                        Core::EntityId newParentId)
+        : m_scene(std::move(scene)), m_childId(childId), m_newParentId(newParentId)
+    {
+    }
+
+    void Do() override
+    {
+        if (!m_scene || m_childId == 0)
+        {
+            return;
+        }
+
+        if (!m_initialized)
+        {
+            if (auto child = m_scene->FindEntityById(m_childId))
+            {
+                if (auto transform = child->GetComponent<Scene::TransformComponent>())
+                {
+                    m_oldParentId = transform->GetParentId();
+                }
+            }
+            m_initialized = true;
+        }
+
+        m_scene->SetParent(m_childId, m_newParentId);
+    }
+
+    void Undo() override
+    {
+        if (m_scene && m_childId != 0)
+        {
+            m_scene->SetParent(m_childId, m_oldParentId);
+        }
+    }
+
+    [[nodiscard]] std::string GetName() const override { return "Parent Entity"; }
+
+private:
+    std::shared_ptr<Scene::Scene> m_scene;
+    Core::EntityId m_childId{0};
+    Core::EntityId m_newParentId{0};
+    Core::EntityId m_oldParentId{0};
+    bool m_initialized{false};
 };
 } // namespace Aetherion::Editor

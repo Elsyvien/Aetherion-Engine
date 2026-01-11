@@ -11,7 +11,8 @@
 #include <utility>
 
 namespace Aetherion::Runtime {
-EngineContext::EngineContext() = default;
+EngineContext::EngineContext()
+    : m_onDeviceBackend(std::make_shared<NullOnDeviceInferenceBackend>()) {}
 EngineContext::~EngineContext() = default;
 
 void EngineContext::SetProjectName(std::string name) {
@@ -112,6 +113,15 @@ Assets::ILLMClient* EngineContext::GetAIClient() {
   }
 
   return m_aiClient.get();
+}
+
+void EngineContext::SetOnDeviceInferenceBackend(
+    std::shared_ptr<OnDeviceInferenceBackend> backend) {
+  if (backend) {
+    m_onDeviceBackend = std::move(backend);
+  } else {
+    m_onDeviceBackend = std::make_shared<NullOnDeviceInferenceBackend>();
+  }
 }
 
 void EngineContext::SetSimulationState(bool playing, bool paused) noexcept {    
