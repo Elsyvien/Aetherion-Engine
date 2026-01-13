@@ -17,7 +17,9 @@ class StubWindow : public IWindow {
 public:
   StubWindow(const WindowDescriptor &desc)
       : m_width(desc.width), m_height(desc.height), m_title(desc.title),
-        m_fullscreen(desc.fullscreen), m_visible(desc.visible), m_open(true) {}
+        m_fullscreen(desc.fullscreen), m_visible(desc.visible),
+        m_vsyncEnabled(desc.vsync), m_nativeHandle(desc.nativeHandle),
+        m_open(true) {}
 
   ~StubWindow() override { m_open = false; }
 
@@ -69,14 +71,32 @@ public:
   void SetVisible(bool visible) override { m_visible = visible; }
 
   [[nodiscard]] NativeWindowHandle GetNativeHandle() const override {
-    // Stub: return nullptr until native implementation
-    return nullptr;
+    return m_nativeHandle;
   }
 
   [[nodiscard]] DpiInfo GetDpi() const override {
     DpiInfo dpi;
 #ifdef _WIN32
-    // Try to get DPI on Windows
+    // Try to get DPI on Windows.
+    if (m_nativeHandle) {
+      HWND hwnd = static_cast<HWND>(m_nativeHandle);
+      using GetDpiForWindowFn = UINT(WINAPI *)(HWND);
+      auto user32 = GetModuleHandleW(L"user32.dll");
+      auto getDpiForWindow =
+          reinterpret_cast<GetDpiForWindowFn>(
+              GetProcAddress(user32, "GetDpiForWindow"));
+      if (getDpiForWindow) {
+        const UINT windowDpi = getDpiForWindow(hwnd);
+        if (windowDpi > 0) {
+          dpi.dpiX = static_cast<float>(windowDpi);
+          dpi.dpiY = static_cast<float>(windowDpi);
+          dpi.scaleX = dpi.dpiX / 96.0f;
+          dpi.scaleY = dpi.dpiY / 96.0f;
+          return dpi;
+        }
+      }
+    }
+
     HDC hdc = GetDC(nullptr);
     if (hdc) {
       dpi.dpiX = static_cast<float>(GetDeviceCaps(hdc, LOGPIXELSX));
@@ -132,6 +152,10 @@ public:
     }
   }
 
+  void SetVsyncEnabled(bool enabled) override { m_vsyncEnabled = enabled; }
+
+  [[nodiscard]] bool IsVsyncEnabled() const override { return m_vsyncEnabled; }
+
 private:
   int m_width = 1280;
   int m_height = 720;
@@ -144,6 +168,8 @@ private:
   bool m_minimized = false;
   bool m_maximized = false;
   bool m_focused = true;
+  bool m_vsyncEnabled = true;
+  NativeWindowHandle m_nativeHandle = nullptr;
   bool m_cursorVisible = true;
   bool m_cursorLocked = false;
   CursorShape m_cursorShape = CursorShape::Arrow;
@@ -160,8 +186,10 @@ void PlatformAbstractionLayer::Initialize(const WindowDescriptor &descriptor) {
   m_descriptor = descriptor;
 
 #ifdef _WIN32
-  // Enable high DPI awareness on Windows
-  SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+  if (descriptor.highDpi) {
+    // Enable high DPI awareness on Windows
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+  }
 #endif
 
   // Create main window

@@ -244,6 +244,8 @@ void PhysicsSystem::Update(float deltaTime) {
     m_accumulator -= m_fixedTimestep;
   }
 
+  m_physicsWorld->ProcessCollisionEvents();
+
   // Write physics transforms back to scene
   WriteBackTransforms();
 }

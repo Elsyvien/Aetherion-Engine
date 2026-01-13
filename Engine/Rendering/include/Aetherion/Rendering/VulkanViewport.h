@@ -69,6 +69,8 @@ public:
 
   [[nodiscard]] bool IsReady() const noexcept { return m_ready; }
   void SetLoggingEnabled(bool enabled) noexcept { m_verboseLogging = enabled; }
+  void SetVsyncEnabled(bool enabled) noexcept;
+  [[nodiscard]] bool IsVsyncEnabled() const noexcept { return m_vsyncEnabled; }
 
   void SetDebugViewMode(DebugViewMode mode) noexcept { m_debugViewMode = mode; }
   [[nodiscard]] DebugViewMode GetDebugViewMode() const noexcept {
@@ -193,6 +195,7 @@ private:
   std::shared_ptr<Assets::AssetRegistry> m_assetRegistry;
   bool m_ready{false};
   bool m_verboseLogging{true};
+  bool m_vsyncEnabled{true};
   float m_timeSeconds{0.0f};
   bool m_waitingForValidExtent{false};
   bool m_shutdown{false};

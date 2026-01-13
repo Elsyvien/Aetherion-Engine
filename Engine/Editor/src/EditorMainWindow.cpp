@@ -869,6 +869,7 @@ EditorMainWindow::EditorMainWindow(
           m_vulkanViewport =
               std::make_unique<Rendering::VulkanViewport>(vk, registry);
           m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
+          m_vulkanViewport->SetVsyncEnabled(m_settings.vsyncEnabled);
           m_vulkanViewport->Initialize(reinterpret_cast<void *>(nativeHandle),
                                        width, height);
 
@@ -1886,6 +1887,7 @@ void EditorMainWindow::ApplySettings(const EditorSettings &settings,
   const bool validationChanged =
       settings.validationEnabled != m_validationEnabled;
   const bool loggingChanged = settings.verboseLogging != m_renderLoggingEnabled;
+  const bool vsyncChanged = settings.vsyncEnabled != m_settings.vsyncEnabled;
 
   m_settings = settings;
   m_settings.Clamp();
@@ -1920,6 +1922,9 @@ void EditorMainWindow::ApplySettings(const EditorSettings &settings,
     RecreateRuntimeAndRenderer(m_validationEnabled);
   } else if (m_vulkanViewport) {
     m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
+    if (vsyncChanged) {
+      m_vulkanViewport->SetVsyncEnabled(m_settings.vsyncEnabled);
+    }
   }
 
   // Update LLM generator configuration for AI-powered asset generation
@@ -3340,6 +3345,7 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation) {
         m_vulkanViewport =
             std::make_unique<Rendering::VulkanViewport>(vk, registry);
         m_vulkanViewport->SetLoggingEnabled(m_renderLoggingEnabled);
+        m_vulkanViewport->SetVsyncEnabled(m_settings.vsyncEnabled);
         m_vulkanViewport->Initialize(reinterpret_cast<void *>(m_surfaceHandle),
                                      m_surfaceSize.width(),
                                      m_surfaceSize.height());

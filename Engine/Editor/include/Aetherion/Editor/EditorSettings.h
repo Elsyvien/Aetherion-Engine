@@ -33,6 +33,7 @@ struct EditorSettings
 {
     bool validationEnabled{true};
     bool verboseLogging{true};
+    bool vsyncEnabled{true};
     int targetFps{60};
     int headlessSleepMs{50};
     

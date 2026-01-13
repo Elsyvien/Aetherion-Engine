@@ -3,10 +3,12 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
 #include "Aetherion/Core/Types.h"
+#include "Aetherion/Physics/PhysicsContactListener.h"
 
 // Forward declarations for Jolt types to avoid header pollution
 namespace JPH {
@@ -143,6 +145,12 @@ public:
     return m_gravity;
   }
 
+  /// @brief Register a callback for collision/trigger events
+  void SetCollisionCallback(CollisionCallback callback);
+
+  /// @brief Process queued collision events (call from main thread)
+  void ProcessCollisionEvents();
+
 private:
   struct BodyEntry {
     JPH::BodyID *bodyId{nullptr};
@@ -152,6 +160,7 @@ private:
   };
 
   [[nodiscard]] JPH::Body *GetJoltBody(BodyHandle handle) const;
+  [[nodiscard]] Core::EntityId LookupEntityId(uint32_t bodyId) const;
 
   bool m_initialized{false};
   std::array<float, 3> m_gravity{0.0f, -9.81f, 0.0f};
@@ -164,11 +173,14 @@ private:
       m_objectVsBroadPhaseLayerFilter;
   std::unique_ptr<JPH::ObjectLayerPairFilter> m_objectLayerPairFilter;
   std::unique_ptr<JPH::PhysicsSystem> m_physicsSystem;
+  std::unique_ptr<PhysicsContactListener> m_contactListener;
 
   // Body management
   std::vector<BodyEntry> m_bodies;
   std::vector<uint32_t> m_freeIndices;
   uint32_t m_nextGeneration{1};
+  std::unordered_map<uint32_t, Core::EntityId> m_bodyToEntity;
+  mutable std::mutex m_bodyToEntityMutex;
 };
 
 } // namespace Aetherion::Physics

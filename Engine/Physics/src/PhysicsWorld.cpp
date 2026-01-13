@@ -223,6 +223,10 @@ bool PhysicsWorld::Initialize() {
                         maxContactConstraints, *m_broadPhaseLayerInterface,
                         *m_objectVsBroadPhaseLayerFilter,
                         *m_objectLayerPairFilter);
+  m_contactListener = std::make_unique<PhysicsContactListener>();
+  m_contactListener->SetBodyToEntityMapper(
+      [this](uint32_t bodyId) { return LookupEntityId(bodyId); });
+  m_physicsSystem->SetContactListener(m_contactListener.get());
 
   // Set gravity
   m_physicsSystem->SetGravity(
@@ -253,8 +257,13 @@ void PhysicsWorld::Shutdown() {
 
   m_bodies.clear();
   m_freeIndices.clear();
+  m_bodyToEntity.clear();
 
+  if (m_physicsSystem) {
+    m_physicsSystem->SetContactListener(nullptr);
+  }
   m_physicsSystem.reset();
+  m_contactListener.reset();
   m_objectLayerPairFilter.reset();
   m_objectVsBroadPhaseLayerFilter.reset();
   m_broadPhaseLayerInterface.reset();
@@ -269,6 +278,18 @@ void PhysicsWorld::Shutdown() {
   JPH::UnregisterTypes();
 
   m_initialized = false;
+}
+
+void PhysicsWorld::SetCollisionCallback(CollisionCallback callback) {
+  if (m_contactListener) {
+    m_contactListener->SetCallback(std::move(callback));
+  }
+}
+
+void PhysicsWorld::ProcessCollisionEvents() {
+  if (m_contactListener) {
+    m_contactListener->ProcessEvents();
+  }
 }
 
 void PhysicsWorld::Step(float deltaTime) {
@@ -344,6 +365,7 @@ PhysicsWorld::CreateBody(const RigidbodyDesc &rigidbodyDesc,
   JPH::BodyCreationSettings bodySettings(
       shape, JPH::RVec3(position[0], position[1], position[2]), rotation,
       joltMotionType, layer);
+  bodySettings.mIsSensor = colliderDesc.isTrigger;
 
   // Set mass properties for dynamic bodies
   if (rigidbodyDesc.motionType == MotionType::Dynamic) {
@@ -383,6 +405,16 @@ PhysicsWorld::CreateBody(const RigidbodyDesc &rigidbodyDesc,
   entry.generation = m_nextGeneration++;
   entry.inUse = true;
 
+  {
+    std::lock_guard<std::mutex> lock(m_bodyToEntityMutex);
+    m_bodyToEntity[bodyId.GetIndexAndSequenceNumber()] = rigidbodyDesc.entityId;
+  }
+  if (m_contactListener) {
+    m_contactListener->RegisterBody(bodyId.GetIndexAndSequenceNumber(),
+                                    rigidbodyDesc.entityId,
+                                    colliderDesc.isTrigger);
+  }
+
   return BodyHandle{index, entry.generation};
 }
 
@@ -401,6 +433,14 @@ void PhysicsWorld::DestroyBody(BodyHandle handle) {
   }
 
   auto &bodyInterface = m_physicsSystem->GetBodyInterface();
+  if (m_contactListener) {
+    m_contactListener->UnregisterBody(
+        entry.bodyId->GetIndexAndSequenceNumber());
+  }
+  {
+    std::lock_guard<std::mutex> lock(m_bodyToEntityMutex);
+    m_bodyToEntity.erase(entry.bodyId->GetIndexAndSequenceNumber());
+  }
   bodyInterface.RemoveBody(*entry.bodyId);
   bodyInterface.DestroyBody(*entry.bodyId);
 
@@ -520,6 +560,12 @@ void PhysicsWorld::SetLinearVelocity(BodyHandle handle,
   auto &bodyInterface = m_physicsSystem->GetBodyInterface();
   bodyInterface.SetLinearVelocity(
       *entry.bodyId, JPH::Vec3(velocity[0], velocity[1], velocity[2]));
+}
+
+Core::EntityId PhysicsWorld::LookupEntityId(uint32_t bodyId) const {
+  std::lock_guard<std::mutex> lock(m_bodyToEntityMutex);
+  auto it = m_bodyToEntity.find(bodyId);
+  return it != m_bodyToEntity.end() ? it->second : Core::EntityId{};
 }
 
 void PhysicsWorld::SetAngularVelocity(BodyHandle handle,

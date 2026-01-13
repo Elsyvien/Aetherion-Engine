@@ -29,9 +29,10 @@ PhysicsContactListener::MakeContactKey(const JPH::SubShapeIDPair &pair) {
 }
 
 void PhysicsContactListener::RegisterBody(uint32_t bodyId,
-                                          Core::EntityId entityId) {
+                                          Core::EntityId entityId,
+                                          bool isSensor) {
   std::lock_guard<std::mutex> lock(m_bodyCacheMutex);
-  m_bodyToEntityCache[bodyId] = entityId;
+  m_bodyToEntityCache[bodyId] = {entityId, isSensor};
 }
 
 void PhysicsContactListener::UnregisterBody(uint32_t bodyId) {
@@ -43,13 +44,22 @@ void PhysicsContactListener::OnContactAdded(
     const JPH::Body &inBody1, const JPH::Body &inBody2,
     const JPH::ContactManifold &inManifold,
     [[maybe_unused]] JPH::ContactSettings &ioSettings) {
-  if (!m_bodyToEntity) {
-    return;
-  }
+  auto resolveEntity = [this](uint32_t bodyId) -> Core::EntityId {
+    if (m_bodyToEntity) {
+      return m_bodyToEntity(bodyId);
+    }
+    std::lock_guard<std::mutex> lock(m_bodyCacheMutex);
+    auto it = m_bodyToEntityCache.find(bodyId);
+    return it != m_bodyToEntityCache.end() ? it->second.entityId
+                                           : Core::EntityId{};
+  };
 
   CollisionEvent event;
-  event.entityA = m_bodyToEntity(inBody1.GetID().GetIndexAndSequenceNumber());
-  event.entityB = m_bodyToEntity(inBody2.GetID().GetIndexAndSequenceNumber());
+  event.entityA = resolveEntity(inBody1.GetID().GetIndexAndSequenceNumber());
+  event.entityB = resolveEntity(inBody2.GetID().GetIndexAndSequenceNumber());
+  if (event.entityA == 0 && event.entityB == 0) {
+    return;
+  }
 
   // Get first contact point if available
   if (!inManifold.mRelativeContactPointsOn1.empty()) {
@@ -64,13 +74,16 @@ void PhysicsContactListener::OnContactAdded(
                          inManifold.mWorldSpaceNormal.GetZ()};
   event.penetrationDepth = inManifold.mPenetrationDepth;
   event.impulse = 0.0f; // Not available yet during OnContactAdded
+  event.isSensorA = inBody1.IsSensor();
+  event.isSensorB = inBody2.IsSensor();
 
   // Cache the contact pair for exit event handling
   {
     JPH::SubShapeIDPair pair(inBody1.GetID(), inManifold.mSubShapeID1,
                              inBody2.GetID(), inManifold.mSubShapeID2);
     ContactPairKey key = MakeContactKey(pair);
-    ContactPairInfo info{event.entityA, event.entityB};
+    ContactPairInfo info{event.entityA, event.entityB, event.isSensorA,
+                         event.isSensorB};
     std::lock_guard<std::mutex> lock(m_contactsMutex);
     m_activeContacts[key] = info;
   }
@@ -83,13 +96,22 @@ void PhysicsContactListener::OnContactPersisted(
     const JPH::Body &inBody1, const JPH::Body &inBody2,
     const JPH::ContactManifold &inManifold,
     [[maybe_unused]] JPH::ContactSettings &ioSettings) {
-  if (!m_bodyToEntity) {
-    return;
-  }
+  auto resolveEntity = [this](uint32_t bodyId) -> Core::EntityId {
+    if (m_bodyToEntity) {
+      return m_bodyToEntity(bodyId);
+    }
+    std::lock_guard<std::mutex> lock(m_bodyCacheMutex);
+    auto it = m_bodyToEntityCache.find(bodyId);
+    return it != m_bodyToEntityCache.end() ? it->second.entityId
+                                           : Core::EntityId{};
+  };
 
   CollisionEvent event;
-  event.entityA = m_bodyToEntity(inBody1.GetID().GetIndexAndSequenceNumber());
-  event.entityB = m_bodyToEntity(inBody2.GetID().GetIndexAndSequenceNumber());
+  event.entityA = resolveEntity(inBody1.GetID().GetIndexAndSequenceNumber());
+  event.entityB = resolveEntity(inBody2.GetID().GetIndexAndSequenceNumber());
+  if (event.entityA == 0 && event.entityB == 0) {
+    return;
+  }
 
   // Get first contact point if available
   if (!inManifold.mRelativeContactPointsOn1.empty()) {
@@ -104,6 +126,8 @@ void PhysicsContactListener::OnContactPersisted(
                          inManifold.mWorldSpaceNormal.GetZ()};
   event.penetrationDepth = inManifold.mPenetrationDepth;
   event.impulse = 0.0f;
+  event.isSensorA = inBody1.IsSensor();
+  event.isSensorB = inBody2.IsSensor();
 
   std::lock_guard<std::mutex> lock(m_queueMutex);
   m_eventQueue.push_back({CollisionEventType::Stay, event});
@@ -136,8 +160,10 @@ void PhysicsContactListener::OnContactRemoved(
     auto it2 = m_bodyToEntityCache.find(body2Id);
     if (it1 != m_bodyToEntityCache.end() &&
         it2 != m_bodyToEntityCache.end()) {
-      info.entityA = it1->second;
-      info.entityB = it2->second;
+      info.entityA = it1->second.entityId;
+      info.entityB = it2->second.entityId;
+      info.isSensorA = it1->second.isSensor;
+      info.isSensorB = it2->second.isSensor;
       found = true;
     }
   }
@@ -151,6 +177,8 @@ void PhysicsContactListener::OnContactRemoved(
     event.contactNormal = {0.0f, 0.0f, 0.0f};
     event.penetrationDepth = 0.0f;
     event.impulse = 0.0f;
+    event.isSensorA = info.isSensorA;
+    event.isSensorB = info.isSensorB;
 
     std::lock_guard<std::mutex> lock(m_queueMutex);
     m_eventQueue.push_back({CollisionEventType::Exit, event});

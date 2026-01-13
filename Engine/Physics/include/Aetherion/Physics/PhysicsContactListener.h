@@ -22,6 +22,8 @@ struct CollisionEvent {
   std::array<float, 3> contactNormal{0.0f, 0.0f, 0.0f};
   float penetrationDepth{0.0f};
   float impulse{0.0f};
+  bool isSensorA{false};
+  bool isSensorB{false};
 };
 
 /// @brief Types of collision events
@@ -77,7 +79,7 @@ public:
   }
 
   /// @brief Register a body ID for contact tracking (call when body is created)
-  void RegisterBody(uint32_t bodyId, Core::EntityId entityId);
+  void RegisterBody(uint32_t bodyId, Core::EntityId entityId, bool isSensor);
 
   /// @brief Unregister a body ID (call when body is destroyed)
   void UnregisterBody(uint32_t bodyId);
@@ -107,6 +109,8 @@ private:
   struct ContactPairInfo {
     Core::EntityId entityA{0};
     Core::EntityId entityB{0};
+    bool isSensorA{false};
+    bool isSensorB{false};
   };
 
   std::vector<QueuedEvent> m_eventQueue;
@@ -119,8 +123,13 @@ private:
       m_activeContacts;
   std::mutex m_contactsMutex;
 
-  /// @brief Maps BodyID to EntityId for exit events (since bodies aren't available)
-  std::unordered_map<uint32_t, Core::EntityId> m_bodyToEntityCache;
+  struct BodyCacheInfo {
+    Core::EntityId entityId{0};
+    bool isSensor{false};
+  };
+
+  /// @brief Maps BodyID to cached info for exit events (since bodies aren't available)
+  std::unordered_map<uint32_t, BodyCacheInfo> m_bodyToEntityCache;
   std::mutex m_bodyCacheMutex;
 
   /// @brief Create a ContactPairKey from SubShapeIDPair

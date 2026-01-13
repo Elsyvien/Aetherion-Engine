@@ -39,6 +39,7 @@ private:
   // Rendering tab
   QCheckBox *m_validation = nullptr;
   QCheckBox *m_verboseLogging = nullptr;
+  QCheckBox *m_vsync = nullptr;
   QSpinBox *m_targetFps = nullptr;
   QSpinBox *m_headlessSleep = nullptr;
 

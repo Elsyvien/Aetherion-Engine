@@ -1,12 +1,16 @@
 #include "Aetherion/Audio/AudioSystem.h"
+#include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Scene/AudioListenerComponent.h"
 #include "Aetherion/Scene/AudioSourceComponent.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/TransformComponent.h"
+#include <filesystem>
 
 namespace Aetherion::Audio {
-AudioSystem::AudioSystem(AudioEngine *engine) : m_Engine(engine) {}
+AudioSystem::AudioSystem(AudioEngine *engine,
+                         Assets::AssetRegistry *registry)
+    : m_Engine(engine), m_assetRegistry(registry) {}
 
 AudioSystem::~AudioSystem() { Shutdown(); }
 
@@ -54,31 +58,52 @@ void AudioSystem::Update(float dt) {
 
       // Handle Play Request
       if (audio->IsPlayRequested()) {
-        if (!audio->GetSoundPath().empty()) {
-          SoundSettings settings;
-          settings.volume = audio->GetVolume();
-          settings.pitch = audio->GetPitch();
-          settings.loop = audio->GetLoop();
-          settings.streaming = false; // Could be configurable
-
-          SoundHandle handle;
-          if (audio->GetSpatial()) {
-            // Get entity position for 3D audio
-            auto transform = entity->GetComponent<Scene::TransformComponent>();
-            SpatialSettings spatial;
-            spatial.spatialized = true;
-            if (transform) {
-              spatial.position = glm::vec3(transform->GetPositionX(),
-                                           transform->GetPositionY(),
-                                           transform->GetPositionZ());
+        const std::string &soundId = audio->GetSoundPath();
+        if (!soundId.empty()) {
+          auto resolvePath = [this](const std::string &id) {
+            if (id.empty()) {
+              return std::filesystem::path{};
             }
-            handle = m_Engine->PlaySpatial(audio->GetSoundPath(), settings, spatial);
-          } else {
-            handle = m_Engine->Play(audio->GetSoundPath(), settings);
-          }
+            if (m_assetRegistry) {
+              if (const auto *entry = m_assetRegistry->FindEntry(id)) {
+                return entry->path;
+              }
+              const auto root = m_assetRegistry->GetRootPath();
+              if (!root.empty()) {
+                return root / id;
+              }
+            }
+            return std::filesystem::path(id);
+          };
 
-          if (handle.IsValid()) {
-            m_entitySounds[entityId].push_back({handle, audio->GetSpatial()});
+          const std::filesystem::path resolvedPath = resolvePath(soundId);
+          if (!resolvedPath.empty()) {
+            SoundSettings settings;
+            settings.volume = audio->GetVolume();
+            settings.pitch = audio->GetPitch();
+            settings.loop = audio->GetLoop();
+            settings.streaming = false; // Could be configurable
+
+            SoundHandle handle;
+            if (audio->GetSpatial()) {
+              // Get entity position for 3D audio
+              auto transform =
+                  entity->GetComponent<Scene::TransformComponent>();
+              SpatialSettings spatial;
+              spatial.spatialized = true;
+              if (transform) {
+                spatial.position = glm::vec3(transform->GetPositionX(),
+                                             transform->GetPositionY(),
+                                             transform->GetPositionZ());
+              }
+              handle = m_Engine->PlaySpatial(resolvedPath, settings, spatial);
+            } else {
+              handle = m_Engine->Play(resolvedPath, settings);
+            }
+
+            if (handle.IsValid()) {
+              m_entitySounds[entityId].push_back({handle, audio->GetSpatial()});
+            }
           }
         }
         audio->ClearPlayRequested();

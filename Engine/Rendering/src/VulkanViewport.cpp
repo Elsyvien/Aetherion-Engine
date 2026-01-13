@@ -472,7 +472,15 @@ ChooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats) {
                          : formats[0];
 }
 
-VkPresentModeKHR ChoosePresentMode(const std::vector<VkPresentModeKHR> &modes) {
+VkPresentModeKHR ChoosePresentMode(const std::vector<VkPresentModeKHR> &modes,
+                                   bool vsyncEnabled) {
+  if (!vsyncEnabled) {
+    for (auto m : modes) {
+      if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+        return m;
+      }
+    }
+  }
   for (auto m : modes) {
     if (m == VK_PRESENT_MODE_MAILBOX_KHR) {
       return m;
@@ -510,6 +518,16 @@ VulkanViewport::VulkanViewport(
 }
 
 VulkanViewport::~VulkanViewport() { Shutdown(); }
+
+void VulkanViewport::SetVsyncEnabled(bool enabled) noexcept {
+  if (m_vsyncEnabled == enabled) {
+    return;
+  }
+  m_vsyncEnabled = enabled;
+  if (m_ready) {
+    m_needsSwapchainRecreate = true;
+  }
+}
 
 void VulkanViewport::Initialize(void *nativeHandle, int width, int height) {
   if (!m_context || !m_context->IsInitialized()) {
@@ -1954,7 +1972,8 @@ void VulkanViewport::CreateSwapchain(int width, int height) {
 
   const VkSurfaceCapabilitiesKHR &caps = support.capabilities;
   VkSurfaceFormatKHR surfaceFormat = ChooseSurfaceFormat(support.formats);
-  VkPresentModeKHR presentMode = ChoosePresentMode(support.presentModes);
+  VkPresentModeKHR presentMode =
+      ChoosePresentMode(support.presentModes, m_vsyncEnabled);
   VkExtent2D extent = ChooseExtent(caps, width, height);
 
   if (extent.width == 0 || extent.height == 0) {

@@ -60,6 +60,10 @@ void EditorSettingsDialog::setupRenderingTab(QWidget *tab,
   m_verboseLogging->setChecked(current.verboseLogging);
   form->addRow(tr("Verbose Rendering Logs"), m_verboseLogging);
 
+  m_vsync = new QCheckBox(tab);
+  m_vsync->setChecked(current.vsyncEnabled);
+  form->addRow(tr("Enable Vsync"), m_vsync);
+
   m_targetFps = new QSpinBox(tab);
   m_targetFps->setRange(1, 240);
   m_targetFps->setValue(current.targetFps);
@@ -410,6 +414,7 @@ EditorSettings EditorSettingsDialog::GetSettings() const {
   // Rendering settings
   settings.validationEnabled = m_validation && m_validation->isChecked();
   settings.verboseLogging = m_verboseLogging && m_verboseLogging->isChecked();
+  settings.vsyncEnabled = m_vsync && m_vsync->isChecked();
   settings.targetFps = m_targetFps ? m_targetFps->value() : 60;
   settings.headlessSleepMs = m_headlessSleep ? m_headlessSleep->value() : 50;
 

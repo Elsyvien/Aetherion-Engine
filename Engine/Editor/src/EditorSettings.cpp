@@ -12,6 +12,7 @@ EditorSettings EditorSettings::Load()
     EditorSettings out{};
     out.validationEnabled = settings.value("rendering/validationEnabled", true).toBool();
     out.verboseLogging = settings.value("rendering/verboseLogging", true).toBool();
+    out.vsyncEnabled = settings.value("rendering/vsyncEnabled", true).toBool();
     out.targetFps = settings.value("rendering/targetFps", 60).toInt();
     out.headlessSleepMs = settings.value("rendering/headlessSleepMs", 50).toInt();
     
@@ -34,6 +35,7 @@ void EditorSettings::Save() const
     QSettings settings("Aetherion", "Editor");
     settings.setValue("rendering/validationEnabled", validationEnabled);
     settings.setValue("rendering/verboseLogging", verboseLogging);
+    settings.setValue("rendering/vsyncEnabled", vsyncEnabled);
     settings.setValue("rendering/targetFps", targetFps);
     settings.setValue("rendering/headlessSleepMs", headlessSleepMs);
     

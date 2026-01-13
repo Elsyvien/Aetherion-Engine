@@ -11,6 +11,8 @@ typedef struct VkInstance_T *VkInstance;
 typedef struct VkSurfaceKHR_T *VkSurfaceKHR;
 
 namespace Aetherion::Platform {
+/// @brief Opaque window handle
+using NativeWindowHandle = void *;
 
 /// @brief Window creation settings
 struct WindowDescriptor {
@@ -23,6 +25,7 @@ struct WindowDescriptor {
   bool highDpi = true;
   bool visible = true;
   bool decorated = true;  // Window decorations (title bar, borders)
+  NativeWindowHandle nativeHandle = nullptr; // Wrap existing native window
 };
 
 /// @brief DPI/scale information
@@ -149,9 +152,6 @@ struct WindowCallbacks {
   std::function<bool()> onCloseRequest;  // Return false to prevent close
 };
 
-/// @brief Opaque window handle
-using NativeWindowHandle = void *;
-
 /// @brief Abstract window interface
 class IWindow {
 public:
@@ -231,6 +231,12 @@ public:
 
   /// @brief Request window close
   virtual void RequestClose() = 0;
+
+  /// @brief Toggle vsync preference (used by renderer to select present mode)
+  virtual void SetVsyncEnabled(bool enabled) = 0;
+
+  /// @brief Check if vsync is enabled
+  [[nodiscard]] virtual bool IsVsyncEnabled() const = 0;
 };
 
 /// @brief File dialog result

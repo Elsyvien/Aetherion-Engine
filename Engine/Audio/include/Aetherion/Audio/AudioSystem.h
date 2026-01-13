@@ -10,6 +10,9 @@
 namespace Aetherion::Scene {
 class Scene;
 }
+namespace Aetherion::Assets {
+class AssetRegistry;
+}
 
 namespace Aetherion::Audio {
 
@@ -21,13 +24,17 @@ namespace Aetherion::Audio {
 /// - Managing sound lifetimes tied to entities
 class AudioSystem {
 public:
-  explicit AudioSystem(AudioEngine *engine);
+  explicit AudioSystem(AudioEngine *engine,
+                       Assets::AssetRegistry *registry = nullptr);
   ~AudioSystem();
 
   void BindScene(Scene::Scene *scene);
   void UnbindScene();
   void Update(float dt);
   void Shutdown();
+  void SetAssetRegistry(Assets::AssetRegistry *registry) {
+    m_assetRegistry = registry;
+  }
 
   /// @brief Stop all sounds for an entity
   void StopEntity(Core::EntityId entityId);
@@ -48,6 +55,7 @@ private:
   void CleanupStoppedSounds();
 
   AudioEngine *m_Engine = nullptr;
+  Assets::AssetRegistry *m_assetRegistry = nullptr;
   Scene::Scene *m_Scene = nullptr;
   bool m_enabled{true};
 
