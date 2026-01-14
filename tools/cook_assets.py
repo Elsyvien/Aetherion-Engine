@@ -17,13 +17,7 @@ def load_metadata(meta_path: Path) -> dict:
         return json.load(handle)
 
 
-def write_metadata(meta_path: Path, asset_id: str, asset_type: str, source: str) -> None:
-    meta = {
-        "version": 1,
-        "id": asset_id,
-        "type": asset_type,
-        "source": source,
-    }
+def write_metadata(meta_path: Path, meta: dict) -> None:
     with meta_path.open("w", encoding="utf-8") as handle:
         json.dump(meta, handle, indent=2)
         handle.write("\n")
@@ -74,15 +68,44 @@ def main() -> int:
         relative = asset_path.relative_to(assets_dir)
         meta_path = asset_path.with_suffix(asset_path.suffix + ".asset.json")
         meta = load_metadata(meta_path)
+        if not isinstance(meta, dict):
+            meta = {}
+        meta_was_empty = not meta
 
-        asset_id = meta.get("id") or str(uuid.uuid4())
-        asset_type = meta.get("type") or classify_asset_type(asset_path)
-        source = meta.get("source") or relative.as_posix()
+        meta_id = meta.get("id")
+        asset_id = meta_id if isinstance(meta_id, str) and meta_id else str(uuid.uuid4())
+        meta_type = meta.get("type")
+        asset_type = meta_type if isinstance(meta_type, str) and meta_type else classify_asset_type(asset_path)
+        meta_source = meta.get("source")
+        source = meta_source if isinstance(meta_source, str) and meta_source else relative.as_posix()
 
-        if not meta:
-            write_metadata(meta_path, asset_id, asset_type, source)
+        changed = False
+        if "version" not in meta:
+            meta["version"] = 1
+            changed = True
+        if meta.get("id") != asset_id:
+            meta["id"] = asset_id
+            changed = True
+        if not isinstance(meta.get("type"), str) or not meta.get("type"):
+            meta["type"] = asset_type
+            changed = True
+        if not isinstance(meta.get("source"), str) or not meta.get("source"):
+            meta["source"] = source
+            changed = True
+        if meta_was_empty and asset_type == "Texture":
+            import_data = meta.get("import")
+            if not isinstance(import_data, dict):
+                import_data = {}
+                meta["import"] = import_data
+                changed = True
+            if not isinstance(import_data.get("srgb"), bool):
+                import_data["srgb"] = True
+                changed = True
+
+        if changed:
+            write_metadata(meta_path, meta)
         if asset_type == "Texture":
-            import_data = meta.get("import") if isinstance(meta, dict) else None
+            import_data = meta.get("import")
             if not isinstance(import_data, dict) or not isinstance(import_data.get("srgb"), bool):
                 print(
                     f"Warning: texture '{relative.as_posix()}' missing import.srgb "

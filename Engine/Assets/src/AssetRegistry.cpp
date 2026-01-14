@@ -247,6 +247,38 @@ void WriteTextureImportSettingsToJson(
   }
 }
 
+AssetRegistry::TextureImportSettings
+ReadTextureImportSettingsFromMetadata(const std::filesystem::path &metaPath) {
+  Json root;
+  if (!LoadMetadataJson(metaPath, root) || !root.is_object()) {
+    return DefaultTextureImportSettings();
+  }
+
+  return ReadTextureImportSettingsFromJson(root);
+}
+
+bool WriteTextureImportSettingsIfChanged(
+    const std::filesystem::path &metaPath,
+    const AssetRegistry::TextureImportSettings &settings, bool overwrite) {
+  Json root;
+  if (!LoadMetadataJson(metaPath, root) || !root.is_object()) {
+    return false;
+  }
+
+  Json before = root;
+  WriteTextureImportSettingsToJson(root, settings, overwrite);
+  if (root == before) {
+    return false;
+  }
+
+  return WriteMetadataJson(metaPath, root);
+}
+
+bool EnsureTextureImportDefaults(const std::filesystem::path &metaPath) {
+  return WriteTextureImportSettingsIfChanged(
+      metaPath, DefaultTextureImportSettings(), false);
+}
+
 bool LoadMaterialJson(const std::filesystem::path &path,
                       Material &outMaterial) {
   Json root;
@@ -1513,6 +1545,9 @@ void AssetRegistry::Scan(const std::string &rootPath) {
       if (writeMeta) {
         WriteMetadataFile(metaPath, assetId, type, sourceLabel);
       }
+      if (!writeMeta && type == AssetType::Texture) {
+        EnsureTextureImportDefaults(metaPath);
+      }
 
       AssetEntry asset{};
       asset.id = assetId;
@@ -2074,6 +2109,13 @@ AssetRegistry::ImportGltf(const std::string &gltfPath, bool forceReimport) {
   mesh.id = meshId;
   mesh.source = source;
   std::unordered_set<std::string> uniqueTextures;
+  struct TextureUsageFlags {
+    bool color{false};
+    bool data{false};
+    bool normal{false};
+  };
+  std::unordered_map<std::string, TextureUsageFlags> textureUsage;
+  std::unordered_map<std::string, std::filesystem::path> texturePaths;
 
   std::vector<std::string> imageIds;
   imageIds.reserve(data->images_count);
@@ -2093,6 +2135,7 @@ AssetRegistry::ImportGltf(const std::string &gltfPath, bool forceReimport) {
           if (uniqueTextures.emplace(texId).second) {
             mesh.textureIds.push_back(texId);
           }
+          texturePaths.emplace(texId, texPath);
         }
       }
     }
@@ -2113,6 +2156,17 @@ AssetRegistry::ImportGltf(const std::string &gltfPath, bool forceReimport) {
     }
     textureToImageId.push_back(imageId);
   }
+
+  auto markTextureUsage = [&textureUsage](const std::string &id, bool color,
+                                          bool data, bool normal) {
+    if (id.empty()) {
+      return;
+    }
+    auto &usage = textureUsage[id];
+    usage.color = usage.color || color;
+    usage.data = usage.data || data;
+    usage.normal = usage.normal || normal;
+  };
 
   for (cgltf_size i = 0; i < data->materials_count; ++i) {
     const cgltf_material &material = data->materials[i];
@@ -2144,23 +2198,36 @@ AssetRegistry::ImportGltf(const std::string &gltfPath, bool forceReimport) {
       cached.SetMetallic(pbr.metallic_factor);
       cached.SetRoughness(pbr.roughness_factor);
       if (pbr.base_color_texture.texture) {
-        cached.SetAlbedoMapId(textureIdFor(pbr.base_color_texture.texture));
+        const std::string albedoId =
+            textureIdFor(pbr.base_color_texture.texture);
+        cached.SetAlbedoMapId(albedoId);
+        markTextureUsage(albedoId, true, false, false);
       }
       if (pbr.metallic_roughness_texture.texture) {
-        cached.SetMetallicRoughnessMapId(
-            textureIdFor(pbr.metallic_roughness_texture.texture));
+        const std::string metalRoughId =
+            textureIdFor(pbr.metallic_roughness_texture.texture);
+        cached.SetMetallicRoughnessMapId(metalRoughId);
+        markTextureUsage(metalRoughId, false, true, false);
       }
     }
 
     if (material.normal_texture.texture) {
-      cached.SetNormalMapId(textureIdFor(material.normal_texture.texture));
+      const std::string normalId =
+          textureIdFor(material.normal_texture.texture);
+      cached.SetNormalMapId(normalId);
+      markTextureUsage(normalId, false, true, true);
     }
     if (material.occlusion_texture.texture) {
-      cached.SetOcclusionMapId(
-          textureIdFor(material.occlusion_texture.texture));
+      const std::string occlusionId =
+          textureIdFor(material.occlusion_texture.texture);
+      cached.SetOcclusionMapId(occlusionId);
+      markTextureUsage(occlusionId, false, true, false);
     }
     if (material.emissive_texture.texture) {
-      cached.SetEmissiveMapId(textureIdFor(material.emissive_texture.texture));
+      const std::string emissiveId =
+          textureIdFor(material.emissive_texture.texture);
+      cached.SetEmissiveMapId(emissiveId);
+      markTextureUsage(emissiveId, true, false, false);
     }
 
     m_materials[matId] = cached;
@@ -2173,6 +2240,23 @@ AssetRegistry::ImportGltf(const std::string &gltfPath, bool forceReimport) {
         mesh.textureIds.push_back(albedoId);
       }
     }
+  }
+
+  for (const auto &[texId, usage] : textureUsage) {
+    const auto pathIt = texturePaths.find(texId);
+    if (pathIt == texturePaths.end()) {
+      continue;
+    }
+
+    const std::filesystem::path metaPath = BuildMetadataPath(pathIt->second);
+    auto settings = ReadTextureImportSettingsFromMetadata(metaPath);
+    if (usage.data) {
+      settings.srgb = false;
+    } else if (usage.color) {
+      settings.srgb = true;
+    }
+    settings.isNormalMap = usage.normal;
+    WriteTextureImportSettingsIfChanged(metaPath, settings, true);
   }
 
   cgltf_free(data);
