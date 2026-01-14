@@ -2712,6 +2712,8 @@ void AssetRegistry::RegisterVirtualAsset(const std::string &uri, AssetType type,
     }
     virtualAsset.entry.path = targetPath;
     m_pathToId[MakePathKey(virtualAsset.entry.path, m_rootPath)] = id;
+    const std::string sourceLabel = BuildSourceLabel(targetPath, m_rootPath);
+    WriteMetadataFile(BuildMetadataPath(targetPath), id, type, sourceLabel);
   }
 
   std::error_code ec;
@@ -2763,6 +2765,15 @@ AssetRegistry::GetVirtualAssets() const noexcept {
   return m_virtualAssets;
 }
 
+const AssetRegistry::VirtualAsset *
+AssetRegistry::GetVirtualAsset(const std::string &assetId) const noexcept {
+  auto it = m_virtualAssets.find(assetId);
+  if (it == m_virtualAssets.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
 bool AssetRegistry::IsVirtualAsset(const std::string &assetId) const noexcept {
   return m_virtualAssets.find(assetId) != m_virtualAssets.end();
 }
@@ -2788,16 +2799,18 @@ std::string AssetRegistry::RequestGenerativeAsset(const std::string &prompt,
   GenerativeAssetInfo info;
   info.assetId = assetId;
   info.prompt = prompt;
+  info.displayName = name;
   info.type = type;
   info.status = GenerativeAssetStatus::Pending;
   info.statusMessage = "Queued for generation";
   info.requestedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
       Clock::now().time_since_epoch()).count();
   
-  m_generativeAssets[assetId] = info;
-  
   // Also register as a virtual asset
   std::string uri = std::string("generate://") + AssetTypeToString(type) + "/" + name;
+  info.virtualUri = uri;
+  info.virtualAssetId = StableVirtualId(uri);
+  m_generativeAssets[assetId] = info;
   RegisterVirtualAsset(uri, type);
   
   // Record change
@@ -2829,9 +2842,20 @@ void AssetRegistry::UpdateGenerativeAssetStatus(const std::string &assetId,
   }
   
   // Update virtual asset status too
-  std::string uri = std::string("generate://") + AssetTypeToString(it->second.type) + "/" + 
-                    SanitizeName(it->second.prompt.substr(0, 32));
-  std::string virtualId = StableVirtualId(uri);
+  std::string virtualId = it->second.virtualAssetId;
+  if (virtualId.empty()) {
+    std::string uri = it->second.virtualUri;
+    if (uri.empty()) {
+      const std::string name = it->second.displayName.empty()
+                                   ? SanitizeName(it->second.prompt.substr(0, 32))
+                                   : it->second.displayName;
+      uri = std::string("generate://") + AssetTypeToString(it->second.type) +
+            "/" + name;
+      it->second.virtualUri = uri;
+    }
+    virtualId = StableVirtualId(it->second.virtualUri);
+    it->second.virtualAssetId = virtualId;
+  }
   
   auto vit = m_virtualAssets.find(virtualId);
   if (vit != m_virtualAssets.end()) {
@@ -2849,6 +2873,12 @@ void AssetRegistry::UpdateGenerativeAssetStatus(const std::string &assetId,
         vit->second.ready = true;
         if (!outputPath.empty()) {
           vit->second.entry.path = outputPath;
+          m_pathToId[MakePathKey(outputPath, m_rootPath)] = vit->second.entry.id;
+          auto entryIt = m_entryLookup.find(vit->second.entry.id);
+          if (entryIt != m_entryLookup.end() &&
+              entryIt->second < m_entries.size()) {
+            m_entries[entryIt->second] = vit->second.entry;
+          }
         }
         break;
       case GenerativeAssetStatus::Failed:
@@ -2882,6 +2912,24 @@ void AssetRegistry::FinalizeGenerativeAsset(const std::string &assetId,
   it->second.progress = 1.0f;
   it->second.completedTime = std::chrono::duration_cast<std::chrono::milliseconds>(
       Clock::now().time_since_epoch()).count();
+
+  if (!it->second.virtualAssetId.empty()) {
+    auto vit = m_virtualAssets.find(it->second.virtualAssetId);
+    if (vit != m_virtualAssets.end()) {
+      vit->second.status = "Ready";
+      vit->second.ready = true;
+      if (!generatedPath.empty()) {
+        vit->second.entry.path = generatedPath;
+        m_pathToId[MakePathKey(generatedPath, m_rootPath)] =
+            vit->second.entry.id;
+        auto entryIt = m_entryLookup.find(vit->second.entry.id);
+        if (entryIt != m_entryLookup.end() &&
+            entryIt->second < m_entries.size()) {
+          m_entries[entryIt->second] = vit->second.entry;
+        }
+      }
+    }
+  }
   
   // Create an actual asset entry for the generated file
   if (std::filesystem::exists(generatedPath)) {

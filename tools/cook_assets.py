@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 
 
+
 def load_metadata(meta_path: Path) -> dict:
     if not meta_path.exists():
         return {}
@@ -56,6 +57,7 @@ def main() -> int:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest_entries = []
+    seen_ids = {}
 
     for asset_path in assets_dir.rglob("*"):
         if not asset_path.is_file():
@@ -74,10 +76,34 @@ def main() -> int:
 
         meta_id = meta.get("id")
         asset_id = meta_id if isinstance(meta_id, str) and meta_id else str(uuid.uuid4())
+        if asset_id != meta_id:
+            if meta:
+                print(
+                    f"Warning: metadata missing/invalid id for '{relative.as_posix()}'; "
+                    "generated a new GUID. Commit the .asset.json to keep it stable."
+                )
+            else:
+                print(
+                    f"Warning: missing metadata for '{relative.as_posix()}'; "
+                    "generated .asset.json with a new GUID."
+                )
+
         meta_type = meta.get("type")
         asset_type = meta_type if isinstance(meta_type, str) and meta_type else classify_asset_type(asset_path)
-        meta_source = meta.get("source")
-        source = meta_source if isinstance(meta_source, str) and meta_source else relative.as_posix()
+        source = relative.as_posix()
+
+        if isinstance(meta.get("source"), str) and meta.get("source") and meta.get("source") != source:
+            print(
+                f"Warning: metadata source mismatch for '{relative.as_posix()}'; "
+                f"was '{meta.get('source')}', updating to '{source}'."
+            )
+
+        if asset_id in seen_ids and seen_ids[asset_id] != source:
+            print(
+                "Warning: duplicate asset id "
+                f"{asset_id} for '{source}' and '{seen_ids[asset_id]}'."
+            )
+        seen_ids[asset_id] = source
 
         changed = False
         if "version" not in meta:
@@ -89,9 +115,10 @@ def main() -> int:
         if not isinstance(meta.get("type"), str) or not meta.get("type"):
             meta["type"] = asset_type
             changed = True
-        if not isinstance(meta.get("source"), str) or not meta.get("source"):
+        if meta.get("source") != source:
             meta["source"] = source
             changed = True
+
         if meta_was_empty and asset_type == "Texture":
             import_data = meta.get("import")
             if not isinstance(import_data, dict):
@@ -104,6 +131,12 @@ def main() -> int:
 
         if changed:
             write_metadata(meta_path, meta)
+
+        if asset_path.suffix.lower() == ".virtual" and meta_was_empty:
+            print(
+                f"Warning: virtual asset '{relative.as_posix()}' is missing "
+                ".asset.json metadata; rescan in the editor for a stable virtual ID."
+            )
         if asset_type == "Texture":
             import_data = meta.get("import")
             if not isinstance(import_data, dict) or not isinstance(import_data.get("srgb"), bool):

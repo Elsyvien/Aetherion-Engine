@@ -148,6 +148,8 @@ public:
                             const std::filesystem::path &cachePath = {});
   [[nodiscard]] const std::unordered_map<std::string, VirtualAsset> &
   GetVirtualAssets() const noexcept;
+  [[nodiscard]] const VirtualAsset *
+  GetVirtualAsset(const std::string &assetId) const noexcept;
   [[nodiscard]] bool IsVirtualAsset(const std::string &assetId) const noexcept;
 
   // Generative asset support
@@ -161,6 +163,9 @@ public:
   struct GenerativeAssetInfo {
     std::string assetId;
     std::string prompt;
+    std::string displayName;
+    std::string virtualAssetId;
+    std::string virtualUri;
     AssetType type{AssetType::Other};
     GenerativeAssetStatus status{GenerativeAssetStatus::Pending};
     std::string statusMessage;

@@ -56,6 +56,7 @@ signals:
 
 private:
   void RebuildUi();
+  void UpdateAIScriptStatus();
 
   std::shared_ptr<Scene::Entity> m_entity;
   std::shared_ptr<Assets::AssetRegistry> m_assetRegistry;
@@ -115,6 +116,8 @@ private:
   QLabel *m_aiInferenceLabel = nullptr;
   QLabel *m_aiLatencyLabel = nullptr;
   QLabel *m_aiBudgetLabel = nullptr;
+  QLabel *m_aiScriptPathLabel = nullptr;
+  QLabel *m_aiScriptDiagLabel = nullptr;
 
   bool m_buildingUi = false;
   CommandExecutor m_commandExecutor;

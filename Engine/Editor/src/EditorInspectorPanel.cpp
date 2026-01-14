@@ -27,6 +27,7 @@
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Editor/Commands/ComponentCommands.h"
 #include "Aetherion/Editor/Commands/TransformCommand.h"
+#include "Aetherion/Runtime/EngineContext.h"
 #include "Aetherion/Scene/AIBehaviorComponent.h"
 #include "Aetherion/Scene/AudioSourceComponent.h"
 #include "Aetherion/Scene/AnimatorComponent.h"
@@ -37,8 +38,10 @@
 #include "Aetherion/Scene/MeshRendererComponent.h"
 #include "Aetherion/Scene/ParticleEmitterComponent.h"
 #include "Aetherion/Scene/RigidbodyComponent.h"
+#include "Aetherion/Scene/Scene.h"
 #include "Aetherion/Scene/ScriptComponent.h"
 #include "Aetherion/Scene/TransformComponent.h"
+#include "Aetherion/Scripting/ScriptingPlaceholder.h"
 #include <QToolButton>
 
 namespace {
@@ -207,6 +210,55 @@ void EditorInspectorPanel::UpdateAIStatus() {
         tr("Budget Remaining: %1")
             .arg(aiBehavior->GetLastBudgetRemaining()));
   }
+  UpdateAIScriptStatus();
+}
+
+void EditorInspectorPanel::UpdateAIScriptStatus() {
+  if (!m_aiScriptPathLabel || !m_aiScriptDiagLabel || !m_entity) {
+    return;
+  }
+  auto aiBehavior = m_entity->GetComponent<Scene::AIBehaviorComponent>();
+  if (!aiBehavior) {
+    return;
+  }
+
+  QString pathText = tr("Generated Script: <none>");
+  QString diagText = tr("Diagnostics: <none>");
+
+  auto *scene = m_entity->GetScene();
+  auto *context = scene ? scene->GetContext() : nullptr;
+  auto scripting = context ? context->GetScriptingRuntime() : nullptr;
+
+  if (!scripting) {
+    diagText = tr("Diagnostics: Scripting runtime unavailable.");
+  } else {
+    std::string scriptId = aiBehavior->GetPromptAssetId();
+    if (scriptId.empty() && !aiBehavior->GetInlinePrompt().empty()) {
+      scriptId = "inline_behavior";
+    }
+    if (scriptId.empty()) {
+      diagText = tr("Diagnostics: No prompt set.");
+    } else if (auto script = scripting->GetScript(scriptId)) {
+      if (!script->generatedPath.empty()) {
+        pathText = tr("Generated Script: %1")
+                       .arg(QString::fromStdString(
+                           script->generatedPath.string()));
+      } else {
+        pathText = tr("Generated Script: <in-memory>");
+      }
+      if (!script->diagnostics.empty()) {
+        diagText = tr("Diagnostics: %1")
+                       .arg(QString::fromStdString(script->diagnostics));
+      } else {
+        diagText = tr("Diagnostics: None");
+      }
+    } else {
+      diagText = tr("Diagnostics: Script not generated yet.");
+    }
+  }
+
+  m_aiScriptPathLabel->setText(pathText);
+  m_aiScriptDiagLabel->setText(diagText);
 }
 
 void EditorInspectorPanel::SetSelectedAsset(QString assetId) {
@@ -278,6 +330,8 @@ void EditorInspectorPanel::RebuildUi() {
   m_aiInferenceLabel = nullptr;
   m_aiLatencyLabel = nullptr;
   m_aiBudgetLabel = nullptr;
+  m_aiScriptPathLabel = nullptr;
+  m_aiScriptDiagLabel = nullptr;
 
   auto addMeshStatsRows = [this](
                               QFormLayout *form, QWidget *parent,
@@ -1481,6 +1535,12 @@ void EditorInspectorPanel::RebuildUi() {
         tr("Budget Remaining: %1")
             .arg(aiBehavior->GetLastBudgetRemaining()),
         m_content);
+    m_aiScriptPathLabel = new QLabel(m_content);
+    m_aiScriptPathLabel->setTextFormat(Qt::PlainText);
+    m_aiScriptPathLabel->setWordWrap(true);
+    m_aiScriptDiagLabel = new QLabel(m_content);
+    m_aiScriptDiagLabel->setTextFormat(Qt::PlainText);
+    m_aiScriptDiagLabel->setWordWrap(true);
 
     form->addRow(tr("Execution"), m_aiMode);
     form->addRow(tr("Prompt Asset"), m_aiPromptAsset);
@@ -1494,6 +1554,10 @@ void EditorInspectorPanel::RebuildUi() {
     form->addRow(m_aiInferenceLabel);
     form->addRow(m_aiLatencyLabel);
     form->addRow(m_aiBudgetLabel);
+    form->addRow(m_aiScriptPathLabel);
+    form->addRow(m_aiScriptDiagLabel);
+
+    UpdateAIScriptStatus();
 
     auto updateBehavior = [this, aiBehavior]() {
       aiBehavior->SetPersonality(m_aiPersonality->text().toStdString());

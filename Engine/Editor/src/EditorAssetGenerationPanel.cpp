@@ -367,9 +367,16 @@ void EditorAssetGenerationPanel::startGeneration() {
         } else if (request.assetType == "script") {
             type = Assets::AssetRegistry::AssetType::Script;
         }
-        
-        m_assetRegistry->RequestGenerativeAsset(prompt.toStdString(), type,
-                                                request.targetId);
+        const std::string assetId =
+            m_assetRegistry->RequestGenerativeAsset(prompt.toStdString(), type,
+                                                    request.targetId);
+        if (!requestId.empty()) {
+            m_requestAssetIds[requestId] = assetId;
+        }
+        m_assetRegistry->UpdateGenerativeAssetStatus(
+            assetId,
+            Assets::AssetRegistry::GenerativeAssetStatus::Pending,
+            "Queued for generation");
     }
     
     updateButtonStates();
@@ -383,6 +390,16 @@ void EditorAssetGenerationPanel::cancelSelected() {
                 "❌ " + m_historyList->currentItem()->text().mid(2));
             m_statusLabel->setText(tr("Cancelled"));
             m_statusLabel->setStyleSheet("color: #FF9800;");
+            if (m_assetRegistry) {
+                auto it = m_requestAssetIds.find(requestId.toStdString());
+                if (it != m_requestAssetIds.end()) {
+                    m_assetRegistry->UpdateGenerativeAssetStatus(
+                        it->second,
+                        Assets::AssetRegistry::GenerativeAssetStatus::Failed,
+                        "Cancelled");
+                    emit requestAssetBrowserRefresh();
+                }
+            }
         }
     }
     updateButtonStates();
@@ -396,6 +413,16 @@ void EditorAssetGenerationPanel::retrySelected() {
                 "🔄 " + m_historyList->currentItem()->text().mid(2));
             m_statusLabel->setText(tr("Retrying..."));
             m_statusLabel->setStyleSheet("color: #2196F3;");
+            if (m_assetRegistry) {
+                auto it = m_requestAssetIds.find(requestId.toStdString());
+                if (it != m_requestAssetIds.end()) {
+                    m_assetRegistry->UpdateGenerativeAssetStatus(
+                        it->second,
+                        Assets::AssetRegistry::GenerativeAssetStatus::Pending,
+                        "Retry queued");
+                    emit requestAssetBrowserRefresh();
+                }
+            }
         }
     }
     updateButtonStates();
@@ -405,6 +432,7 @@ void EditorAssetGenerationPanel::clearHistory() {
     m_generationQueue->ClearHistory();
     m_historyList->clear();
     m_requestItems.clear();
+    m_requestAssetIds.clear();
     m_detailsLabel->setText(tr("Select a generation from history to see details."));
     updateButtonStates();
 }
@@ -480,21 +508,34 @@ void EditorAssetGenerationPanel::onHistoryItemSelected(QListWidgetItem *item) {
     updateButtonStates();
 }
 
-void EditorAssetGenerationPanel::onProgressUpdate(const QString &requestId,
+void EditorAssetGenerationPanel::onProgressUpdate(const QString &requestId,     
                                                   float progress,
-                                                  const QString &message) {
+                                                  const QString &message) {     
     if (requestId.toStdString() == m_currentRequestId) {
         m_progressBar->setValue(static_cast<int>(progress * 100));
         m_statusLabel->setText(message);
         m_statusLabel->setStyleSheet("color: #2196F3;");
     }
-    
+
     // Update history item
     auto it = m_requestItems.find(requestId.toStdString());
     if (it != m_requestItems.end()) {
         QString text = it->second->text();
         if (text.startsWith("⏳")) {
             it->second->setText("🔄" + text.mid(1));
+        }
+    }
+
+    if (m_assetRegistry && progress < 1.0f) {
+        auto assetIt = m_requestAssetIds.find(requestId.toStdString());
+        if (assetIt != m_requestAssetIds.end()) {
+            const std::string statusMessage =
+                message.isEmpty() ? "Generating..." : message.toStdString();
+            m_assetRegistry->UpdateGenerativeAssetStatus(
+                assetIt->second,
+                Assets::AssetRegistry::GenerativeAssetStatus::Generating,
+                statusMessage);
+            emit requestAssetBrowserRefresh();
         }
     }
 }
@@ -520,21 +561,42 @@ void EditorAssetGenerationPanel::onGenerationComplete(const QString &requestId,
     if (success) {
         emit assetGenerated(requestId, message);
         emit requestAssetBrowserRefresh();
-        
+
         // Update asset registry
         if (m_assetRegistry) {
             auto state = m_generationQueue->GetRequestState(requestId.toStdString());
             if (state && state->result) {
+                const std::string fallbackAssetId = state->result->assetId;
+                auto assetIt = m_requestAssetIds.find(requestId.toStdString());
+                const std::string assetId = (assetIt != m_requestAssetIds.end())
+                                                ? assetIt->second
+                                                : fallbackAssetId;
+                m_assetRegistry->UpdateGenerativeAssetStatus(
+                    assetId,
+                    Assets::AssetRegistry::GenerativeAssetStatus::Ready,
+                    message.toStdString(),
+                    state->result->outputPath);
                 m_assetRegistry->FinalizeGenerativeAsset(
-                    state->result->assetId, state->result->outputPath);
+                    assetId, state->result->outputPath);
             }
         }
     } else {
         emit generationFailed(requestId, message);
+        if (m_assetRegistry) {
+            auto assetIt = m_requestAssetIds.find(requestId.toStdString());
+            if (assetIt != m_requestAssetIds.end()) {
+                m_assetRegistry->UpdateGenerativeAssetStatus(
+                    assetIt->second,
+                    Assets::AssetRegistry::GenerativeAssetStatus::Failed,
+                    message.toStdString());
+            }
+        }
     }
-    
+
     updateButtonStates();
     updateSelectedDetails();
+
+    m_requestAssetIds.erase(requestId.toStdString());
 }
 
 void EditorAssetGenerationPanel::updateHistoryList() {

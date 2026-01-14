@@ -165,6 +165,17 @@ namespace {
         return std::nullopt;
     }
 
+    int ExtractMaxCount(const QString& text) {
+        int maxValue = -1;
+        QRegularExpression numberRegex(R"(\b(\d+)\b)");
+        auto matchIt = numberRegex.globalMatch(text);
+        while (matchIt.hasNext()) {
+            const auto match = matchIt.next();
+            maxValue = std::max(maxValue, match.captured(1).toInt());
+        }
+        return maxValue;
+    }
+
     SpawnPattern ResolvePattern(const QString& patternName, bool gridFlag,
                                 int count) {
         const QString pattern = patternName.trimmed().toLower();
@@ -413,8 +424,21 @@ CopilotResult AICopilotProcessor::ProcessWithPatterns(const QString& prompt, boo
     if (trimmed.isEmpty()) return result;
 
     const QString lowered = trimmed.toLower();
-    result.dryRun = allowDryRun &&
-                    (lowered.contains("preview") || lowered.contains("dry run"));
+    const bool explicitDryRun =
+        allowDryRun &&
+        (lowered.contains("preview") || lowered.contains("dry run"));
+    const bool destructiveIntent = ContainsAny(
+        lowered, {"delete", "remove", "erase", "destroy"});
+    const bool duplicateIntent =
+        ContainsAny(lowered, {"duplicate", "copy"});
+    const bool spawnIntent =
+        ContainsAny(lowered, {"spawn", "create", "add", "make"});
+    const int maxCount = ExtractMaxCount(lowered);
+    const bool bulkIntent =
+        spawnIntent && maxCount >= 12;
+    const bool guardrailDryRun =
+        allowDryRun && (destructiveIntent || duplicateIntent || bulkIntent);
+    result.dryRun = explicitDryRun || guardrailDryRun;
 
     std::vector<std::unique_ptr<Command>> commandBatch;
     QStringList actionSummaries;
@@ -442,6 +466,18 @@ CopilotResult AICopilotProcessor::ProcessWithPatterns(const QString& prompt, boo
         }
     };
 
+    auto reportActivity = [&](ActivityType type, const QString& details) {
+        if (m_activityCallback) {
+            m_activityCallback(static_cast<int>(type), details.toStdString());
+        }
+    };
+
+    if (guardrailDryRun && !explicitDryRun) {
+        addSummary("Guardrail: previewing changes before applying.");
+        reportActivity(ActivityType::Thinking,
+                       "Guardrail preview triggered for copilot actions");
+    }
+
     auto executeBatch = [&](const QString& summaryText) {
         if (result.dryRun || commandBatch.empty() || !m_executor) {
             return;
@@ -457,6 +493,7 @@ CopilotResult AICopilotProcessor::ProcessWithPatterns(const QString& prompt, boo
 
         if (commandBatch.size() == 1) {
             commandBatch.front()->SetContext(context);
+            reportActivity(ActivityType::ModifyingScene, label);
             m_executor(std::move(commandBatch.front()));
             return;
         }
@@ -464,6 +501,7 @@ CopilotResult AICopilotProcessor::ProcessWithPatterns(const QString& prompt, boo
         auto batch = std::make_unique<CompositeCommand>(name,
                                                         std::move(commandBatch));
         batch->SetContext(context);
+        reportActivity(ActivityType::ModifyingScene, label);
         m_executor(std::move(batch));
     };
 
@@ -892,6 +930,29 @@ CopilotResult AICopilotProcessor::ProcessWithPatterns(const QString& prompt, boo
     };
 
     if (auto plan = TryParseCopilotPlan(trimmed)) {
+        if (!explicitDryRun && allowDryRun) {
+            bool planGuardrail = false;
+            for (const auto& step : plan->steps) {
+                if (step.tool == PlanTool::DeleteSelection ||
+                    step.tool == PlanTool::DuplicateSelection) {
+                    planGuardrail = true;
+                    break;
+                }
+                if (step.tool == PlanTool::SpawnEntity) {
+                    const int count = step.args.value("count").toInt(1);
+                    if (count >= 12) {
+                        planGuardrail = true;
+                        break;
+                    }
+                }
+            }
+            if (planGuardrail) {
+                result.dryRun = true;
+                addSummary("Guardrail: previewing plan before applying.");
+                reportActivity(ActivityType::Thinking,
+                               "Guardrail preview triggered for plan");
+            }
+        }
         for (const auto& step : plan->steps) {
             switch (step.tool) {
                 case PlanTool::SpawnEntity: {

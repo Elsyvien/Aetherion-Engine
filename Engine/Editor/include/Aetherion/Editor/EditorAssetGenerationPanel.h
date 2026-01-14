@@ -136,6 +136,7 @@ private:
     
     // Request tracking
     std::unordered_map<std::string, QListWidgetItem*> m_requestItems;
+    std::unordered_map<std::string, std::string> m_requestAssetIds;
     std::string m_currentRequestId;
 };
 

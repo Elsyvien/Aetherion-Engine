@@ -2038,7 +2038,15 @@ void EditorMainWindow::RefreshAssetBrowser() {
       QString label =
           QString::fromStdString(displayPath.generic_string());
       if (registry->IsVirtualAsset(entry->id)) {
-        label = tr("[Virtual] %1").arg(label);
+        QString status;
+        if (const auto *virtualAsset = registry->GetVirtualAsset(entry->id)) {
+          status = QString::fromStdString(virtualAsset->status);
+        }
+        if (!status.isEmpty()) {
+          label = tr("[Virtual: %1] %2").arg(status, label);
+        } else {
+          label = tr("[Virtual] %1").arg(label);
+        }
       }
       const QString id = QString::fromStdString(entry->id);
       const QString assetPath = QString::fromStdString(entry->path.string());   
@@ -4549,10 +4557,29 @@ void EditorMainWindow::ExecuteCommand(std::unique_ptr<Command> cmd) {
   if (!m_commandHistory || !cmd)
     return;
 
+  const CommandContext context = cmd->GetContext();
+  const QString summary = context.summary.empty()
+                              ? QString::fromStdString(cmd->GetName())
+                              : QString::fromStdString(context.summary);
+
   m_commandHistory->Push(std::move(cmd));
   SetSceneDirty(true);
   UpdateUndoRedoState();
   RefreshSelectedEntityUi();
+
+  if (!summary.isEmpty() &&
+      (context.source == "Copilot" || context.source == "CopilotTool")) {
+    QString detail = summary;
+    if (!context.requestId.empty()) {
+      detail += tr(" (request %1)")
+                    .arg(QString::fromStdString(context.requestId));
+    }
+    if (m_copilotPanel) {
+      m_copilotPanel->AddActivityLogEntry("Command", detail);
+    }
+    AppendConsole(m_console, tr("Copilot: %1").arg(summary),
+                  ConsoleSeverity::Info);
+  }
 }
 
 void EditorMainWindow::Undo() {
