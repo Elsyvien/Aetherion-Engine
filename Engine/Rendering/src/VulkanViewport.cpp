@@ -88,7 +88,8 @@ struct alignas(16) MaterialUniform {
   float emissiveFactor[4];
   float metallicFactor;
   float roughnessFactor;
-  float padding[2];
+  float alphaCutoff;
+  float alphaMode;
 };
 
 constexpr uint32_t kInstanceFlagUnlit = 1u;
@@ -648,9 +649,17 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds,
   }
 
   m_timeSeconds += deltaTimeSeconds;
-  const auto instances = InstancesFromView(view, m_timeSeconds);
-  PrepareInstanceData(instances);
-  UpdateSelectionBuffer(instances, view);
+  const auto frameInstances = InstancesFromView(view, m_timeSeconds);
+  std::vector<DrawInstance> pickingInstances;
+  pickingInstances.reserve(frameInstances.opaque.size() +
+                           frameInstances.transparent.size());
+  pickingInstances.insert(pickingInstances.end(), frameInstances.opaque.begin(),
+                          frameInstances.opaque.end());
+  pickingInstances.insert(pickingInstances.end(),
+                          frameInstances.transparent.begin(),
+                          frameInstances.transparent.end());
+  PrepareInstanceData(frameInstances.opaque);
+  UpdateSelectionBuffer(pickingInstances, view);
   UpdateLightGizmoBuffer(view);
   UpdateColliderBuffer(view);
   UpdateParticleBuffer(view);
@@ -782,7 +791,7 @@ void VulkanViewport::RenderFrame(float deltaTimeSeconds,
     m_frameStats[m_frameIndex].passes[i].name = kPassNames[i];
   }
   const auto cpuStart = std::chrono::steady_clock::now();
-  RecordCommandBuffer(imageIndex, instances);
+    RecordCommandBuffer(imageIndex, frameInstances, pickingInstances);
   const auto cpuEnd = std::chrono::steady_clock::now();
   m_frameStats[m_frameIndex].cpuTotalMs =
       std::chrono::duration<double, std::milli>(cpuEnd - cpuStart).count();
@@ -1663,6 +1672,22 @@ void VulkanViewport::HandleAssetChanges(
         m_meshCache.erase(it);
       }
       m_missingMeshes.erase(change.id);
+      const std::string lodPrefix = change.id + ":lod";
+      for (auto it = m_meshCache.begin(); it != m_meshCache.end();) {
+        if (it->first.rfind(lodPrefix, 0) == 0) {
+          destroyMesh(it->second);
+          it = m_meshCache.erase(it);
+        } else {
+          ++it;
+        }
+      }
+      for (auto it = m_missingMeshes.begin(); it != m_missingMeshes.end();) {
+        if (it->rfind(lodPrefix, 0) == 0) {
+          it = m_missingMeshes.erase(it);
+        } else {
+          ++it;
+        }
+      }
       invalidateMaterialsForMesh(change.id);
     } else if (change.type == Assets::AssetRegistry::AssetType::Texture) {
       if (auto it = m_textureCache.find(change.id);
@@ -1732,6 +1757,11 @@ void VulkanViewport::DestroySwapchainResources() {
     vkDestroyPipeline(device, m_pipeline, nullptr);
   }
   m_pipeline = VK_NULL_HANDLE;
+
+  if (device != VK_NULL_HANDLE && m_transparentPipeline != VK_NULL_HANDLE) {
+    vkDestroyPipeline(device, m_transparentPipeline, nullptr);
+  }
+  m_transparentPipeline = VK_NULL_HANDLE;
 
   if (device != VK_NULL_HANDLE && m_particlePipelineAlpha != VK_NULL_HANDLE) {
     vkDestroyPipeline(device, m_particlePipelineAlpha, nullptr);
@@ -3754,6 +3784,15 @@ void VulkanViewport::CreatePipeline() {
   VkPipelineColorBlendStateCreateInfo particleBlendState = blend;
   particleBlendState.pAttachments = &particleBlend;
 
+  VkGraphicsPipelineCreateInfo transparentPipe = pipe;
+  transparentPipe.pColorBlendState = &particleBlendState;
+  transparentPipe.pDepthStencilState = &particleDepth;
+  if (vkCreateGraphicsPipelines(m_context->GetDevice(), VK_NULL_HANDLE, 1,
+                                &transparentPipe, nullptr,
+                                &m_transparentPipeline) != VK_SUCCESS) {
+    throw std::runtime_error("Failed to create transparent pipeline");
+  }
+
   VkGraphicsPipelineCreateInfo particlePipe = pipe;
   particlePipe.pColorBlendState = &particleBlendState;
   particlePipe.pDepthStencilState = &particleDepth;
@@ -4400,7 +4439,8 @@ void VulkanViewport::CreateInstanceBuffers(size_t instanceCount,
 }
 
 void VulkanViewport::RecordCommandBuffer(
-    uint32_t imageIndex, const std::vector<DrawInstance> &instances) {
+    uint32_t imageIndex, const FrameInstances &instances,
+    const std::vector<DrawInstance> &pickingInstances) {
   VkCommandBuffer cb = m_commandBuffers[m_frameIndex];
 
   VkCommandBufferBeginInfo begin{};
@@ -4430,13 +4470,15 @@ void VulkanViewport::RecordCommandBuffer(
     }
   };
 
-  recordPass(0, [&]() { RecordOpaquePass(cb, instances); });
+  recordPass(0, [&]() {
+    RecordOpaquePass(cb, instances.opaque, instances.transparent);
+  });
 
   const bool needsPicking =
       m_pendingPick.pending || m_debugViewMode == DebugViewMode::EntityId;
   recordPass(1, [&]() {
     if (needsPicking) {
-      RecordPickingPass(cb, instances);
+      RecordPickingPass(cb, pickingInstances, true);
     }
   });
 
@@ -4607,7 +4649,8 @@ void VulkanViewport::RecordShadowPass(VkCommandBuffer cb) {
 }
 
 void VulkanViewport::RecordOpaquePass(
-    VkCommandBuffer cb, const std::vector<DrawInstance> &instances) {
+    VkCommandBuffer cb, const std::vector<DrawInstance> &opaqueInstances,
+    const std::vector<DrawInstance> &transparentInstances) {
   if (m_shadowEnabledForFrame) {
     RecordShadowPass(cb);
   }
@@ -4747,11 +4790,11 @@ void VulkanViewport::RecordOpaquePass(
                          batch.inputOffset);
       }
     }
-  } else if (!instances.empty()) {
+  } else if (!opaqueInstances.empty()) {
     bool hasBoundMesh = false;
     VkBuffer boundVertex = VK_NULL_HANDLE;
     VkBuffer boundIndex = VK_NULL_HANDLE;
-    for (const auto &instance : instances) {
+    for (const auto &instance : opaqueInstances) {
       const GpuMaterial *material = ResolveMaterial(instance.materialId);
       VkDescriptorSet materialSet =
           (material && material->descriptorSet != VK_NULL_HANDLE)
@@ -4821,6 +4864,57 @@ void VulkanViewport::RecordOpaquePass(
     vkCmdBindVertexBuffers(cb, 0, 2, quadBuffers, offsets);
     vkCmdBindIndexBuffer(cb, m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cb, m_defaultIndexCount, 1, 0, 0, 0);
+  }
+
+  if (!transparentInstances.empty() &&
+      m_transparentPipeline != VK_NULL_HANDLE) {
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      m_transparentPipeline);
+    bool hasBoundMesh = false;
+    VkBuffer boundVertex = VK_NULL_HANDLE;
+    VkBuffer boundIndex = VK_NULL_HANDLE;
+    for (const auto &instance : transparentInstances) {
+      const GpuMaterial *material = ResolveMaterial(instance.materialId);
+      VkDescriptorSet materialSet =
+          (material && material->descriptorSet != VK_NULL_HANDLE)
+              ? material->descriptorSet
+              : VK_NULL_HANDLE;
+
+      if (materialSet != VK_NULL_HANDLE && materialSet != boundMaterialSet) {
+        VkDescriptorSet sets[] = {uboSet, materialSet, shadowSet};
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_pipelineLayout, 0, 3, sets, 0, nullptr);
+        boundMaterialSet = materialSet;
+      }
+
+      const GpuMesh *mesh = ResolveMesh(instance.meshId);
+      VkBuffer vertexBuffer = m_vertexBuffer;
+      VkBuffer indexBuffer = m_indexBuffer;
+      uint32_t indexCount = m_defaultIndexCount;
+
+      if (mesh && mesh->vertexBuffer != VK_NULL_HANDLE &&
+          mesh->indexBuffer != VK_NULL_HANDLE && mesh->indexCount > 0) {
+        vertexBuffer = mesh->vertexBuffer;
+        indexBuffer = mesh->indexBuffer;
+        indexCount = mesh->indexCount;
+      }
+
+      if (!hasBoundMesh || vertexBuffer != boundVertex ||
+          indexBuffer != boundIndex) {
+        VkBuffer buffers[] = {vertexBuffer, fallbackInstanceBuffer};
+        vkCmdBindVertexBuffers(cb, 0, 2, buffers, offsets);
+        vkCmdBindIndexBuffer(cb, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        hasBoundMesh = true;
+        boundVertex = vertexBuffer;
+        boundIndex = indexBuffer;
+      }
+
+      vkCmdPushConstants(cb, m_pipelineLayout,
+                         VK_SHADER_STAGE_VERTEX_BIT |
+                             VK_SHADER_STAGE_FRAGMENT_BIT,
+                         0, sizeof(InstancePushConstants), &instance.constants);
+      vkCmdDrawIndexed(cb, indexCount, 1, 0, 0, 0);
+    }
   }
 
   if (m_overlayPipeline != VK_NULL_HANDLE &&
@@ -4937,7 +5031,8 @@ void VulkanViewport::RecordOpaquePass(
 }
 
 void VulkanViewport::RecordPickingPass(
-    VkCommandBuffer cb, const std::vector<DrawInstance> &instances) {
+    VkCommandBuffer cb, const std::vector<DrawInstance> &instances,
+    bool forceDirect) {
   if (instances.empty()) {
     if (!m_pendingPick.pending && m_debugViewMode != DebugViewMode::EntityId) {
       return;
@@ -4976,11 +5071,13 @@ void VulkanViewport::RecordPickingPass(
   const VkDeviceSize offsets[] = {0, 0};
   const VkDescriptorSet uboSet = m_descriptorSets[m_frameIndex];
   const VkDescriptorSet shadowSet = m_shadowSamplerDescriptorSets[m_frameIndex];
-  VkDescriptorSet materialSet = m_defaultMaterial.descriptorSet;
-  if (materialSet != VK_NULL_HANDLE) {
-    VkDescriptorSet sets[] = {uboSet, materialSet, shadowSet};
+  VkDescriptorSet boundMaterialSet = VK_NULL_HANDLE;
+  if (m_defaultMaterial.descriptorSet != VK_NULL_HANDLE) {
+    VkDescriptorSet sets[] = {uboSet, m_defaultMaterial.descriptorSet,
+                              shadowSet};
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             m_pipelineLayout, 0, 3, sets, 0, nullptr);
+    boundMaterialSet = m_defaultMaterial.descriptorSet;
   }
 
   VkPipeline pickPipeline =
@@ -4997,7 +5094,9 @@ void VulkanViewport::RecordPickingPass(
                                     ? m_instanceOutputBuffer
                                     : m_instanceInputBuffer;
 
-  if (!m_drawBatches.empty() && drawInstanceBuffer != VK_NULL_HANDLE) {
+  const bool canUseIndirect =
+      !forceDirect && !m_drawBatches.empty() && drawInstanceBuffer != VK_NULL_HANDLE;
+  if (canUseIndirect) {
     InstancePushConstants pc{};
     Mat4Identity(pc.model);
     pc.flags = kInstanceFlagUseInstanceData;
@@ -5012,6 +5111,18 @@ void VulkanViewport::RecordPickingPass(
     VkBuffer boundIndex = VK_NULL_HANDLE;
 
     for (const auto &batch : m_drawBatches) {
+      const GpuMaterial *material = ResolveMaterial(batch.materialId);
+      VkDescriptorSet materialSet =
+          (material && material->descriptorSet != VK_NULL_HANDLE)
+              ? material->descriptorSet
+              : VK_NULL_HANDLE;
+      if (materialSet != VK_NULL_HANDLE && materialSet != boundMaterialSet) {
+        VkDescriptorSet sets[] = {uboSet, materialSet, shadowSet};
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_pipelineLayout, 0, 3, sets, 0, nullptr);
+        boundMaterialSet = materialSet;
+      }
+
       const GpuMesh *mesh = ResolveMesh(batch.meshId);
       VkBuffer vertexBuffer = m_vertexBuffer;
       VkBuffer indexBuffer = m_indexBuffer;
@@ -5049,6 +5160,18 @@ void VulkanViewport::RecordPickingPass(
     VkBuffer boundVertex = VK_NULL_HANDLE;
     VkBuffer boundIndex = VK_NULL_HANDLE;
     for (const auto &instance : instances) {
+      const GpuMaterial *material = ResolveMaterial(instance.materialId);
+      VkDescriptorSet materialSet =
+          (material && material->descriptorSet != VK_NULL_HANDLE)
+              ? material->descriptorSet
+              : VK_NULL_HANDLE;
+      if (materialSet != VK_NULL_HANDLE && materialSet != boundMaterialSet) {
+        VkDescriptorSet sets[] = {uboSet, materialSet, shadowSet};
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_pipelineLayout, 0, 3, sets, 0, nullptr);
+        boundMaterialSet = materialSet;
+      }
+
       const GpuMesh *mesh = ResolveMesh(instance.meshId);
       VkBuffer vertexBuffer = m_vertexBuffer;
       VkBuffer indexBuffer = m_indexBuffer;
@@ -6603,7 +6726,7 @@ void VulkanViewport::UpdateMetalLayerSize(int width, int height) {
 }
 #endif
 
-std::vector<VulkanViewport::DrawInstance>
+VulkanViewport::FrameInstances
 VulkanViewport::InstancesFromView(const RenderView &view,
                                   float timeSeconds) const {
   std::vector<DrawInstance> instances;
@@ -6691,6 +6814,41 @@ VulkanViewport::InstancesFromView(const RenderView &view,
     return worldCache.emplace(id, stored).first->second;
   };
 
+  float cameraPos[3] = {0.0f, 0.0f, 0.0f};
+  float cameraForward[3] = {0.0f, 0.0f, -1.0f};
+  float cameraUp[3] = {0.0f, 1.0f, 0.0f};
+  if (view.camera.enabled) {
+    cameraPos[0] = view.camera.position[0];
+    cameraPos[1] = view.camera.position[1];
+    cameraPos[2] = view.camera.position[2];
+    cameraForward[0] = view.camera.forward[0];
+    cameraForward[1] = view.camera.forward[1];
+    cameraForward[2] = view.camera.forward[2];
+    Vec3Normalize(cameraForward);
+    cameraUp[0] = view.camera.up[0];
+    cameraUp[1] = view.camera.up[1];
+    cameraUp[2] = view.camera.up[2];
+    Vec3Normalize(cameraUp);
+  } else {
+    const float yawRad = m_cameraYawDeg * (3.14159265358979323846f / 180.0f);
+    const float pitchRad =
+        m_cameraPitchDeg * (3.14159265358979323846f / 180.0f);
+    const float distance = std::max(0.01f, m_cameraDistance * m_cameraZoom);
+    const float eyeX =
+        m_cameraX + distance * std::cos(pitchRad) * std::sin(yawRad);
+    const float eyeY = m_cameraY + distance * std::sin(pitchRad);
+    const float eyeZ =
+        m_cameraZ + distance * std::cos(pitchRad) * std::cos(yawRad);
+    cameraPos[0] = eyeX;
+    cameraPos[1] = eyeY;
+    cameraPos[2] = eyeZ;
+    const float center[3] = {m_cameraX, m_cameraY, m_cameraZ};
+    cameraForward[0] = center[0] - eyeX;
+    cameraForward[1] = center[1] - eyeY;
+    cameraForward[2] = center[2] - eyeZ;
+    Vec3Normalize(cameraForward);
+  }
+
   auto appendInstances = [&](const std::vector<RenderInstance> &source) {
     for (const auto &instance : source) {
       const Scene::TransformComponent *transform = instance.transform;
@@ -6764,41 +6922,6 @@ VulkanViewport::InstancesFromView(const RenderView &view,
   }
 
   if (view.showEditorIcons) {
-    float cameraPos[3] = {0.0f, 0.0f, 0.0f};
-    float cameraForward[3] = {0.0f, 0.0f, -1.0f};
-    float cameraUp[3] = {0.0f, 1.0f, 0.0f};
-    if (view.camera.enabled) {
-      cameraPos[0] = view.camera.position[0];
-      cameraPos[1] = view.camera.position[1];
-      cameraPos[2] = view.camera.position[2];
-      cameraForward[0] = view.camera.forward[0];
-      cameraForward[1] = view.camera.forward[1];
-      cameraForward[2] = view.camera.forward[2];
-      Vec3Normalize(cameraForward);
-      cameraUp[0] = view.camera.up[0];
-      cameraUp[1] = view.camera.up[1];
-      cameraUp[2] = view.camera.up[2];
-      Vec3Normalize(cameraUp);
-    } else {
-      const float yawRad = m_cameraYawDeg * (3.14159265358979323846f / 180.0f);
-      const float pitchRad =
-          m_cameraPitchDeg * (3.14159265358979323846f / 180.0f);
-      const float distance = std::max(0.01f, m_cameraDistance * m_cameraZoom);
-      const float eyeX =
-          m_cameraX + distance * std::cos(pitchRad) * std::sin(yawRad);
-      const float eyeY = m_cameraY + distance * std::sin(pitchRad);
-      const float eyeZ =
-          m_cameraZ + distance * std::cos(pitchRad) * std::cos(yawRad);
-      cameraPos[0] = eyeX;
-      cameraPos[1] = eyeY;
-      cameraPos[2] = eyeZ;
-      const float center[3] = {m_cameraX, m_cameraY, m_cameraZ};
-      cameraForward[0] = center[0] - eyeX;
-      cameraForward[1] = center[1] - eyeY;
-      cameraForward[2] = center[2] - eyeZ;
-      Vec3Normalize(cameraForward);
-    }
-
     float cameraRight[3];
     Vec3Cross(cameraRight, cameraForward, cameraUp);
     Vec3Normalize(cameraRight);
@@ -6877,7 +7000,75 @@ VulkanViewport::InstancesFromView(const RenderView &view,
     }
   }
 
-  return instances;
+  FrameInstances result;
+  result.opaque.reserve(instances.size());
+  result.transparent.reserve(instances.size() / 4 + 1);
+
+  auto maxScaleForModel = [](const float model[16]) {
+    const float sx = std::sqrt(model[0] * model[0] + model[1] * model[1] +
+                               model[2] * model[2]);
+    const float sy = std::sqrt(model[4] * model[4] + model[5] * model[5] +
+                               model[6] * model[6]);
+    const float sz = std::sqrt(model[8] * model[8] + model[9] * model[9] +
+                               model[10] * model[10]);
+    return std::max({sx, sy, sz, 0.0001f});
+  };
+
+  for (auto &instance : instances) {
+    float distance = 0.0f;
+    float scale = maxScaleForModel(instance.constants.model);
+    std::array<float, 3> worldCenter = {instance.constants.model[12],
+                                        instance.constants.model[13],
+                                        instance.constants.model[14]};
+    auto updateDistance = [&](const std::array<float, 3> &center) {
+      const float dx = center[0] - cameraPos[0];
+      const float dy = center[1] - cameraPos[1];
+      const float dz = center[2] - cameraPos[2];
+      distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+    updateDistance(worldCenter);
+
+    if (m_assetRegistry && !instance.meshId.empty() &&
+        instance.meshId != kIconMeshId) {
+      const auto *meshData = m_assetRegistry->GetMeshData(instance.meshId);
+      if (!meshData) {
+        meshData = m_assetRegistry->LoadMeshData(instance.meshId);
+      }
+      if (meshData) {
+        worldCenter =
+            Mat4TransformPoint(instance.constants.model, meshData->boundsCenter);
+        updateDistance(worldCenter);
+        instance.meshId =
+            m_assetRegistry->ResolveMeshLod(instance.meshId, distance, scale);
+      }
+    }
+
+    instance.sortKey = distance;
+
+    Assets::Material::AlphaMode alphaMode =
+        Assets::Material::AlphaMode::Opaque;
+    if (m_assetRegistry && !instance.materialId.empty()) {
+      if (const auto *material =
+              m_assetRegistry->GetMaterial(instance.materialId)) {
+        alphaMode = material->GetAlphaMode();
+      }
+    }
+
+    if (alphaMode == Assets::Material::AlphaMode::Blend) {
+      result.transparent.push_back(std::move(instance));
+    } else {
+      result.opaque.push_back(std::move(instance));
+    }
+  }
+
+  if (!result.transparent.empty()) {
+    std::sort(result.transparent.begin(), result.transparent.end(),
+              [](const DrawInstance &a, const DrawInstance &b) {
+                return a.sortKey > b.sortKey;
+              });
+  }
+
+  return result;
 }
 
 void VulkanViewport::PrepareInstanceData(
@@ -7606,6 +7797,8 @@ VulkanViewport::CreateMaterialResources(const Assets::Material &material) {
   uniform.emissiveFactor[3] = 1.0f;
   uniform.metallicFactor = material.GetMetallic();
   uniform.roughnessFactor = material.GetRoughness();
+  uniform.alphaCutoff = material.GetAlphaCutoff();
+  uniform.alphaMode = static_cast<float>(material.GetAlphaMode());
 
   void *uboData = nullptr;
   if (vkMapMemory(device, result.uniformMemory, 0, sizeof(uniform), 0,

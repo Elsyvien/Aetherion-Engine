@@ -1,9 +1,12 @@
 {
-  "version": 1,
-  "id": "f8b834ea-0e5a-4542-a629-3d335b9e3c70",
-  "type": "Texture",
-  "source": "textures/blue.png",
-  "import": {
-    "srgb": true
-  }
+    "id": "f8b834ea-0e5a-4542-a629-3d335b9e3c70",
+    "import": {
+        "flipVertical": false,
+        "generateMipmaps": true,
+        "isNormalMap": false,
+        "srgb": true
+    },
+    "source": "textures/blue.png",
+    "type": "Texture",
+    "version": 1
 }

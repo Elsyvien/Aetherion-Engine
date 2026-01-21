@@ -85,6 +85,9 @@ public:
     bool flipUVs{false};
     bool flipWinding{false};
     bool optimize{false};
+    bool generateLods{false};
+    std::vector<float> lodRatios{0.5f, 0.25f, 0.12f};
+    std::vector<float> lodDistances{10.0f, 25.0f, 60.0f};
   };
 
   struct TextureImportSettings {
@@ -127,6 +130,8 @@ public:
   [[nodiscard]] const MeshData *LoadMeshData(const std::string &assetId);
   [[nodiscard]] const std::vector<std::string> *
   GetAssetDependencies(const std::string &assetId) const noexcept;
+  std::string ResolveMeshLod(const std::string &assetId, float distance,
+                             float scale = 1.0f);
 
   struct AssetChange {
     enum class Kind { Added, Modified, Removed, Moved, Metadata };
@@ -212,6 +217,15 @@ private:
   std::unordered_map<std::string, MeshData> m_meshData;
   std::unordered_map<std::string, VirtualAsset> m_virtualAssets;
   std::unordered_map<std::string, GenerativeAssetInfo> m_generativeAssets;
+  struct MeshLodInfo {
+    std::vector<std::string> lodAssetIds;
+    std::vector<float> lodDistances;
+    std::vector<float> lodRatios;
+  };
+  static void RemoveMeshLods(const std::string &assetId,
+                             std::unordered_map<std::string, MeshLodInfo> &lods,
+                             std::unordered_map<std::string, MeshData> &meshData);
+  std::unordered_map<std::string, MeshLodInfo> m_meshLods;
   std::filesystem::path m_rootPath;
   std::vector<AssetEntry> m_entries;
   std::unordered_map<std::string, size_t> m_entryLookup;

@@ -81,6 +81,20 @@ std::string SanitizeName(const std::string &value) {
   return out;
 }
 
+bool IsLodAssetId(const std::string &assetId) {
+  const std::string marker = ":lod";
+  const auto pos = assetId.rfind(marker);
+  if (pos == std::string::npos || pos + marker.size() >= assetId.size()) {
+    return false;
+  }
+  for (size_t i = pos + marker.size(); i < assetId.size(); ++i) {
+    if (!std::isdigit(static_cast<unsigned char>(assetId[i]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool LoadMetadataJson(const std::filesystem::path &metaPath, Json &outRoot) {
   std::ifstream input(metaPath);
   if (!input.is_open()) {
@@ -153,6 +167,37 @@ ReadMeshImportSettingsFromJson(const Json &root) {
   if (import.contains("optimize") && import["optimize"].is_boolean()) {
     settings.optimize = import["optimize"].get<bool>();
   }
+  if (import.contains("generateLods") && import["generateLods"].is_boolean()) {
+    settings.generateLods = import["generateLods"].get<bool>();
+  }
+  if (import.contains("lodRatios") && import["lodRatios"].is_array()) {
+    std::vector<float> ratios;
+    for (const auto &entry : import["lodRatios"]) {
+      if (entry.is_number()) {
+        float value = entry.get<float>();
+        if (std::isfinite(value) && value > 0.0f && value < 1.0f) {
+          ratios.push_back(value);
+        }
+      }
+    }
+    if (!ratios.empty()) {
+      settings.lodRatios = std::move(ratios);
+    }
+  }
+  if (import.contains("lodDistances") && import["lodDistances"].is_array()) {
+    std::vector<float> distances;
+    for (const auto &entry : import["lodDistances"]) {
+      if (entry.is_number()) {
+        float value = entry.get<float>();
+        if (std::isfinite(value) && value > 0.0f) {
+          distances.push_back(value);
+        }
+      }
+    }
+    if (!distances.empty()) {
+      settings.lodDistances = std::move(distances);
+    }
+  }
 
   settings.scale = SanitizeImportScale(settings.scale);
   return settings;
@@ -194,6 +239,18 @@ void WriteMeshImportSettingsToJson(
     import["optimize"] = settings.optimize;
   }
   import["optimize"] = settings.optimize;
+  if (overwrite || !import.contains("generateLods") ||
+      !import["generateLods"].is_boolean()) {
+    import["generateLods"] = settings.generateLods;
+  }
+  if (overwrite || !import.contains("lodRatios") ||
+      !import["lodRatios"].is_array()) {
+    import["lodRatios"] = settings.lodRatios;
+  }
+  if (overwrite || !import.contains("lodDistances") ||
+      !import["lodDistances"].is_array()) {
+    import["lodDistances"] = settings.lodDistances;
+  }
 }
 
 AssetRegistry::TextureImportSettings
@@ -286,6 +343,20 @@ bool LoadMaterialJson(const std::filesystem::path &path,
     return false;
   }
 
+  auto parseAlphaMode = [](const Json &value) {
+    if (value.is_string()) {
+      const std::string mode =
+          Aetherion::Core::String::ToLower(value.get<std::string>());
+      if (mode == "mask") {
+        return Material::AlphaMode::Mask;
+      }
+      if (mode == "blend") {
+        return Material::AlphaMode::Blend;
+      }
+    }
+    return Material::AlphaMode::Opaque;
+  };
+
   if (root.contains("baseColor") && root["baseColor"].is_array() &&
       root["baseColor"].size() == 4) {
     outMaterial.SetBaseColor(
@@ -306,6 +377,15 @@ bool LoadMaterialJson(const std::filesystem::path &path,
     outMaterial.SetEmissiveFactor({root["emissiveFactor"][0].get<float>(),
                                    root["emissiveFactor"][1].get<float>(),
                                    root["emissiveFactor"][2].get<float>()});
+  }
+
+  if (root.contains("alphaMode")) {
+    outMaterial.SetAlphaMode(parseAlphaMode(root["alphaMode"]));
+  }
+  if (root.contains("alphaCutoff") && root["alphaCutoff"].is_number()) {
+    float cutoff = root["alphaCutoff"].get<float>();
+    cutoff = std::clamp(cutoff, 0.0f, 1.0f);
+    outMaterial.SetAlphaCutoff(cutoff);
   }
 
   if (root.contains("albedoMapId") && root["albedoMapId"].is_string())
@@ -335,10 +415,24 @@ bool WriteMaterialToJson(const std::filesystem::path &path,
   } catch (...) {
   }
 
+  auto alphaModeToString = [](Material::AlphaMode mode) {
+    switch (mode) {
+    case Material::AlphaMode::Mask:
+      return "Mask";
+    case Material::AlphaMode::Blend:
+      return "Blend";
+    case Material::AlphaMode::Opaque:
+    default:
+      return "Opaque";
+    }
+  };
+
   root["baseColor"] = material.GetBaseColor();
   root["metallic"] = material.GetMetallic();
   root["roughness"] = material.GetRoughness();
   root["emissiveFactor"] = material.GetEmissiveFactor();
+  root["alphaMode"] = alphaModeToString(material.GetAlphaMode());
+  root["alphaCutoff"] = material.GetAlphaCutoff();
   root["albedoMapId"] = material.GetAlbedoMapId();
   root["normalMapId"] = material.GetNormalMapId();
   root["metallicRoughnessMapId"] = material.GetMetallicRoughnessMapId();
@@ -835,6 +929,110 @@ void ComputeMeshBounds(AssetRegistry::MeshData &mesh) {
     radiusSq = std::max(radiusSq, dx * dx + dy * dy + dz * dz);
   }
   mesh.boundsRadius = std::sqrt(radiusSq);
+}
+
+std::vector<float> SanitizeLodRatios(const std::vector<float> &ratios) {
+  std::vector<float> result;
+  result.reserve(ratios.size());
+  for (float value : ratios) {
+    if (std::isfinite(value) && value > 0.01f && value < 1.0f) {
+      result.push_back(std::clamp(value, 0.01f, 0.99f));
+    }
+  }
+  if (result.empty()) {
+    result = {0.5f, 0.25f, 0.12f};
+  }
+  return result;
+}
+
+std::vector<float> SanitizeLodDistances(const std::vector<float> &distances,
+                                        float boundsRadius, size_t count) {
+  std::vector<float> result;
+  result.reserve(count);
+  for (float value : distances) {
+    if (std::isfinite(value) && value > 0.0f) {
+      result.push_back(value);
+    }
+  }
+
+  if (result.empty()) {
+    const float base = (boundsRadius > 0.0001f) ? boundsRadius * 2.5f : 10.0f;
+    for (size_t i = 0; i < count; ++i) {
+      result.push_back(base * static_cast<float>(i + 1));
+    }
+  }
+
+  if (result.size() > count) {
+    result.resize(count);
+  } else if (result.size() < count) {
+    const float last = result.empty() ? 10.0f : result.back();
+    for (size_t i = result.size(); i < count; ++i) {
+      result.push_back(last * (1.5f + static_cast<float>(i - result.size())));
+    }
+  }
+
+  if (result.size() > 1) {
+    for (size_t i = 1; i < result.size(); ++i) {
+      if (result[i] <= result[i - 1]) {
+        result[i] = result[i - 1] + 0.01f;
+      }
+    }
+  }
+  return result;
+}
+
+std::vector<std::uint32_t> BuildLodIndices(
+    const AssetRegistry::MeshData &mesh, float ratio) {
+  std::vector<std::uint32_t> generated;
+  const std::vector<std::uint32_t> *source = &mesh.indices;
+
+  if (source->empty()) {
+    generated.resize(mesh.positions.size());
+    for (size_t i = 0; i < generated.size(); ++i) {
+      generated[i] = static_cast<std::uint32_t>(i);
+    }
+    source = &generated;
+  }
+
+  if (source->size() < 3) {
+    return *source;
+  }
+
+  const size_t triCount = source->size() / 3;
+  ratio = std::clamp(ratio, 0.01f, 0.99f);
+  size_t targetTris = static_cast<size_t>(std::round(triCount * ratio));
+  targetTris = std::max<size_t>(1, std::min(targetTris, triCount));
+
+  const size_t step = std::max<size_t>(1, triCount / targetTris);
+  std::vector<std::uint32_t> lod;
+  lod.reserve(targetTris * 3);
+
+  for (size_t tri = 0; tri < triCount && lod.size() < targetTris * 3;
+       tri += step) {
+    const size_t base = tri * 3;
+    if (base + 2 >= source->size()) {
+      break;
+    }
+    lod.push_back((*source)[base]);
+    lod.push_back((*source)[base + 1]);
+    lod.push_back((*source)[base + 2]);
+  }
+
+  if (lod.empty()) {
+    return *source;
+  }
+  return lod;
+}
+
+AssetRegistry::MeshData BuildLodMesh(const AssetRegistry::MeshData &mesh,
+                                     float ratio) {
+  AssetRegistry::MeshData lod = mesh;
+  lod.indices = BuildLodIndices(mesh, ratio);
+  lod.boundsMin = mesh.boundsMin;
+  lod.boundsMax = mesh.boundsMax;
+  lod.boundsCenter = mesh.boundsCenter;
+  lod.boundsRadius = mesh.boundsRadius;
+  return lod;
 }
 
 void ComputeMeshNormals(AssetRegistry::MeshData &mesh) {
@@ -1417,6 +1615,21 @@ int AssetTypeOrder(AssetRegistry::AssetType type) {
 }
 } // namespace
 
+void AssetRegistry::RemoveMeshLods(
+    const std::string &assetId, std::unordered_map<std::string, MeshLodInfo> &lods,
+    std::unordered_map<std::string, MeshData> &meshData) {
+  auto it = lods.find(assetId);
+  if (it == lods.end()) {
+    return;
+  }
+  for (const auto &lodId : it->second.lodAssetIds) {
+    if (!lodId.empty()) {
+      meshData.erase(lodId);
+    }
+  }
+  lods.erase(it);
+}
+
 const char *AssetRegistry::AssetTypeToString(AssetType type) {
   switch (type) {
   case AssetType::Texture:
@@ -1474,6 +1687,7 @@ void AssetRegistry::Scan(const std::string &rootPath) {
     m_meshes.clear();
     m_textures.clear();
     m_materials.clear();
+    m_meshLods.clear();
     m_changeLog.clear();
     m_changeSerial = 0;
   }
@@ -1651,6 +1865,7 @@ void AssetRegistry::Scan(const std::string &rootPath) {
         change.kind == AssetChange::Kind::Modified ||
         change.kind == AssetChange::Kind::Moved) {
       m_meshData.erase(change.id);
+      RemoveMeshLods(change.id, m_meshLods, m_meshData);
       m_meshes.erase(change.id);
       m_textures.erase(change.id);
 
@@ -1819,6 +2034,17 @@ AssetRegistry::LoadMeshData(const std::string &assetId) {
     return cached;
   }
 
+  if (IsLodAssetId(assetId)) {
+    const auto pos = assetId.rfind(":lod");
+    if (pos != std::string::npos && pos > 0) {
+      const std::string baseId = assetId.substr(0, pos);
+      if (!baseId.empty()) {
+        LoadMeshData(baseId);
+      }
+    }
+    return GetMeshData(assetId);
+  }
+
   std::filesystem::path sourcePath;
   if (const auto *entry = FindEntry(assetId)) {
     sourcePath = entry->path;
@@ -1846,6 +2072,33 @@ AssetRegistry::LoadMeshData(const std::string &assetId) {
 
     auto &stored = m_meshData[assetId];
     stored = std::move(mesh);
+    RemoveMeshLods(assetId, m_meshLods, m_meshData);
+    if (settings.generateLods) {
+      MeshLodInfo lodInfo{};
+      auto ratios = SanitizeLodRatios(settings.lodRatios);
+      auto distances =
+          SanitizeLodDistances(settings.lodDistances, stored.boundsRadius,
+                               ratios.size());
+      const size_t lodCount =
+          std::min(ratios.size(), distances.size());
+      const size_t baseIndexCount = stored.indices.empty()
+                                        ? stored.positions.size()
+                                        : stored.indices.size();
+      for (size_t i = 0; i < lodCount; ++i) {
+        MeshData lodMesh = BuildLodMesh(stored, ratios[i]);
+        if (lodMesh.indices.size() >= baseIndexCount) {
+          continue;
+        }
+        std::string lodId = assetId + ":lod" + std::to_string(i + 1);
+        m_meshData[lodId] = std::move(lodMesh);
+        lodInfo.lodAssetIds.push_back(lodId);
+        lodInfo.lodDistances.push_back(distances[i]);
+        lodInfo.lodRatios.push_back(ratios[i]);
+      }
+      if (!lodInfo.lodAssetIds.empty()) {
+        m_meshLods[assetId] = std::move(lodInfo);
+      }
+    }
     return &stored;
   }
 
@@ -2055,6 +2308,32 @@ AssetRegistry::LoadMeshData(const std::string &assetId) {
 
   auto &stored = m_meshData[assetId];
   stored = std::move(mesh);
+  RemoveMeshLods(assetId, m_meshLods, m_meshData);
+  if (settings.generateLods) {
+    MeshLodInfo lodInfo{};
+    auto ratios = SanitizeLodRatios(settings.lodRatios);
+    auto distances =
+        SanitizeLodDistances(settings.lodDistances, stored.boundsRadius,
+                             ratios.size());
+    const size_t lodCount = std::min(ratios.size(), distances.size());
+    const size_t baseIndexCount = stored.indices.empty()
+                                      ? stored.positions.size()
+                                      : stored.indices.size();
+    for (size_t i = 0; i < lodCount; ++i) {
+      MeshData lodMesh = BuildLodMesh(stored, ratios[i]);
+      if (lodMesh.indices.size() >= baseIndexCount) {
+        continue;
+      }
+      std::string lodId = assetId + ":lod" + std::to_string(i + 1);
+      m_meshData[lodId] = std::move(lodMesh);
+      lodInfo.lodAssetIds.push_back(lodId);
+      lodInfo.lodDistances.push_back(distances[i]);
+      lodInfo.lodRatios.push_back(ratios[i]);
+    }
+    if (!lodInfo.lodAssetIds.empty()) {
+      m_meshLods[assetId] = std::move(lodInfo);
+    }
+  }
   return &stored;
 }
 
@@ -2179,6 +2458,19 @@ AssetRegistry::ImportGltf(const std::string &gltfPath, bool forceReimport) {
     cached.SetEmissiveFactor({material.emissive_factor[0],
                               material.emissive_factor[1],
                               material.emissive_factor[2]});
+    switch (material.alpha_mode) {
+    case cgltf_alpha_mode_mask:
+      cached.SetAlphaMode(Material::AlphaMode::Mask);
+      cached.SetAlphaCutoff(std::clamp(material.alpha_cutoff, 0.0f, 1.0f));
+      break;
+    case cgltf_alpha_mode_blend:
+      cached.SetAlphaMode(Material::AlphaMode::Blend);
+      break;
+    case cgltf_alpha_mode_opaque:
+    default:
+      cached.SetAlphaMode(Material::AlphaMode::Opaque);
+      break;
+    }
 
     auto textureIdFor = [&](const cgltf_texture *tex) -> std::string {
       if (!tex) {
@@ -2592,6 +2884,7 @@ bool AssetRegistry::ReimportMeshAsset(const std::string &assetId,
 
   if (success) {
     m_meshData.erase(entry->id);
+    RemoveMeshLods(entry->id, m_meshLods, m_meshData);
 
     AssetChange change{};
     change.id = entry->id;
@@ -2975,6 +3268,42 @@ AssetRegistry::GetGenerativeAssetsByStatus(GenerativeAssetStatus status) const {
     }
   }
   return result;
+}
+
+std::string AssetRegistry::ResolveMeshLod(const std::string &assetId,
+                                          float distance, float scale) {
+  if (assetId.empty() || IsLodAssetId(assetId)) {
+    return assetId;
+  }
+
+  auto it = m_meshLods.find(assetId);
+  if (it == m_meshLods.end()) {
+    LoadMeshData(assetId);
+    it = m_meshLods.find(assetId);
+    if (it == m_meshLods.end()) {
+      return assetId;
+    }
+  }
+
+  const auto &info = it->second;
+  if (info.lodAssetIds.empty() || info.lodDistances.empty()) {
+    return assetId;
+  }
+
+  float effectiveDistance = distance;
+  if (scale > 0.0001f) {
+    effectiveDistance = distance / scale;
+  }
+
+  std::string selected = assetId;
+  const size_t count =
+      std::min(info.lodDistances.size(), info.lodAssetIds.size());
+  for (size_t i = 0; i < count; ++i) {
+    if (effectiveDistance >= info.lodDistances[i]) {
+      selected = info.lodAssetIds[i];
+    }
+  }
+  return selected;
 }
 
 const std::vector<std::string> *

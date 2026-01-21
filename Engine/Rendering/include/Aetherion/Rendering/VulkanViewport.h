@@ -134,6 +134,12 @@ private:
     std::string meshId;
     std::string materialId;
     std::string textureId; // Deprecated, kept for immediate compile fix
+    float sortKey{0.0f};
+  };
+
+  struct FrameInstances {
+    std::vector<DrawInstance> opaque;
+    std::vector<DrawInstance> transparent;
   };
 
   struct InstanceData {
@@ -271,6 +277,7 @@ private:
   VkPipelineLayout m_shadowPipelineLayout{VK_NULL_HANDLE};
   VkPipelineLayout m_cullPipelineLayout{VK_NULL_HANDLE};
   VkPipeline m_pipeline{VK_NULL_HANDLE};
+  VkPipeline m_transparentPipeline{VK_NULL_HANDLE};
   VkPipeline m_particlePipelineAlpha{VK_NULL_HANDLE};
   VkPipeline m_particlePipelineAdditive{VK_NULL_HANDLE};
 
@@ -428,13 +435,16 @@ private:
 
   void CreateCommandPoolAndBuffers();
   void RecordCommandBuffer(uint32_t imageIndex,
-                           const std::vector<DrawInstance> &instances);
+                           const FrameInstances &instances,
+                           const std::vector<DrawInstance> &pickingInstances);
   void RecordShadowPass(VkCommandBuffer cb);
   void DispatchCullingPass(VkCommandBuffer cb);
   void RecordOpaquePass(VkCommandBuffer cb,
-                        const std::vector<DrawInstance> &instances);
+                        const std::vector<DrawInstance> &opaqueInstances,
+                        const std::vector<DrawInstance> &transparentInstances);
   void RecordPickingPass(VkCommandBuffer cb,
-                         const std::vector<DrawInstance> &instances);
+                         const std::vector<DrawInstance> &instances,
+                         bool forceDirect = false);
   void RecordPostProcessPass(VkCommandBuffer cb, uint32_t imageIndex);
   void CopyTaaHistory(VkCommandBuffer cb, uint32_t imageIndex);
   void RecordOverlayPass(VkCommandBuffer cb);
@@ -462,7 +472,7 @@ private:
 
   void CreateSyncObjects();
   void CreateQueryPools();
-  [[nodiscard]] std::vector<DrawInstance>
+  [[nodiscard]] FrameInstances
   InstancesFromView(const RenderView &view, float timeSeconds) const;
 
   enum class TextureUsage {

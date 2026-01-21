@@ -530,7 +530,8 @@ void EditorInspectorPanel::RebuildUi() {
               return;
             }
 
-            Assets::AssetRegistry::MeshImportSettings settings{};
+            Assets::AssetRegistry::MeshImportSettings settings =
+                m_assetRegistry->GetMeshImportSettings(meshId);
             settings.scale = static_cast<float>(importScale->value());
             settings.centerMesh = importCenter->isChecked();
             settings.generateNormals = importNormals->isChecked();

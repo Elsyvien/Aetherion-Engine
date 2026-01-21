@@ -48,6 +48,8 @@ layout(set = 1, binding = 5) uniform MaterialUBO {
     vec4 emissiveFactor;
     float metallicFactor;
     float roughnessFactor;
+    float alphaCutoff;
+    float alphaMode;
 } material;
 
 layout(set = 2, binding = 0) uniform sampler2DArray uShadowMap;
@@ -59,6 +61,9 @@ const uint kDebugRoughness = 2u;
 const uint kDebugMetallic = 3u;
 const uint kDebugAlbedo = 4u;
 const uint kDebugDepth = 5u;
+const float kAlphaModeOpaque = 0.0;
+const float kAlphaModeMask = 1.0;
+const float kAlphaModeBlend = 2.0;
 
 float DistributionGGX(vec3 n, vec3 h, float roughness)
 {
@@ -221,6 +226,14 @@ void main()
     vec4 baseColor =
         texture(uAlbedoMap, vUv) * material.baseColor * vColor;
     vec3 albedo = baseColor.rgb;
+    float alpha = baseColor.a;
+
+    if (material.alphaMode > (kAlphaModeMask - 0.5) &&
+        material.alphaMode < (kAlphaModeMask + 0.5) &&
+        alpha < material.alphaCutoff)
+    {
+        discard;
+    }
 
     // Normal Mapping
     vec3 normalMap = texture(uNormalMap, vUv).rgb;
@@ -253,7 +266,7 @@ void main()
 
     if ((vFlags & kInstanceFlagUnlit) != 0u)
     {
-        outColor = vec4(albedo, baseColor.a);
+        outColor = vec4(albedo, alpha);
         return;
     }
 
@@ -392,5 +405,5 @@ void main()
     }
 
     vec3 ambient = ubo.uAmbientColor.rgb * albedo * occlusion;
-    outColor = vec4(ambient + lighting + emissive, baseColor.a);
+    outColor = vec4(ambient + lighting + emissive, alpha);
 }

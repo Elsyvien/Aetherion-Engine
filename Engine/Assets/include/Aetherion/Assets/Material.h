@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -9,6 +10,8 @@ class Material {
 public:
   Material() = default;
   ~Material() = default;
+
+  enum class AlphaMode : std::uint8_t { Opaque = 0, Mask = 1, Blend = 2 };
 
   // PBR Properties
   [[nodiscard]] std::array<float, 4> GetBaseColor() const {
@@ -28,6 +31,12 @@ public:
   void SetEmissiveFactor(const std::array<float, 3> &factor) {
     m_emissiveFactor = factor;
   }
+
+  [[nodiscard]] AlphaMode GetAlphaMode() const { return m_alphaMode; }
+  void SetAlphaMode(AlphaMode mode) { m_alphaMode = mode; }
+
+  [[nodiscard]] float GetAlphaCutoff() const { return m_alphaCutoff; }
+  void SetAlphaCutoff(float cutoff) { m_alphaCutoff = cutoff; }
 
   // Texture Asset IDs
   [[nodiscard]] const std::string &GetAlbedoMapId() const {
@@ -65,6 +74,8 @@ private:
   float m_metallic{0.0f};
   float m_roughness{0.5f};
   std::array<float, 3> m_emissiveFactor{0.0f, 0.0f, 0.0f};
+  AlphaMode m_alphaMode{AlphaMode::Opaque};
+  float m_alphaCutoff{0.5f};
 
   std::string m_albedoMapId;
   std::string m_normalMapId;

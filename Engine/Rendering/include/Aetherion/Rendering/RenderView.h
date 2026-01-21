@@ -21,6 +21,8 @@ struct RenderMaterial {
   float metallic{0.0f};
   float roughness{1.0f};
   float emissive[3]{0.0f, 0.0f, 0.0f};
+  uint32_t alphaMode{0};
+  float alphaCutoff{0.5f};
   std::string albedoTextureId;
   std::string normalTextureId;
   std::string metallicRoughnessTextureId;

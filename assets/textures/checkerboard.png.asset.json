@@ -1,9 +1,12 @@
 {
-  "version": 1,
-  "id": "63646f6c-51d6-4e6f-a938-af4393f76283",
-  "type": "Texture",
-  "source": "textures/checkerboard.png",
-  "import": {
-    "srgb": true
-  }
+    "id": "63646f6c-51d6-4e6f-a938-af4393f76283",
+    "import": {
+        "flipVertical": false,
+        "generateMipmaps": true,
+        "isNormalMap": false,
+        "srgb": true
+    },
+    "source": "textures/checkerboard.png",
+    "type": "Texture",
+    "version": 1
 }

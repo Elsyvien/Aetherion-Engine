@@ -1,12 +1,12 @@
 {
-    "id": "5d93a4c1-b6a9-c13e-bc48-8f3e991f8b0f",
+    "id": "55b6dbe3-f201-410e-84bb-f9c078044234",
     "import": {
         "flipVertical": false,
         "generateMipmaps": true,
         "isNormalMap": false,
         "srgb": true
     },
-    "source": "logos/logo.png",
+    "source": "textures/albedo_brick_red.png",
     "type": "Texture",
     "version": 1
 }
