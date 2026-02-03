@@ -476,8 +476,13 @@ private:
       return;
 
     auto engine = m_context->GetAudioSystem();
+    auto registry = m_context->GetAssetRegistry();
     if (engine && !m_audioSystem) {
-      m_audioSystem = std::make_unique<Audio::AudioSystem>(engine.get());
+      m_audioSystem =
+          std::make_unique<Audio::AudioSystem>(engine.get(), registry.get());
+    }
+    if (m_audioSystem) {
+      m_audioSystem->SetAssetRegistry(registry.get());
     }
   }
 

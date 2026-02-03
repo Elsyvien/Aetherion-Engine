@@ -1661,7 +1661,8 @@ void VulkanViewport::HandleAssetChanges(
     const bool invalidate =
         change.kind == Assets::AssetRegistry::AssetChange::Kind::Removed ||
         change.kind == Assets::AssetRegistry::AssetChange::Kind::Modified ||
-        change.kind == Assets::AssetRegistry::AssetChange::Kind::Moved;
+        change.kind == Assets::AssetRegistry::AssetChange::Kind::Moved ||
+        change.kind == Assets::AssetRegistry::AssetChange::Kind::Metadata;
     if (!invalidate) {
       continue;
     }

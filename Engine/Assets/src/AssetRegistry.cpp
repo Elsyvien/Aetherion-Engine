@@ -1860,27 +1860,6 @@ void AssetRegistry::Scan(const std::string &rootPath) {
     recordChange(id, type, AssetChange::Kind::Removed);
   }
 
-  for (const auto &change : scanChanges) {
-    if (change.kind == AssetChange::Kind::Removed ||
-        change.kind == AssetChange::Kind::Modified ||
-        change.kind == AssetChange::Kind::Moved) {
-      m_meshData.erase(change.id);
-      RemoveMeshLods(change.id, m_meshLods, m_meshData);
-      m_meshes.erase(change.id);
-      m_textures.erase(change.id);
-
-      if (change.type == AssetType::Mesh) {
-        for (auto it = m_materials.begin(); it != m_materials.end();) {
-          if (it->first.rfind(change.id + ":", 0) == 0) {
-            it = m_materials.erase(it);
-          } else {
-            ++it;
-          }
-        }
-      }
-    }
-  }
-
   // Load newly discovered or modified materials
   for (const auto &entry : m_entries) {
     if (entry.type == AssetType::Other &&
@@ -1924,6 +1903,7 @@ void AssetRegistry::Scan(const std::string &rootPath) {
     }
   }
 
+  std::vector<std::pair<std::string, AssetType>> dependentChanges;
   for (const auto &change : scanChanges) {
     auto it = reverseDeps.find(change.id);
     if (it == reverseDeps.end()) {
@@ -1933,8 +1913,41 @@ void AssetRegistry::Scan(const std::string &rootPath) {
       if (dependent.empty() || changedIds.find(dependent) != changedIds.end()) {
         continue;
       }
-      recordChange(dependent, nextTypes[dependent], AssetChange::Kind::Modified);
+      auto typeIt = nextTypes.find(dependent);
+      const AssetType type =
+          typeIt != nextTypes.end() ? typeIt->second : AssetType::Other;
+      dependentChanges.emplace_back(dependent, type);
       changedIds.insert(dependent);
+    }
+  }
+  for (const auto &entry : dependentChanges) {
+    recordChange(entry.first, entry.second, AssetChange::Kind::Modified);
+  }
+
+  auto shouldInvalidate = [](AssetChange::Kind kind) {
+    return kind == AssetChange::Kind::Removed ||
+           kind == AssetChange::Kind::Modified ||
+           kind == AssetChange::Kind::Moved ||
+           kind == AssetChange::Kind::Metadata;
+  };
+
+  for (const auto &change : scanChanges) {
+    if (!shouldInvalidate(change.kind)) {
+      continue;
+    }
+    m_meshData.erase(change.id);
+    RemoveMeshLods(change.id, m_meshLods, m_meshData);
+    m_meshes.erase(change.id);
+    m_textures.erase(change.id);
+
+    if (change.type == AssetType::Mesh) {
+      for (auto it = m_materials.begin(); it != m_materials.end();) {
+        if (it->first.rfind(change.id + ":", 0) == 0) {
+          it = m_materials.erase(it);
+        } else {
+          ++it;
+        }
+      }
     }
   }
 

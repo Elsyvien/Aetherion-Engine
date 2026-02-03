@@ -50,6 +50,13 @@ public:
   void SetPosition(int x, int y) override {
     m_x = x;
     m_y = y;
+    if (m_windowCallbacks.onWindowEvent) {
+      WindowEvent event;
+      event.type = WindowEventType::Move;
+      event.x = x;
+      event.y = y;
+      m_windowCallbacks.onWindowEvent(event);
+    }
   }
 
   void SetTitle(const std::string &title) override { m_title = title; }
@@ -58,13 +65,34 @@ public:
 
   [[nodiscard]] bool IsFullscreen() const override { return m_fullscreen; }
 
-  void Minimize() override { m_minimized = true; }
+  void Minimize() override {
+    m_minimized = true;
+    if (m_windowCallbacks.onWindowEvent) {
+      WindowEvent event;
+      event.type = WindowEventType::Minimize;
+      m_windowCallbacks.onWindowEvent(event);
+    }
+  }
 
-  void Restore() override { m_minimized = false; }
+  void Restore() override {
+    m_minimized = false;
+    if (m_windowCallbacks.onWindowEvent) {
+      WindowEvent event;
+      event.type = WindowEventType::Restore;
+      m_windowCallbacks.onWindowEvent(event);
+    }
+  }
 
   void Maximize() override { m_maximized = true; }
 
-  void Focus() override { m_focused = true; }
+  void Focus() override {
+    m_focused = true;
+    if (m_windowCallbacks.onWindowEvent) {
+      WindowEvent event;
+      event.type = WindowEventType::Focus;
+      m_windowCallbacks.onWindowEvent(event);
+    }
+  }
 
   [[nodiscard]] bool HasFocus() const override { return m_focused; }
 

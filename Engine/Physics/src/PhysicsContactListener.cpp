@@ -36,6 +36,33 @@ void PhysicsContactListener::RegisterBody(uint32_t bodyId,
 }
 
 void PhysicsContactListener::UnregisterBody(uint32_t bodyId) {
+  std::vector<QueuedEvent> exitEvents;
+  {
+    std::lock_guard<std::mutex> lock(m_contactsMutex);
+    for (auto it = m_activeContacts.begin(); it != m_activeContacts.end();) {
+      const uint64_t keyValue = it->first.subShapeIdPairValue;
+      const uint32_t bodyA = static_cast<uint32_t>(keyValue >> 32);
+      const uint32_t bodyB = static_cast<uint32_t>(keyValue & 0xffffffffu);
+      if (bodyA == bodyId || bodyB == bodyId) {
+        CollisionEvent event;
+        event.entityA = it->second.entityA;
+        event.entityB = it->second.entityB;
+        event.isSensorA = it->second.isSensorA;
+        event.isSensorB = it->second.isSensorB;
+        exitEvents.push_back({CollisionEventType::Exit, event});
+        it = m_activeContacts.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  if (!exitEvents.empty()) {
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    m_eventQueue.insert(m_eventQueue.end(), exitEvents.begin(),
+                        exitEvents.end());
+  }
+
   std::lock_guard<std::mutex> lock(m_bodyCacheMutex);
   m_bodyToEntityCache.erase(bodyId);
 }

@@ -39,6 +39,25 @@ std::array<float, 3> QuaternionToEuler(const std::array<float, 4> &q) {
   return {roll * RAD_TO_DEG, pitch * RAD_TO_DEG, yaw * RAD_TO_DEG};
 }
 
+std::array<float, 4> EulerToQuaternion(const std::array<float, 3> &degrees) {
+  constexpr float DEG_TO_RAD = 3.14159265358979323846f / 180.0f;
+  const float x = degrees[0] * DEG_TO_RAD * 0.5f;
+  const float y = degrees[1] * DEG_TO_RAD * 0.5f;
+  const float z = degrees[2] * DEG_TO_RAD * 0.5f;
+
+  const float cx = std::cos(x);
+  const float sx = std::sin(x);
+  const float cy = std::cos(y);
+  const float sy = std::sin(y);
+  const float cz = std::cos(z);
+  const float sz = std::sin(z);
+
+  return {sx * cy * cz - cx * sy * sz,  // x
+          cx * sy * cz + sx * cy * sz,  // y
+          cx * cy * sz - sx * sy * cz,  // z
+          cx * cy * cz + sx * sy * sz}; // w
+}
+
 } // anonymous namespace
 
 namespace Aetherion::Physics {
@@ -235,6 +254,29 @@ void PhysicsSystem::Update(float deltaTime) {
 
   // Sync any new/changed bodies
   SyncBodies();
+
+  // Push transforms for non-dynamic bodies (kinematic/static) into physics.
+  for (const auto &[entityId, handle] : m_entityBodies) {
+    auto entity = m_scene->FindEntityById(entityId);
+    if (!entity) {
+      continue;
+    }
+
+    auto rigidbody = entity->GetComponent<Scene::RigidbodyComponent>();
+    auto transform = entity->GetComponent<Scene::TransformComponent>();
+    if (!rigidbody || !transform) {
+      continue;
+    }
+
+    if (rigidbody->GetMotionType() == MotionType::Dynamic) {
+      continue;
+    }
+
+    BodyTransform bodyTransform{};
+    bodyTransform.position = transform->GetPosition();
+    bodyTransform.rotation = EulerToQuaternion(transform->GetRotationDegrees());
+    m_physicsWorld->SetBodyTransform(handle, bodyTransform);
+  }
 
   // Fixed timestep accumulator
   m_accumulator += deltaTime;

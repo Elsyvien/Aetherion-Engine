@@ -411,7 +411,8 @@ void EditorMeshPreview::HandleAssetChanges(const std::vector<Assets::AssetRegist
             break;
         }
         if (change.kind == Assets::AssetRegistry::AssetChange::Kind::Modified ||
-            change.kind == Assets::AssetRegistry::AssetChange::Kind::Moved)
+            change.kind == Assets::AssetRegistry::AssetChange::Kind::Moved ||
+            change.kind == Assets::AssetRegistry::AssetChange::Kind::Metadata)
         {
             m_pendingFit = true;
             break;
