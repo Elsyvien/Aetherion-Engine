@@ -223,207 +223,208 @@ void AICopilotPanel::SetupStyles() {
     setStyleSheet(R"(
         /* Main container */
         AICopilotPanel {
-            background-color: #1a1a1a;
+            background-color: #131722;
         }
-        
+
         /* Activity Frame */
         #activityFrame {
-            background-color: #252525;
-            border-bottom: 1px solid #333;
+            background-color: #1b2230;
+            border-bottom: 1px solid #2a3140;
         }
-        
+
         #activityIcon {
-            color: #4dff88;
+            color: #3ccf91;
             font-size: 12px;
         }
-        
+
         #activityLabel {
-            color: #e0e0e0;
-            font-weight: bold;
+            color: #f4f3ef;
+            font-weight: 600;
             font-size: 12px;
         }
-        
+
         #activityDetails {
-            color: #888;
+            color: #a1a8b3;
             font-size: 11px;
         }
-        
+
         /* Current Tool */
         #currentToolFrame {
-            background-color: #1e2d1e;
-            border-radius: 4px;
+            background-color: #1f2836;
+            border-radius: 6px;
             margin: 2px 0px;
+            border: 1px solid #2a3140;
         }
-        
+
         #toolNameLabel {
-            color: #4da6ff;
-            font-weight: bold;
+            color: #ff6b3d;
+            font-weight: 600;
             font-size: 11px;
         }
-        
+
         #toolParamsLabel {
-            color: #999;
+            color: #c2c7d0;
             font-size: 10px;
             font-family: Consolas, monospace;
         }
-        
+
         /* Activity Log */
         #activityLogFrame {
-            background-color: #1e1e1e;
-            border-bottom: 1px solid #333;
+            background-color: #141924;
+            border-bottom: 1px solid #2a3140;
         }
-        
+
         #logHeader {
-            color: #888;
+            color: #a1a8b3;
             font-size: 10px;
         }
-        
+
         #activityLog {
-            background-color: #141414;
-            color: #666;
+            background-color: #0f131b;
+            color: #8c94a0;
             font-size: 10px;
             font-family: Consolas, monospace;
-            border: none;
-            border-radius: 2px;
+            border: 1px solid #202735;
+            border-radius: 4px;
         }
-        
+
         /* Chat Area */
         #chatFrame {
-            background-color: #1a1a1a;
+            background-color: #131722;
         }
-        
+
         #chatHistory {
-            background-color: #1a1a1a;
+            background-color: #131722;
             border: none;
-            color: #e0e0e0;
+            color: #f4f3ef;
             font-size: 13px;
             padding: 8px;
         }
-        
+
         /* Code Viewer */
         #codeViewerFrame {
-            background-color: #1e1e1e;
-            border-left: 2px solid #4da6ff;
+            background-color: #141924;
+            border-left: 2px solid #ff6b3d;
         }
-        
+
         #codeViewerHeader {
-            background-color: #252525;
-            border-bottom: 1px solid #333;
+            background-color: #1b2230;
+            border-bottom: 1px solid #2a3140;
         }
-        
+
         #codeViewerTitle {
-            color: #4da6ff;
-            font-weight: bold;
+            color: #ff6b3d;
+            font-weight: 600;
             font-size: 11px;
         }
-        
+
         #codeViewer {
-            background-color: #1a1a1a;
-            color: #d4d4d4;
-            border: none;
-            selection-background-color: #264f78;
+            background-color: #0f131b;
+            color: #d6d2c7;
+            border: 1px solid #202735;
+            selection-background-color: #2a3344;
         }
-        
+
         #copyCodeBtn {
-            background-color: #2d4a2d;
-            color: #90EE90;
-            border: none;
-            border-radius: 3px;
+            background-color: #1f2b21;
+            color: #9fe6c3;
+            border: 1px solid #2b3a2f;
+            border-radius: 4px;
             padding: 4px 8px;
             font-size: 10px;
         }
-        
+
         #copyCodeBtn:hover {
-            background-color: #3d5a3d;
+            background-color: #283b2c;
         }
-        
+
         #closeCodeBtn {
             background-color: transparent;
-            color: #888;
+            color: #a1a8b3;
             border: none;
             font-size: 14px;
         }
-        
+
         #closeCodeBtn:hover {
-            color: #ff6b6b;
+            color: #ff6b3d;
         }
-        
+
         /* Input Area */
         #inputFrame {
-            background-color: #252525;
-            border-top: 1px solid #333;
+            background-color: #1b2230;
+            border-top: 1px solid #2a3140;
         }
-        
+
         #inputField {
-            background-color: #1a1a1a;
-            border: 1px solid #444;
-            border-radius: 4px;
-            color: #e0e0e0;
+            background-color: #0f131b;
+            border: 1px solid #2a3140;
+            border-radius: 6px;
+            color: #f4f3ef;
             padding: 8px 12px;
             font-size: 13px;
         }
-        
+
         #inputField:focus {
-            border-color: #4da6ff;
+            border-color: #ff6b3d;
         }
-        
+
         #inputField:disabled {
-            background-color: #252525;
-            color: #666;
+            background-color: #1a1f2c;
+            color: #7d8592;
         }
-        
+
         #submitButton {
-            background-color: #2d5a8a;
-            color: white;
+            background-color: #ff6b3d;
+            color: #141824;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             padding: 8px 16px;
-            font-weight: bold;
+            font-weight: 700;
             font-size: 12px;
-            min-width: 80px;
+            min-width: 90px;
         }
-        
+
         #submitButton:hover {
-            background-color: #3d6a9a;
+            background-color: #ff845d;
         }
-        
+
         #submitButton:pressed {
-            background-color: #1d4a7a;
+            background-color: #e4572d;
         }
-        
+
         #submitButton:disabled {
-            background-color: #333;
-            color: #666;
+            background-color: #3a404c;
+            color: #8b92a0;
         }
-        
+
         /* Splitter */
         #mainSplitter::handle {
-            background-color: #333;
+            background-color: #2a3140;
             width: 2px;
         }
-        
+
         #mainSplitter::handle:hover {
-            background-color: #4da6ff;
+            background-color: #ff6b3d;
         }
-        
+
         /* Scrollbars */
         QScrollBar:vertical {
-            background-color: #1a1a1a;
+            background-color: #131722;
             width: 10px;
             margin: 0px;
         }
-        
+
         QScrollBar::handle:vertical {
-            background-color: #444;
+            background-color: #2a3344;
             min-height: 20px;
             border-radius: 5px;
             margin: 2px;
         }
-        
+
         QScrollBar::handle:vertical:hover {
-            background-color: #555;
+            background-color: #364158;
         }
-        
+
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
             height: 0px;
         }
@@ -447,14 +448,14 @@ void AICopilotPanel::SetActivity(ActivityType type, const QString& details) {
     };
     
     static const QMap<ActivityType, ActivityInfo> activityMap = {
-        {ActivityType::Idle,              {"●", "#4dff88", "Ready"}},
-        {ActivityType::Thinking,          {"◐", "#ffcc00", "Thinking"}},
-        {ActivityType::ExecutingTool,     {"⚡", "#4da6ff", "Executing Tool"}},
-        {ActivityType::GeneratingCode,    {"⌨", "#ff88ff", "Generating Code"}},
-        {ActivityType::HighlightingEntity,{"👁", "#ff8844", "Highlighting Entity"}},
-        {ActivityType::ModifyingScene,    {"🔧", "#88ff88", "Modifying Scene"}},
-        {ActivityType::ReadingFile,       {"📖", "#88ccff", "Reading File"}},
-        {ActivityType::WritingFile,       {"💾", "#ffaa88", "Writing File"}}
+        {ActivityType::Idle,              {"●", "#3ccf91", "Ready"}},
+        {ActivityType::Thinking,          {"◐", "#f2b84b", "Thinking"}},
+        {ActivityType::ExecutingTool,     {"⚡", "#ff6b3d", "Executing Tool"}},
+        {ActivityType::GeneratingCode,    {"⌨", "#7bb7ff", "Generating Code"}},
+        {ActivityType::HighlightingEntity,{"👁", "#f28b4b", "Highlighting Entity"}},
+        {ActivityType::ModifyingScene,    {"🔧", "#63d3a6", "Modifying Scene"}},
+        {ActivityType::ReadingFile,       {"📖", "#9ab6ff", "Reading File"}},
+        {ActivityType::WritingFile,       {"💾", "#ff8b66", "Writing File"}}
     };
     
     auto info = activityMap.value(type, activityMap[ActivityType::Idle]);
@@ -536,9 +537,9 @@ void AICopilotPanel::ClearCodeViewer() {
 
 void AICopilotPanel::AddActivityLogEntry(const QString& action, const QString& details) {
     QString timestamp = QTime::currentTime().toString("HH:mm:ss");
-    QString entry = QString("<span style='color:#666;'>[%1]</span> "
-                           "<span style='color:#4da6ff;'>%2</span> "
-                           "<span style='color:#888;'>%3</span><br>")
+    QString entry = QString("<span style='color:#7c8696;'>[%1]</span> "
+                           "<span style='color:#ff6b3d;'>%2</span> "
+                           "<span style='color:#9aa3af;'>%3</span><br>")
                     .arg(timestamp, action, details);
     m_activityLog->insertHtml(entry);
     m_activityLog->verticalScrollBar()->setValue(m_activityLog->verticalScrollBar()->maximum());
@@ -563,15 +564,15 @@ void AICopilotPanel::AppendMessage(const QString& sender, const QString& message
     if (sender == "User") {
         formatted = QString(
             "<div style='margin: 6px 0px; padding: 8px; text-align: left; "
-            "background-color: #1e2d3d; border-left: 3px solid #4da6ff;'>"
-            "<span style='color: #4da6ff; font-weight: bold;'>User:</span> "
-            "<span style='color: #e0e0e0;'>%1</span>"
+            "background-color: #1b2433; border-left: 3px solid #ff6b3d;'>"
+            "<span style='color: #ff6b3d; font-weight: bold;'>User:</span> "
+            "<span style='color: #f4f3ef;'>%1</span>"
             "</div>"
         ).arg(message.toHtmlEscaped());
     } else if (sender == "System") {
         formatted = QString(
             "<div style='margin: 4px 0px; padding: 6px; text-align: left; "
-            "color: #888; font-style: italic; font-size: 11px;'>"
+            "color: #9aa3af; font-style: italic; font-size: 11px;'>"
             "%1"
             "</div>"
         ).arg(message.toHtmlEscaped());
@@ -579,9 +580,9 @@ void AICopilotPanel::AppendMessage(const QString& sender, const QString& message
         // Copilot message
         formatted = QString(
             "<div style='margin: 6px 0px; padding: 8px; text-align: left; "
-            "background-color: #1d2d1d; border-left: 3px solid #4dff88;'>"
-            "<span style='color: #4dff88; font-weight: bold;'>Copilot:</span> "
-            "<span style='color: #e0e0e0;'>%1</span>"
+            "background-color: #1a2a23; border-left: 3px solid #3ccf91;'>"
+            "<span style='color: #3ccf91; font-weight: bold;'>Copilot:</span> "
+            "<span style='color: #f4f3ef;'>%1</span>"
             "</div>"
         ).arg(message.toHtmlEscaped());
     }

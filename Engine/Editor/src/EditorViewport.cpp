@@ -14,6 +14,7 @@
 #include <QWindow>
 #include <QPaintEvent>
 #include <cmath>
+#include <algorithm>
 
 class QPaintEngine;
 
@@ -70,10 +71,10 @@ EditorViewport::EditorViewport(QWidget* parent)
     m_overlayWidget->setAttribute(Qt::WA_TranslucentBackground, true);
     m_overlayWidget->setFocusPolicy(Qt::NoFocus);
     m_overlayWidget->setStyleSheet(
-        "QWidget#viewportOverlay { background-color: rgba(20, 20, 20, 160); "
-        "border: 1px solid rgba(255, 255, 255, 40); border-radius: 6px; }"
+        "QWidget#viewportOverlay { background-color: rgba(18, 20, 26, 185); "
+        "border: 1px solid rgba(255, 255, 255, 40); border-radius: 8px; }"
         "QToolButton { color: #f2f2f2; background: transparent; padding: 2px 6px; }"
-        "QLabel#focusHint { color: #e0e0e0; background-color: rgba(255, 255, 255, 30); "
+        "QLabel#focusHint { color: #f4f3ef; background-color: rgba(255, 255, 255, 30); "
         "padding: 1px 4px; border-radius: 3px; }");
 
     auto* overlayLayout = new QHBoxLayout(m_overlayWidget);
@@ -94,7 +95,7 @@ EditorViewport::EditorViewport(QWidget* parent)
     m_speedLabel->setFocusPolicy(Qt::NoFocus);
 
     m_aiHudLabel = new QLabel(tr("AI: --"), m_overlayWidget);
-    m_aiHudLabel->setStyleSheet("color: #b3ffc7; padding-left: 8px; font-weight: bold;");
+    m_aiHudLabel->setStyleSheet("color: #9fe6c3; padding-left: 8px; font-weight: bold;");
     m_aiHudLabel->setFocusPolicy(Qt::NoFocus);
 
     overlayLayout->addWidget(m_focusButton);
@@ -104,6 +105,26 @@ EditorViewport::EditorViewport(QWidget* parent)
 
     m_overlayWidget->raise();
     UpdateOverlayGeometry();
+
+    m_metricsWidget = new QWidget(this);
+    m_metricsWidget->setObjectName("viewportMetrics");
+    m_metricsWidget->setAttribute(Qt::WA_TranslucentBackground, true);
+    m_metricsWidget->setFocusPolicy(Qt::NoFocus);
+    m_metricsWidget->setStyleSheet(
+        "QWidget#viewportMetrics { background-color: rgba(18, 20, 26, 185); "
+        "border: 1px solid rgba(255, 255, 255, 30); border-radius: 8px; }"
+        "QLabel#perfHudLabel { color: #f4f3ef; font-weight: 600; }");
+
+    auto* metricsLayout = new QVBoxLayout(m_metricsWidget);
+    metricsLayout->setContentsMargins(8, 6, 8, 6);
+    metricsLayout->setSpacing(2);
+
+    m_perfHudLabel = new QLabel(tr("Performance: --"), m_metricsWidget);
+    m_perfHudLabel->setObjectName("perfHudLabel");
+    m_perfHudLabel->setTextFormat(Qt::PlainText);
+    metricsLayout->addWidget(m_perfHudLabel);
+
+    m_metricsWidget->raise();
 
     connect(m_focusButton, &QToolButton::clicked, this, [this] {
         emit focusRequested();
@@ -196,6 +217,23 @@ void EditorViewport::SetAiHudText(const QString& text)
 {
     if (m_aiHudLabel) {
         m_aiHudLabel->setText(text);
+        UpdateOverlayGeometry();
+    }
+}
+
+void EditorViewport::SetPerformanceHudText(const QString& text)
+{
+    if (m_perfHudLabel) {
+        m_perfHudLabel->setText(text);
+        UpdateOverlayGeometry();
+    }
+}
+
+void EditorViewport::SetPerformanceHudVisible(bool visible)
+{
+    if (m_metricsWidget) {
+        m_metricsWidget->setVisible(visible);
+        UpdateOverlayGeometry();
     }
 }
 
@@ -208,6 +246,14 @@ void EditorViewport::UpdateOverlayGeometry()
 
     m_overlayWidget->adjustSize();
     m_overlayWidget->move(8, 8);
+
+    if (m_metricsWidget)
+    {
+        m_metricsWidget->adjustSize();
+        const int x = 8;
+        const int y = std::max(8, height() - m_metricsWidget->height() - 8);
+        m_metricsWidget->move(x, y);
+    }
 }
 
 void EditorViewport::showEvent(QShowEvent* e)

@@ -157,6 +157,7 @@ private:
     QAction* m_showStatsAction = nullptr;
     QAction* m_showBottomPanelAction = nullptr;
     QAction* m_showAiHudAction = nullptr;
+    QAction* m_showPerfHudAction = nullptr;
 
     class TabPanelManager* m_panelManager = nullptr;
     EditorViewport* m_viewport = nullptr;

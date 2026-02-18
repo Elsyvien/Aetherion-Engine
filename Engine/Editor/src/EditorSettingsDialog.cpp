@@ -169,7 +169,7 @@ void EditorSettingsDialog::setupAITab(QWidget *tab,
   // Info label
   auto *infoLabel = new QLabel(tab);
   infoLabel->setWordWrap(true);
-  infoLabel->setStyleSheet("color: #888; font-size: 11px;");
+  infoLabel->setStyleSheet("color: #aeb6c2; font-size: 11px;");
   infoLabel->setText(
       tr("Configure an AI provider to enable real AI-powered asset generation. "
          "Without configuration, the engine uses procedural generation "
