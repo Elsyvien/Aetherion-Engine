@@ -466,10 +466,16 @@ void AICopilotPanel::SetActivity(ActivityType type, const QString& details) {
     m_activityDetails->setText(details);
     
     if (type == ActivityType::Idle) {
-        m_pulseAnimation->stop();
-        m_activityEffect->setOpacity(1.0);
+        if (m_pulseAnimation) {
+            m_pulseAnimation->stop();
+        }
+        if (m_activityEffect) {
+            m_activityEffect->setOpacity(1.0);
+        }
     } else {
-        m_pulseAnimation->start();
+        if (m_pulseAnimation) {
+            m_pulseAnimation->start();
+        }
     }
 }
 
