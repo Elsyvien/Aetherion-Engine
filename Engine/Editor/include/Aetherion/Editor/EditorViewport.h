@@ -35,6 +35,8 @@ public:
     void SetCameraZoom(float zoom);
     void SetCameraState(float x, float y, float z, float rotY, float rotX, float zoom);
     void SetAiHudText(const QString& text);
+    void SetPerformanceHudText(const QString& text);
+    void SetPerformanceHudVisible(bool visible);
 
 signals:
     // WId ist unter Windows i.d.R. ein HWND (kann in Rendering/Win32 zu HWND gecastet werden)
@@ -63,10 +65,12 @@ private:
     bool m_emittedReady = false;
     QTimer* m_resizeDebounceTimer = nullptr;
     QWidget* m_overlayWidget = nullptr;
+    QWidget* m_metricsWidget = nullptr;
     QToolButton* m_focusButton = nullptr;
     QLabel* m_focusHint = nullptr;
     QLabel* m_speedLabel = nullptr;
     QLabel* m_aiHudLabel = nullptr;
+    QLabel* m_perfHudLabel = nullptr;
 
     // Camera state
     float m_cameraX = 0.0f;

@@ -56,12 +56,14 @@ TabPanelManager::TabPanelManager(QWidget* parent)
 
     // Vertical splitter separates main area and bottom panel
     m_verticalSplitter = new QSplitter(Qt::Vertical, this);
-    m_verticalSplitter->setStyleSheet("QSplitter::handle { background: #3a3a3a; height: 4px; }");
+    m_verticalSplitter->setStyleSheet(
+        "QSplitter::handle { background: #2a3140; height: 4px; }");
     m_verticalSplitter->setHandleWidth(4);
 
     // Horizontal splitter for left / center / right
     m_horizontalSplitter = new QSplitter(Qt::Horizontal, m_verticalSplitter);
-    m_horizontalSplitter->setStyleSheet("QSplitter::handle { background: #3a3a3a; width: 4px; }");
+    m_horizontalSplitter->setStyleSheet(
+        "QSplitter::handle { background: #2a3140; width: 4px; }");
     m_horizontalSplitter->setHandleWidth(4);
 
     // Left panel (Assets & Hierarchy)
@@ -129,21 +131,26 @@ void TabPanelManager::CreatePanelGroups(QMainWindow* mainWindow)
     for (auto* tabWidget : { m_leftPanel, m_rightPanel, m_bottomPanel }) {
         if (tabWidget) {
             tabWidget->setStyleSheet(
-                "QTabWidget::pane { border: none; margin: 0px; padding: 0px; } "
+                "QTabWidget::pane { border-top: 1px solid #242c3a; background: #131722; } "
                 "QTabBar::tab { "
-                "    background-color: #2d2d2d; "
-                "    color: #cccccc; "
-                "    padding: 6px 12px; "
-                "    border: 1px solid #1a1a1a; "
-                "    margin: 1px; "
+                "    background-color: #1b2230; "
+                "    color: #b6beca; "
+                "    padding: 8px 16px; "
+                "    border: 1px solid #2a3140; "
+                "    border-bottom: none; "
+                "    border-top-left-radius: 6px; "
+                "    border-top-right-radius: 6px; "
+                "    margin-right: 4px; "
+                "    min-width: 88px; "
                 "} "
                 "QTabBar::tab:selected { "
-                "    background-color: #0e47a1; "
-                "    color: white; "
-                "    border-bottom: 2px solid #1976d2; "
+                "    background-color: #ff6b3d; "
+                "    color: #141824; "
+                "    border-color: #ff8b66; "
                 "} "
                 "QTabBar::tab:hover:!selected { "
-                "    background-color: #3d3d3d; "
+                "    background-color: #2a3344; "
+                "    color: #e6e3dc; "
                 "}"
             );
         }
@@ -499,26 +506,28 @@ void TabPanelManager::SetupPanelStyle()
         if (tabWidget) {
             tabWidget->setStyleSheet(
                 "QTabWidget::pane { "
-                "    border-top: 1px solid #1a1a1a; "
-                "    background-color: #1e1e1e; "
+                "    border-top: 1px solid #242c3a; "
+                "    background-color: #131722; "
                 "} "
                 "QTabBar::tab { "
-                "    background-color: #2d2d2d; "
-                "    color: #aaaaaa; "
+                "    background-color: #1b2230; "
+                "    color: #b6beca; "
                 "    padding: 8px 16px; "
-                "    border: none; "
-                "    border-bottom: 2px solid transparent; "
-                "    margin-right: 2px; "
-                "    min-width: 80px; "
+                "    border: 1px solid #2a3140; "
+                "    border-bottom: none; "
+                "    border-top-left-radius: 6px; "
+                "    border-top-right-radius: 6px; "
+                "    margin-right: 4px; "
+                "    min-width: 88px; "
                 "} "
                 "QTabBar::tab:hover { "
-                "    background-color: #3d3d3d; "
-                "    color: #cccccc; "
+                "    background-color: #2a3344; "
+                "    color: #e6e3dc; "
                 "} "
                 "QTabBar::tab:selected { "
-                "    background-color: #0d47a1; "
-                "    color: white; "
-                "    border-bottom: 3px solid #1976d2; "
+                "    background-color: #ff6b3d; "
+                "    color: #141824; "
+                "    border-color: #ff8b66; "
                 "}"
             );
         }

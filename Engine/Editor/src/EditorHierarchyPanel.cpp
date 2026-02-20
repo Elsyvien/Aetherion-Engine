@@ -90,8 +90,9 @@ EditorHierarchyPanel::EditorHierarchyPanel(QWidget* parent)
     m_searchBox->setPlaceholderText(tr("Search entities..."));
     m_searchBox->setClearButtonEnabled(true);
     m_searchBox->setStyleSheet(
-        "QLineEdit { padding: 4px; border: 1px solid #555; border-radius: 3px; }"
-        "QLineEdit:focus { border-color: #0078d4; }");
+        "QLineEdit { padding: 6px 8px; border: 1px solid #2a3140; border-radius: 6px; "
+        "background-color: #0f131b; color: #f4f3ef; }"
+        "QLineEdit:focus { border-color: #ff6b3d; }");
     connect(m_searchBox, &QLineEdit::textChanged, this, &EditorHierarchyPanel::onSearchTextChanged);
     
     m_tree = new HierarchyTreeWidget(this);

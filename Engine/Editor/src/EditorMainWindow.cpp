@@ -23,6 +23,8 @@
 #include <QFileDialog>
 #include <QFileSystemWatcher>
 #include <QFormLayout>
+#include <QFont>
+#include <QFontInfo>
 #include <QGraphicsDropShadowEffect>
 #include <QInputDialog>
 #include <QEasingCurve>
@@ -47,6 +49,7 @@
 #include <QVariantAnimation>
 #include <QVBoxLayout>
 #include <QSet>
+#include <QStyleFactory>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -92,6 +95,186 @@
 
 namespace Aetherion::Editor {
 namespace {
+QString BuildEditorTheme() {
+  return QStringLiteral(R"(
+    QMainWindow, QDialog, QWidget {
+      background-color: #131722;
+      color: #e6e3dc;
+    }
+    QLabel {
+      color: #e6e3dc;
+    }
+    QMenuBar {
+      background-color: #121621;
+      color: #d6d2c7;
+      border-bottom: 1px solid #242c3a;
+    }
+    QMenuBar::item:selected {
+      background-color: #1f2836;
+      color: #f4f3ef;
+    }
+    QMenu {
+      background-color: #141924;
+      color: #e6e3dc;
+      border: 1px solid #2a3140;
+    }
+    QMenu::item:selected {
+      background-color: #ff6b3d;
+      color: #141824;
+    }
+    QToolBar {
+      background-color: #121621;
+      border-bottom: 1px solid #242c3a;
+      spacing: 6px;
+    }
+    QToolButton {
+      background-color: #1b2230;
+      color: #e6e3dc;
+      border: 1px solid #2a3140;
+      border-radius: 6px;
+      padding: 4px 10px;
+    }
+    QToolButton:hover {
+      background-color: #263042;
+      border-color: #ff6b3d;
+    }
+    QToolButton:checked {
+      background-color: #ff6b3d;
+      color: #141824;
+      border-color: #ff8b66;
+    }
+    QStatusBar {
+      background-color: #121621;
+      color: #aeb6c2;
+      border-top: 1px solid #242c3a;
+    }
+    QStatusBar::item {
+      border: none;
+    }
+    QDockWidget::title {
+      background-color: #1b2230;
+      padding: 6px 8px;
+      border-bottom: 1px solid #2a3140;
+    }
+    QGroupBox {
+      border: 1px solid #262d3a;
+      border-radius: 6px;
+      margin-top: 10px;
+      padding-top: 8px;
+    }
+    QGroupBox::title {
+      subcontrol-origin: margin;
+      subcontrol-position: top left;
+      padding: 0 6px;
+      color: #aeb6c2;
+    }
+    QLineEdit, QTextEdit, QPlainTextEdit {
+      background-color: #0f131b;
+      border: 1px solid #2a3140;
+      border-radius: 6px;
+      color: #f4f3ef;
+      padding: 6px;
+    }
+    QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
+      border-color: #ff6b3d;
+    }
+    QComboBox {
+      background-color: #0f131b;
+      border: 1px solid #2a3140;
+      border-radius: 6px;
+      padding: 4px 8px;
+      color: #f4f3ef;
+    }
+    QComboBox::drop-down {
+      subcontrol-origin: padding;
+      subcontrol-position: top right;
+      width: 20px;
+      border-left: 1px solid #2a3140;
+    }
+    QComboBox QAbstractItemView {
+      background-color: #141924;
+      border: 1px solid #2a3140;
+      selection-background-color: #ff6b3d;
+      color: #f4f3ef;
+    }
+    QPushButton {
+      background-color: #1b2230;
+      color: #e6e3dc;
+      border: 1px solid #2a3140;
+      border-radius: 6px;
+      padding: 6px 12px;
+    }
+    QPushButton:hover {
+      background-color: #263042;
+      border-color: #ff6b3d;
+    }
+    QPushButton:pressed {
+      background-color: #121825;
+    }
+    QPushButton:disabled {
+      color: #7d8592;
+      background-color: #1a1f2c;
+      border-color: #2a3140;
+    }
+    QTreeWidget, QListWidget, QTableWidget {
+      background-color: #0f131b;
+      border: 1px solid #2a3140;
+      color: #e6e3dc;
+    }
+    QTreeWidget::item:selected, QListWidget::item:selected, QTableWidget::item:selected {
+      background-color: #2a3344;
+      color: #f4f3ef;
+    }
+    QHeaderView::section {
+      background-color: #1b2230;
+      color: #aeb6c2;
+      border: 1px solid #2a3140;
+      padding: 4px;
+    }
+    QScrollBar:vertical {
+      background-color: #131722;
+      width: 10px;
+      margin: 0px;
+    }
+    QScrollBar::handle:vertical {
+      background-color: #2a3344;
+      min-height: 20px;
+      border-radius: 5px;
+      margin: 2px;
+    }
+    QScrollBar::handle:vertical:hover {
+      background-color: #364158;
+    }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+      height: 0px;
+    }
+    QProgressBar {
+      background-color: #0f131b;
+      border: 1px solid #2a3140;
+      border-radius: 6px;
+      text-align: center;
+      color: #f4f3ef;
+    }
+    QProgressBar::chunk {
+      background-color: #3ccf91;
+      border-radius: 6px;
+    }
+  )");
+}
+
+void ApplyEditorTheme() {
+  QApplication::setStyle(QStyleFactory::create("Fusion"));
+  QFont appFont("Bahnschrift", 9);
+  if (!QFontInfo(appFont).exactMatch()) {
+    appFont = QApplication::font();
+    appFont.setPointSize(9);
+  }
+  QApplication::setFont(appFont);
+  if (qApp) {
+    qApp->setStyleSheet(BuildEditorTheme());
+  }
+}
+
 class SubtleUiMotionFilter final : public QObject {
 public:
   explicit SubtleUiMotionFilter(QObject *parent = nullptr) : QObject(parent) {}
@@ -188,7 +371,7 @@ private:
       effect->setObjectName("AetherionGlowEffect");
       effect->setOffset(0, 0);
       effect->setBlurRadius(0.0);
-      effect->setColor(QColor(0, 122, 204, 0));
+      effect->setColor(QColor(255, 107, 61, 0));
       widget->setGraphicsEffect(effect);
     } else if (effect->objectName() != "AetherionGlowEffect") {
       return;
@@ -217,7 +400,7 @@ private:
     anim->setDuration(enable ? config.durationIn : config.durationOut);
     anim->setEasingCurve(QEasingCurve::OutCubic);
 
-    const QColor baseColor(0, 122, 204);
+    const QColor baseColor(255, 107, 61);
     connect(anim, &QVariantAnimation::valueChanged, widget,
             [effect, startBlur, endBlur, startAlpha, endAlpha,
              baseColor](const QVariant &value) {
@@ -722,6 +905,7 @@ EditorMainWindow::EditorMainWindow(
   });
 
   m_settings.Clamp();
+  ApplyEditorTheme();
   m_validationEnabled = m_settings.validationEnabled;
   m_renderLoggingEnabled = m_settings.verboseLogging;
   m_targetFrameIntervalMs =
@@ -772,6 +956,7 @@ EditorMainWindow::EditorMainWindow(
     const qint64 nanos =
         m_frameTimer.isValid() ? m_frameTimer.nsecsElapsed() : 0;
     const float dt = static_cast<float>(nanos) / 1'000'000'000.0f;
+    const float frameMs = static_cast<float>(nanos) / 1'000'000.0f;
     m_frameTimer.restart();
 
     if (m_viewport) {
@@ -823,6 +1008,38 @@ EditorMainWindow::EditorMainWindow(
         }
         m_vulkanViewport->ClearPickResult();
       }
+    }
+
+    if (m_statsPanel && frameMs > 0.0f) {
+      m_statsPanel->UpdateFrameTime(frameMs);
+    }
+
+    Rendering::VulkanViewport::FrameStats frameStats{};
+    if (m_vulkanViewport) {
+      frameStats = m_vulkanViewport->GetLastFrameStats();
+      if (m_statsPanel) {
+        m_statsPanel->UpdateFrameProfile(frameStats.cpuTotalMs,
+                                         frameStats.gpuTotalMs, frameStats.valid);
+      }
+    }
+
+    if (m_viewport) {
+      QString perfText;
+      if (frameMs > 0.0f) {
+        const float fps = 1000.0f / frameMs;
+        perfText = tr("FPS %1 | Frame %2 ms")
+                       .arg(fps, 0, 'f', 1)
+                       .arg(frameMs, 0, 'f', 2);
+      } else {
+        perfText = tr("Performance: --");
+      }
+
+      if (frameStats.valid) {
+        perfText += tr(" | CPU %1 ms | GPU %2 ms")
+                        .arg(frameStats.cpuTotalMs, 0, 'f', 2)
+                        .arg(frameStats.gpuTotalMs, 0, 'f', 2);
+      }
+      m_viewport->SetPerformanceHudText(perfText);
     }
 
     if (m_fpsLabel) {
@@ -1748,6 +1965,18 @@ void EditorMainWindow::CreateMenuBarContent() {
   RegisterCommandAction(m_showAiHudAction, tr("View"),
                         tr("Toggle the AI HUD overlay"));
 
+  m_showPerfHudAction = viewMenu->addAction(tr("Show Performance HUD"));
+  m_showPerfHudAction->setCheckable(true);
+  connect(m_showPerfHudAction, &QAction::toggled, this,
+          [this](bool visible) {
+            if (m_viewport) {
+              m_viewport->SetPerformanceHudVisible(visible);
+            }
+          });
+  m_showPerfHudAction->setChecked(true);
+  RegisterCommandAction(m_showPerfHudAction, tr("View"),
+                        tr("Toggle the performance HUD overlay"));
+
   auto *helpMenu = menuBar()->addMenu(tr("&Help"));
   auto *aboutAction = helpMenu->addAction(tr("About Aetherion"));
   connect(aboutAction, &QAction::triggered, this, [this] {
@@ -1890,6 +2119,10 @@ void EditorMainWindow::ApplySettings(const EditorSettings &settings,
   m_targetFrameIntervalMs =
       std::max(1, 1000 / std::max(1, m_settings.targetFps));
   m_headlessSleepMs = m_settings.headlessSleepMs;
+  if (m_statsPanel) {
+    m_statsPanel->SetTargetFrameTime(
+        1000.0f / static_cast<float>(std::max(1, m_settings.targetFps)));
+  }
 
   if (persist) {
     m_settings.Save();
@@ -2078,6 +2311,9 @@ void EditorMainWindow::RescanAssets() {
   if (m_inspectorPanel) {
     m_inspectorPanel->SetAssetRegistry(registry);
   }
+  if (m_statsPanel) {
+    m_statsPanel->SetAssetRegistry(registry);
+  }
   statusBar()->showMessage(tr("Assets rescanned"), 2000);
 }
 
@@ -2159,6 +2395,9 @@ void EditorMainWindow::PollAssetChanges() {
     return;
   }
   m_assetChangeSerial = registry->GetChangeSerial();
+  if (m_statsPanel) {
+    m_statsPanel->SetAssetRegistry(registry);
+  }
 
   bool selectionRemoved = false;
   bool sceneChanged = false;
@@ -2359,6 +2598,9 @@ void EditorMainWindow::ImportGltfAsset() {
   m_assetWatcherDirty = false;
   if (m_inspectorPanel) {
     m_inspectorPanel->SetAssetRegistry(registry);
+  }
+  if (m_statsPanel) {
+    m_statsPanel->SetAssetRegistry(registry);
   }
 
   const QString success =
@@ -3236,6 +3478,9 @@ bool EditorMainWindow::LoadSceneFromPath(const std::filesystem::path &path) {
   }
   if (m_statsPanel) {
     m_statsPanel->SetScene(m_scene);
+    m_statsPanel->SetAssetRegistry(ctx ? ctx->GetAssetRegistry() : nullptr);
+    m_statsPanel->SetTargetFrameTime(
+        1000.0f / static_cast<float>(std::max(1, m_settings.targetFps)));
   }
 
   if (m_inspectorPanel) {
@@ -3301,6 +3546,10 @@ void EditorMainWindow::RecreateRuntimeAndRenderer(bool enableValidation) {
   }
   if (m_statsPanel) {
     m_statsPanel->SetScene(m_scene);
+    auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
+    m_statsPanel->SetAssetRegistry(ctx ? ctx->GetAssetRegistry() : nullptr);
+    m_statsPanel->SetTargetFrameTime(
+        1000.0f / static_cast<float>(std::max(1, m_settings.targetFps)));
   }
   m_scenePath = GetDefaultScenePath();
   SetSceneDirty(false);
@@ -3787,6 +4036,14 @@ void EditorMainWindow::CreateTabPanels() {
   if (m_scene) {
     m_statsPanel->SetScene(m_scene);
   }
+  if (m_runtimeApp) {
+    auto context = m_runtimeApp->GetContext();
+    if (context) {
+      m_statsPanel->SetAssetRegistry(context->GetAssetRegistry());
+    }
+  }
+  m_statsPanel->SetTargetFrameTime(
+      1000.0f / static_cast<float>(std::max(1, m_settings.targetFps)));
 
   m_panelManager->AddToRightPanel(m_inspectorPanel, tr("Inspector"));
   m_panelManager->AddToRightPanel(m_meshPreview, tr("Mesh Preview"));
