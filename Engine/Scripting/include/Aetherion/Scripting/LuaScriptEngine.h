@@ -29,7 +29,8 @@ public:
   void Initialize() override;
   void Shutdown() override;
   std::unique_ptr<ScriptInstance>
-  CreateInstance(const std::string &scriptSource) override;
+  CreateInstance(const std::string &scriptSource,
+                 SourceKind sourceKind) override;
   void OnUpdate(float deltaTime) override;
 
   /// @brief Set the current scene context for script bindings

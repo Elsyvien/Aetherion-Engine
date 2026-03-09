@@ -16,8 +16,10 @@ public:
     void Initialize() override {}
     void Shutdown() override {}
 
-    std::unique_ptr<ScriptInstance> CreateInstance(const std::string& scriptSource) override {
+    std::unique_ptr<ScriptInstance>
+    CreateInstance(const std::string& scriptSource, SourceKind sourceKind) override {
         (void)scriptSource;
+        (void)sourceKind;
         return std::make_unique<NullScriptInstance>();
     }
 

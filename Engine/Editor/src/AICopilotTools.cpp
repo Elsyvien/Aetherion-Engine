@@ -981,8 +981,17 @@ void AICopilotToolFactory::RegisterAllTools(
       targetEntity->AddComponent(scriptComp);
     }
 
-    // Set the script source
-    scriptComp->SetScriptSource(scriptSource);
+    const bool isInline = params.value("isInline", false);
+    if (isInline) {
+      scriptComp->SetSourceMode(Scene::ScriptComponent::SourceMode::InlineCode);
+      scriptComp->SetScriptAssetId({});
+      scriptComp->SetScriptSource(scriptSource);
+    } else {
+      scriptComp->SetSourceMode(
+          Scene::ScriptComponent::SourceMode::FileReference);
+      scriptComp->SetScriptAssetId(scriptSource);
+      scriptComp->SetScriptSource({});
+    }
 
     if (highlightCallback) {
       highlightCallback(targetEntity->GetId(), 1.5f);

@@ -50,7 +50,9 @@
 #include "Aetherion/Scene/SceneSerializer.h"
 #include "Aetherion/Scene/System.h"
 #include "Aetherion/Scene/TransformComponent.h"
+#include "Aetherion/Scripting/LuaScriptEngine.h"
 #include "Aetherion/Scripting/ScriptingPlaceholder.h"
+#include "Aetherion/Scripting/ScriptingSystem.h"
 #include "nlohmann/json.hpp"
 
 namespace Aetherion::Runtime {
@@ -373,11 +375,8 @@ public:
       return;
     }
 
-    if (context.IsSimulationPaused()) {
-      const bool stepRequested = context.ConsumeSimulationStepRequest();
-      if (!stepRequested) {
-        return;
-      }
+    if (context.IsSimulationPaused() && !context.IsSimulationStepRequested()) {
+      return;
     }
 
     m_physicsSystem->Update(deltaTime);
@@ -499,6 +498,139 @@ private:
   EngineContext *m_context{nullptr};
   std::unique_ptr<Audio::AudioSystem> m_audioSystem;
   std::weak_ptr<Scene::Scene> m_scene;
+};
+
+class ScriptRuntimeSystem final : public IRuntimeSystem {
+public:
+  explicit ScriptRuntimeSystem(std::weak_ptr<Scene::Scene> scene)
+      : m_scene(std::move(scene)) {}
+
+  [[nodiscard]] std::string GetName() const override {
+    return "ScriptRuntimeSystem";
+  }
+
+  void Initialize(EngineContext &context) override {
+    m_context = &context;
+    EnsureScriptSystem();
+    BindScene();
+  }
+
+  void Tick(EngineContext &context, float deltaTime) override {
+    m_context = &context;
+    EnsureScriptSystem();
+    BindScene();
+
+    if (!m_scriptSystem) {
+      return;
+    }
+
+    if (!context.IsSimulationPlaying()) {
+      if (m_wasSimulationPlaying) {
+        m_scriptSystem->ResetInstances();
+        m_wasSimulationPlaying = false;
+      }
+      return;
+    }
+
+    if (context.IsSimulationPaused() && !context.IsSimulationStepRequested()) {
+      return;
+    }
+
+    m_wasSimulationPlaying = true;
+    m_scriptSystem->Update(deltaTime);
+  }
+
+  void Shutdown(EngineContext &context) override {
+    (void)context;
+    if (m_scriptSystem) {
+      m_scriptSystem->UnbindScene();
+      m_scriptSystem.reset();
+    }
+
+    if (auto engine = m_context ? m_context->GetScriptEngine() : nullptr) {
+      engine->Shutdown();
+    }
+
+    m_initializedEngine = nullptr;
+    m_engineInitialized = false;
+    m_configuredPackagePaths = false;
+    m_boundScene.reset();
+    m_boundScenePtr = nullptr;
+    m_context = nullptr;
+    m_scene.reset();
+    m_wasSimulationPlaying = false;
+  }
+
+private:
+  void EnsureScriptSystem() {
+    if (!m_context) {
+      return;
+    }
+
+    auto engine = m_context->GetScriptEngine();
+    if (!engine) {
+      return;
+    }
+
+    if (engine.get() != m_initializedEngine) {
+      if (m_scriptSystem) {
+        m_scriptSystem->UnbindScene();
+        m_scriptSystem.reset();
+      }
+      if (m_initializedEngine) {
+        m_initializedEngine->Shutdown();
+      }
+      m_initializedEngine = engine.get();
+      m_engineInitialized = false;
+      m_configuredPackagePaths = false;
+    }
+
+    if (!m_engineInitialized) {
+      engine->Initialize();
+      m_engineInitialized = true;
+    }
+
+    if (auto *luaEngine =
+            dynamic_cast<Scripting::LuaScriptEngine *>(engine.get());
+        luaEngine && !m_configuredPackagePaths) {
+      if (auto registry = m_context->GetAssetRegistry()) {
+        const auto &assetsRoot = registry->GetRootPath();
+        if (!assetsRoot.empty()) {
+          luaEngine->AddPackagePath(assetsRoot);
+          luaEngine->AddPackagePath(assetsRoot / "scripts");
+          m_configuredPackagePaths = true;
+        }
+      }
+    }
+
+    if (!m_scriptSystem) {
+      m_scriptSystem = std::make_unique<Scripting::ScriptingSystem>(engine.get());
+    }
+  }
+
+  void BindScene() {
+    if (!m_scriptSystem) {
+      return;
+    }
+
+    auto scene = m_scene.lock();
+    Scene::Scene *scenePtr = scene.get();
+    if (scenePtr != m_boundScenePtr) {
+      m_scriptSystem->BindScene(scenePtr);
+      m_boundScenePtr = scenePtr;
+      m_boundScene = scene;
+    }
+  }
+
+  EngineContext *m_context{nullptr};
+  std::unique_ptr<Scripting::ScriptingSystem> m_scriptSystem;
+  std::weak_ptr<Scene::Scene> m_scene;
+  std::weak_ptr<Scene::Scene> m_boundScene;
+  Scene::Scene *m_boundScenePtr{nullptr};
+  Scripting::ScriptEngine *m_initializedEngine{nullptr};
+  bool m_engineInitialized{false};
+  bool m_configuredPackagePaths{false};
+  bool m_wasSimulationPlaying{false};
 };
 
 class SceneSystemDispatcher final : public IRuntimeSystem {
@@ -982,6 +1114,9 @@ void EngineApplication::Initialize(bool enableValidationLayers,
   m_context->SetAudioSystem(std::make_shared<Audio::AudioEngine>());
   m_context->SetScriptingRuntime(
       std::make_shared<Scripting::ScriptingRuntime>());
+#ifdef AETHERION_ENABLE_LUA
+  m_context->SetScriptEngine(std::make_shared<Scripting::LuaScriptEngine>());
+#endif
   if (const auto scripting = m_context->GetScriptingRuntime()) {
     scripting->SetErrorSink(
         [this](const std::string &msg) { DebugPrint(msg); });
@@ -1029,7 +1164,7 @@ void EngineApplication::Initialize(bool enableValidationLayers,
     scripting->Initialize();
     DebugPrint("Scripting runtime initialized.");
 #ifdef AETHERION_ENABLE_LUA
-    DebugPrint("Lua scripting support compiled in (AETHERION_ENABLE_LUA=ON).");
+    DebugPrint("Lua scripting runtime registered.");
 #endif
   }
 
@@ -1083,6 +1218,10 @@ void EngineApplication::Shutdown() {
       scripting->Shutdown();
       DebugPrint("Scripting placeholder shut down.");
     }
+    if (const auto scriptEngine = m_context->GetScriptEngine()) {
+      scriptEngine->Shutdown();
+      DebugPrint("Script engine shut down.");
+    }
     if (const auto audio = m_context->GetAudioSystem()) {
       audio->Shutdown();
       DebugPrint("Audio placeholder shut down.");
@@ -1095,6 +1234,7 @@ void EngineApplication::Shutdown() {
     m_context->SetPhysicsSystem(nullptr);
     m_context->SetAudioSystem(nullptr);
     m_context->SetScriptingRuntime(nullptr);
+    m_context->SetScriptEngine(nullptr);
     m_context->SetRenderView(nullptr);
   }
 
@@ -1143,6 +1283,7 @@ void EngineApplication::Tick() {
   if (m_runtimeSystems.empty()) {
     UpdateSceneSystems(deltaTime);
   }
+  m_context->ClearSimulationStepRequest();
 }
 
 void EngineApplication::RegisterSystem(std::shared_ptr<IRuntimeSystem> system) {
@@ -1224,6 +1365,7 @@ void EngineApplication::RegisterPlaceholderSystems() {
   RegisterSystem(std::make_shared<PhysicsRuntimeSystem>(m_activeScene));
   RegisterSystem(std::make_shared<AudioRuntimeSystem>(m_activeScene));
   RegisterSystem(std::make_shared<SceneSystemDispatcher>(m_activeScene));
+  RegisterSystem(std::make_shared<ScriptRuntimeSystem>(m_activeScene));
   RegisterSystem(std::make_shared<RenderViewSystem>(m_activeScene));
   DebugPrint("Placeholder systems registered.");
   // TODO: Register systems with the engine once rendering/physics/audio exist.

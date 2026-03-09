@@ -1,27 +1,79 @@
 #include <Aetherion/Assets/AssetRegistry.h>
 #include <Aetherion/Assets/LatentAssetLoader.h>
-#include <Aetherion/Scripting/ScriptingPlaceholder.h>
-#include <Aetherion/Scene/Scene.h>
 #include <Aetherion/Scene/Entity.h>
+#include <Aetherion/Scene/Scene.h>
+#include <Aetherion/Scene/ScriptComponent.h>
 #include <Aetherion/Scene/SemanticComponent.h>
 #include <Aetherion/Scene/SemanticGraph.h>
+#include <Aetherion/Scripting/ScriptInstance.h>
+#include <Aetherion/Scripting/ScriptEngine.h>
+#include <Aetherion/Scripting/ScriptingPlaceholder.h>
+#include <Aetherion/Scripting/ScriptingSystem.h>
+#include <Aetherion/Runtime/EngineContext.h>
 
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <thread>
 
 using Aetherion::Assets::AssetRegistry;
 using Aetherion::Assets::LatentAssetLoader;
 using Aetherion::Assets::LatentDecoder;
+using Aetherion::Runtime::EngineContext;
 using Aetherion::Scripting::ScriptingRuntime;
+using Aetherion::Scripting::ScriptingSystem;
 using Aetherion::Scene::Scene;
+using Aetherion::Scene::ScriptComponent;
 using Aetherion::Scene::SemanticGraph;
 using Aetherion::Scene::SemanticComponent;
 
 namespace {
+
+struct RecordingScriptInstance final : Aetherion::Scripting::ScriptInstance {
+    int* destroyCount = nullptr;
+
+    void SetEntity(Aetherion::Scene::Entity* entity) override {
+        (void)entity;
+    }
+
+    void OnCreate() override {}
+    void OnUpdate(float deltaTime) override { (void)deltaTime; }
+
+    void OnDestroy() override {
+        if (destroyCount) {
+            ++(*destroyCount);
+        }
+    }
+};
+
+class RecordingScriptEngine final : public Aetherion::Scripting::ScriptEngine {
+public:
+    void Initialize() override {}
+    void Shutdown() override {}
+
+    std::unique_ptr<Aetherion::Scripting::ScriptInstance>
+    CreateInstance(const std::string& scriptSource,
+                   SourceKind sourceKind) override {
+        createdSources.push_back(scriptSource);
+        createdKinds.push_back(sourceKind);
+        auto instance = std::make_unique<RecordingScriptInstance>();
+        instance->destroyCount = &destroyedInstances;
+        return instance;
+    }
+
+    void OnUpdate(float deltaTime) override {
+        (void)deltaTime;
+        ++updateCalls;
+    }
+
+    std::vector<std::string> createdSources;
+    std::vector<SourceKind> createdKinds;
+    int destroyedInstances = 0;
+    int updateCalls = 0;
+};
 
 bool TestSemanticGraph() {
     std::cout << "[Test] Semantic Graph\n";
@@ -172,6 +224,181 @@ bool TestScriptingHotReload() {
     return true;
 }
 
+bool TestSceneScriptingSystemResolvesAssetScripts() {
+    std::cout << "[Test] Scene scripting resolves asset-backed Lua scripts\n";
+
+    std::filesystem::path tempRoot =
+        std::filesystem::temp_directory_path() / "aetherion_scene_script_test";
+    std::error_code ec;
+    std::filesystem::remove_all(tempRoot, ec);
+    std::filesystem::create_directories(tempRoot / "scripts", ec);
+
+    const std::filesystem::path scriptPath = tempRoot / "scripts" / "spin.lua";
+    {
+        std::ofstream out(scriptPath, std::ios::trunc);
+        out << "return { on_update = function(self, dt) end }\n";
+    }
+
+    AssetRegistry registry;
+    registry.Scan(tempRoot.string());
+
+    const AssetRegistry::AssetEntry* scriptEntry = nullptr;
+    for (const auto& entry : registry.GetEntries()) {
+        if (entry.type == AssetRegistry::AssetType::Script &&
+            entry.path.filename() == scriptPath.filename()) {
+            scriptEntry = &entry;
+            break;
+        }
+    }
+    if (!scriptEntry) {
+        std::cerr << "Failed to register Lua script asset\n";
+        std::filesystem::remove_all(tempRoot, ec);
+        return false;
+    }
+
+    EngineContext context;
+    context.SetAssetRegistry(std::make_shared<AssetRegistry>(registry));
+
+    Scene scene("ScriptScene");
+    scene.BindContext(context);
+
+    auto entity = scene.CreateEntity("Spinner");
+    auto scriptComponent = entity->AddComponent<ScriptComponent>();
+    scriptComponent->SetSourceMode(ScriptComponent::SourceMode::FileReference);
+    scriptComponent->SetScriptAssetId(scriptEntry->id);
+
+    RecordingScriptEngine engine;
+    ScriptingSystem scriptingSystem(&engine);
+    scriptingSystem.BindScene(&scene);
+    scriptingSystem.Update(0.016f);
+
+    if (engine.createdSources.size() != 1) {
+        std::cerr << "Expected one script instance creation\n";
+        std::filesystem::remove_all(tempRoot, ec);
+        return false;
+    }
+
+    const std::filesystem::path createdPath(engine.createdSources.front());
+    if (createdPath.filename() != scriptPath.filename()) {
+        std::cerr << "Script asset ID did not resolve to source path\n";
+        std::filesystem::remove_all(tempRoot, ec);
+        return false;
+    }
+    if (engine.createdKinds.front() != RecordingScriptEngine::SourceKind::FilePath) {
+        std::cerr << "Expected file-backed asset script to use file source kind\n";
+        std::filesystem::remove_all(tempRoot, ec);
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    {
+        std::ofstream out(scriptPath, std::ios::trunc);
+        out << "return { on_update = function(self, dt) print(dt) end }\n";
+    }
+
+    scriptingSystem.Update(0.016f);
+
+    if (engine.createdSources.size() != 2) {
+        std::cerr << "Expected file-backed script hot reload to recreate instance\n";
+        std::filesystem::remove_all(tempRoot, ec);
+        return false;
+    }
+
+    if (engine.destroyedInstances < 1) {
+        std::cerr << "Expected previous script instance to be destroyed on reload\n";
+        std::filesystem::remove_all(tempRoot, ec);
+        return false;
+    }
+
+    scriptingSystem.UnbindScene();
+    std::filesystem::remove_all(tempRoot, ec);
+    return true;
+}
+
+bool TestSceneScriptingSystemSupportsLegacyAssetIdScripts() {
+    std::cout << "[Test] Scene scripting supports legacy assetId-only scripts\n";
+
+    std::filesystem::path tempRoot =
+        std::filesystem::temp_directory_path() / "aetherion_scene_script_legacy_test";
+    std::error_code ec;
+    std::filesystem::remove_all(tempRoot, ec);
+    std::filesystem::create_directories(tempRoot / "scripts", ec);
+
+    const std::filesystem::path scriptPath = tempRoot / "scripts" / "legacy.lua";
+    {
+        std::ofstream out(scriptPath, std::ios::trunc);
+        out << "return { on_update = function(self, dt) end }\n";
+    }
+
+    AssetRegistry registry;
+    registry.Scan(tempRoot.string());
+
+    const AssetRegistry::AssetEntry* scriptEntry = nullptr;
+    for (const auto& entry : registry.GetEntries()) {
+        if (entry.type == AssetRegistry::AssetType::Script &&
+            entry.path.filename() == scriptPath.filename()) {
+            scriptEntry = &entry;
+            break;
+        }
+    }
+    if (!scriptEntry) {
+        std::cerr << "Failed to register legacy Lua script asset\n";
+        std::filesystem::remove_all(tempRoot, ec);
+        return false;
+    }
+
+    EngineContext context;
+    context.SetAssetRegistry(std::make_shared<AssetRegistry>(registry));
+
+    Scene scene("LegacyScriptScene");
+    scene.BindContext(context);
+
+    auto entity = scene.CreateEntity("LegacySpinner");
+    auto scriptComponent = entity->AddComponent<ScriptComponent>();
+    scriptComponent->SetScriptAssetId(scriptEntry->id);
+
+    RecordingScriptEngine engine;
+    ScriptingSystem scriptingSystem(&engine);
+    scriptingSystem.BindScene(&scene);
+    scriptingSystem.Update(0.016f);
+
+    if (engine.createdKinds.size() != 1 ||
+        engine.createdKinds.front() != RecordingScriptEngine::SourceKind::FilePath) {
+        std::cerr << "Legacy assetId-only script did not resolve as file-backed\n";
+        std::filesystem::remove_all(tempRoot, ec);
+        return false;
+    }
+
+    scriptingSystem.UnbindScene();
+    std::filesystem::remove_all(tempRoot, ec);
+    return true;
+}
+
+bool TestSceneScriptingSystemKeepsInlineLuaInline() {
+    std::cout << "[Test] Scene scripting preserves inline Lua source mode\n";
+
+    Scene scene("InlineScene");
+    auto entity = scene.CreateEntity("InlineScriptEntity");
+    auto scriptComponent = entity->AddComponent<ScriptComponent>();
+    scriptComponent->SetScriptSource(
+        "local note = '.lua embedded in code'\n"
+        "return { on_update = function(self, dt) end }\n");
+
+    RecordingScriptEngine engine;
+    ScriptingSystem scriptingSystem(&engine);
+    scriptingSystem.BindScene(&scene);
+    scriptingSystem.Update(0.016f);
+
+    if (engine.createdKinds.size() != 1 ||
+        engine.createdKinds.front() != RecordingScriptEngine::SourceKind::InlineCode) {
+        std::cerr << "Inline Lua was misclassified as a file source\n";
+        return false;
+    }
+
+    scriptingSystem.UnbindScene();
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -186,6 +413,15 @@ int main() {
         ++failures;
     }
     if (!TestScriptingHotReload()) {
+        ++failures;
+    }
+    if (!TestSceneScriptingSystemResolvesAssetScripts()) {
+        ++failures;
+    }
+    if (!TestSceneScriptingSystemSupportsLegacyAssetIdScripts()) {
+        ++failures;
+    }
+    if (!TestSceneScriptingSystemKeepsInlineLuaInline()) {
         ++failures;
     }
 

@@ -2090,8 +2090,17 @@ void EditorInspectorPanel::RebuildUi() {
     form->setContentsMargins(10, 10, 10, 10);
 
     // Script asset ID
+    std::string scriptAssetValue = scriptComp->GetScriptAssetId();
+    std::string scriptCodeValue = scriptComp->GetScriptSource();
+    if (scriptComp->GetSourceMode() ==
+            Scene::ScriptComponent::SourceMode::FileReference &&
+        scriptAssetValue.empty() && !scriptCodeValue.empty()) {
+      scriptAssetValue = scriptCodeValue;
+      scriptCodeValue.clear();
+    }
+
     auto *scriptAssetEdit = new QLineEdit(formHost);
-    scriptAssetEdit->setText(QString::fromStdString(scriptComp->GetScriptAssetId()));
+    scriptAssetEdit->setText(QString::fromStdString(scriptAssetValue));
     scriptAssetEdit->setPlaceholderText(tr("scripts/my_script.lua"));
     form->addRow(tr("Script Asset:"), scriptAssetEdit);
 
@@ -2100,7 +2109,7 @@ void EditorInspectorPanel::RebuildUi() {
     form->addRow(codeLabel);
 
     auto *codeEditor = new QTextEdit(formHost);
-    codeEditor->setPlainText(QString::fromStdString(scriptComp->GetScriptSource()));
+    codeEditor->setPlainText(QString::fromStdString(scriptCodeValue));
     codeEditor->setMinimumHeight(200);
     codeEditor->setFont(QFont("Consolas", 10));
     codeEditor->setStyleSheet(
@@ -2121,22 +2130,54 @@ void EditorInspectorPanel::RebuildUi() {
         "QPushButton:pressed { background-color: #e3572f; }");
     form->addRow(applyBtn);
 
+    auto updateScriptEditorState = [scriptComp, scriptAssetEdit, codeEditor]() {
+      const bool fileBacked =
+          scriptComp->GetSourceMode() ==
+              Scene::ScriptComponent::SourceMode::FileReference ||
+          !scriptAssetEdit->text().trimmed().isEmpty();
+      codeEditor->setEnabled(!fileBacked);
+      if (fileBacked) {
+        codeEditor->setPlaceholderText(
+            QObject::tr("File-backed scripts are edited in the referenced asset."));
+      } else {
+        codeEditor->setPlaceholderText(
+            QObject::tr("Enter inline Lua source here."));
+      }
+    };
+
+    auto applyScriptSelection = [this, scriptComp, codeEditor, scriptAssetEdit]() {
+      if (m_buildingUi || !m_entity) {
+        return;
+      }
+
+      const std::string assetValue =
+          scriptAssetEdit->text().trimmed().toStdString();
+      const std::string codeValue = codeEditor->toPlainText().toStdString();
+
+      if (!assetValue.empty()) {
+        scriptComp->SetSourceMode(Scene::ScriptComponent::SourceMode::FileReference);
+        scriptComp->SetScriptAssetId(assetValue);
+        scriptComp->SetScriptSource({});
+      } else {
+        scriptComp->SetSourceMode(Scene::ScriptComponent::SourceMode::InlineCode);
+        scriptComp->SetScriptAssetId({});
+        scriptComp->SetScriptSource(codeValue);
+      }
+
+      emit sceneModified();
+    };
+
+    updateScriptEditorState();
+
     connect(scriptAssetEdit, &QLineEdit::editingFinished, this,
-            [this, scriptComp, scriptAssetEdit]() {
-              if (m_buildingUi || !m_entity)
-                return;
-              scriptComp->SetScriptAssetId(scriptAssetEdit->text().toStdString());
-              emit sceneModified();
+            [applyScriptSelection]() { applyScriptSelection(); });
+    connect(scriptAssetEdit, &QLineEdit::textChanged, this,
+            [updateScriptEditorState](const QString &) {
+              updateScriptEditorState();
             });
 
     connect(applyBtn, &QPushButton::clicked, this,
-            [this, scriptComp, codeEditor, scriptAssetEdit]() {
-              if (!m_entity)
-                return;
-              scriptComp->SetScriptAssetId(scriptAssetEdit->text().toStdString());
-              scriptComp->SetScriptSource(codeEditor->toPlainText().toStdString());
-              emit sceneModified();
-            });
+            [applyScriptSelection]() { applyScriptSelection(); });
 
     formHost->setLayout(form);
     m_contentLayout->addWidget(

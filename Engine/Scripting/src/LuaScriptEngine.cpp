@@ -8,6 +8,7 @@
 #include "Aetherion/Scripting/LuaBindings.h"
 #include "Aetherion/Scripting/LuaScriptInstance.h"
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 
@@ -69,14 +70,14 @@ void LuaScriptEngine::Shutdown() {
 }
 
 std::unique_ptr<ScriptInstance>
-LuaScriptEngine::CreateInstance(const std::string &scriptSource) {
+LuaScriptEngine::CreateInstance(const std::string &scriptSource,
+                                SourceKind sourceKind) {
 #ifdef AETHERION_ENABLE_LUA
   if (!m_initialized || !m_impl->luaState) {
     return nullptr;
   }
 
-  // Determine if source is a file path or inline code
-  bool isFile = (scriptSource.find(".lua") != std::string::npos);
+  const bool isFile = (sourceKind == SourceKind::FilePath);
 
   auto instance = std::make_unique<LuaScriptInstance>(m_impl->luaState.get(),
                                                       scriptSource, isFile);
@@ -84,6 +85,7 @@ LuaScriptEngine::CreateInstance(const std::string &scriptSource) {
   return instance;
 #else
   (void)scriptSource;
+  (void)sourceKind;
   return nullptr;
 #endif
 }
@@ -166,7 +168,19 @@ bool LuaScriptEngine::ReloadScript(const std::string &scriptPath) {
 }
 
 void LuaScriptEngine::AddPackagePath(const std::filesystem::path &path) {
-  m_impl->packagePaths.push_back(path);
+  if (path.empty()) {
+    return;
+  }
+
+  std::error_code ec;
+  const std::filesystem::path normalized =
+      std::filesystem::weakly_canonical(path, ec);
+  const std::filesystem::path resolved =
+      ec ? path.lexically_normal() : normalized;
+  if (std::find(m_impl->packagePaths.begin(), m_impl->packagePaths.end(),
+                resolved) == m_impl->packagePaths.end()) {
+    m_impl->packagePaths.push_back(resolved);
+  }
 
 #ifdef AETHERION_ENABLE_LUA
   if (m_initialized && m_impl->luaState) {

@@ -8,6 +8,7 @@
 
 #include "Aetherion/Assets/AssetRegistry.h"
 #include "Aetherion/Core/Math.h"
+#include "Aetherion/Core/String.h"
 #include "Aetherion/Runtime/EngineContext.h"
 #include "Aetherion/Scene/AIBehaviorComponent.h"
 #include "Aetherion/Scene/AudioListenerComponent.h"
@@ -69,6 +70,43 @@ std::string ReadString(const Json &obj, const char *key,
   } catch (const nlohmann::json::exception &) {
     return fallback;
   }
+}
+
+Aetherion::Scene::ScriptComponent::SourceMode
+ReadScriptSourceMode(const Json &obj) {
+  auto modeIt = obj.find("sourceMode");
+  if (modeIt != obj.end()) {
+    try {
+      if (modeIt->is_number_integer()) {
+        const int value = modeIt->get<int>();
+        if (value == static_cast<int>(
+                         Aetherion::Scene::ScriptComponent::SourceMode::
+                             FileReference)) {
+          return Aetherion::Scene::ScriptComponent::SourceMode::FileReference;
+        }
+      } else if (modeIt->is_string()) {
+        const std::string value =
+            Aetherion::Core::String::ToLower(modeIt->get<std::string>());
+        if (value == "file" || value == "filereference" || value == "asset") {
+          return Aetherion::Scene::ScriptComponent::SourceMode::FileReference;
+        }
+      }
+    } catch (const nlohmann::json::exception &) {
+    }
+  }
+
+  const std::string assetId = ReadString(obj, "scriptAssetId", std::string());
+  if (!assetId.empty()) {
+    return Aetherion::Scene::ScriptComponent::SourceMode::FileReference;
+  }
+
+  const std::string source = ReadString(obj, "scriptSource", std::string());
+  if (source.ends_with(".lua") || source.ends_with(".py") ||
+      source.ends_with(".js") || source.ends_with(".cs")) {
+    return Aetherion::Scene::ScriptComponent::SourceMode::FileReference;
+  }
+
+  return Aetherion::Scene::ScriptComponent::SourceMode::InlineCode;
 }
 
 bool ReadVec3(const Json &obj, const char *key, std::array<float, 3> &out,
@@ -259,6 +297,7 @@ bool SceneSerializer::Save(const Scene &scene,
 
     if (auto script = entity->GetComponent<ScriptComponent>()) {
       Json scriptJson;
+      scriptJson["sourceMode"] = static_cast<int>(script->GetSourceMode());
       scriptJson["scriptAssetId"] = script->GetScriptAssetId();
       scriptJson["scriptSource"] = script->GetScriptSource();
       components["Script"] = std::move(scriptJson);
@@ -586,10 +625,20 @@ SceneSerializer::Load(const std::filesystem::path &path) const {
       if (scriptIt != components.end() && scriptIt->is_object()) {
         const Json &scriptJson = *scriptIt;
         auto script = std::make_shared<ScriptComponent>();
-        script->SetScriptAssetId(
-            ReadString(scriptJson, "scriptAssetId", std::string()));
-        script->SetScriptSource(
-            ReadString(scriptJson, "scriptSource", std::string()));
+        const auto sourceMode = ReadScriptSourceMode(scriptJson);
+        std::string scriptAssetId =
+            ReadString(scriptJson, "scriptAssetId", std::string());
+        std::string scriptSource =
+            ReadString(scriptJson, "scriptSource", std::string());
+        if (sourceMode == ScriptComponent::SourceMode::FileReference &&
+            scriptAssetId.empty() && !scriptSource.empty()) {
+          scriptAssetId = scriptSource;
+          scriptSource.clear();
+        }
+
+        script->SetSourceMode(sourceMode);
+        script->SetScriptAssetId(scriptAssetId);
+        script->SetScriptSource(scriptSource);
         entity->AddComponent(script);
       }
     }

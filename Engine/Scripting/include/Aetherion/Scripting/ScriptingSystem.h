@@ -2,6 +2,7 @@
 
 #include "Aetherion/Core/Types.h"
 #include "Aetherion/Scripting/ScriptEngine.h"
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -26,6 +27,7 @@ public:
 
   void SetEnabled(bool enabled) noexcept { m_enabled = enabled; }
   [[nodiscard]] bool IsEnabled() const noexcept { return m_enabled; }
+  void ResetInstances();
 
 private:
   ScriptEngine *m_engine = nullptr;
@@ -34,7 +36,10 @@ private:
 
   struct EntityScript {
     std::unique_ptr<ScriptInstance> instance;
-    std::string scriptSource; // For detecting changes (hot reload)
+    std::string scriptSource;
+    bool isFileSource{false};
+    std::filesystem::path sourcePath;
+    std::filesystem::file_time_type lastWriteTime{};
   };
 
   std::unordered_map<Core::EntityId, std::vector<EntityScript>> m_entityScripts;
