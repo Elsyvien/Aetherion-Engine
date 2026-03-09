@@ -664,6 +664,12 @@ public:
   }
 
   void Shutdown(EngineContext &context) override {
+    if (auto scene = m_scene.lock()) {
+      if (scene->IsPlaying()) {
+        scene->Tick(0.0f, false, false, false);
+      }
+    }
+
     (void)context;
     m_context = nullptr;
     m_scene.reset();

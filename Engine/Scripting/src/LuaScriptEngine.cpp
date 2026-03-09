@@ -19,6 +19,7 @@ struct LuaScriptEngine::Impl {
   std::unique_ptr<sol::state> luaState;
 #endif
   std::vector<std::filesystem::path> packagePaths;
+  std::string basePackagePath;
 };
 
 LuaScriptEngine::LuaScriptEngine() : m_impl(std::make_unique<Impl>()) {}
@@ -40,6 +41,8 @@ void LuaScriptEngine::Initialize() {
                                    sol::lib::coroutine,
                                    sol::lib::os, // Limited OS functionality
                                    sol::lib::package);
+  m_impl->basePackagePath =
+      (*m_impl->luaState)["package"]["path"].get_or(std::string{});
 
   // Set up package paths
   UpdatePackagePaths();
@@ -65,6 +68,8 @@ void LuaScriptEngine::Shutdown() {
   m_impl->luaState.reset();
 #endif
 
+  m_impl->basePackagePath.clear();
+  m_impl->packagePaths.clear();
   m_initialized = false;
   m_currentScene = nullptr;
 }
@@ -108,6 +113,7 @@ void LuaScriptEngine::SetScene(Scene::Scene *scene) {
 #ifdef AETHERION_ENABLE_LUA
   if (m_initialized && m_impl->luaState) {
     // Re-register scene-dependent bindings
+    RegisterEntityBindings();
     LuaBindings::RegisterSceneQueries(*m_impl->luaState, scene);
   }
 #endif
@@ -200,8 +206,13 @@ void LuaScriptEngine::UpdatePackagePaths() {
     paths << p.string() << "/?/init.lua;";
   }
 
-  std::string currentPath = (*m_impl->luaState)["package"]["path"];
-  (*m_impl->luaState)["package"]["path"] = paths.str() + currentPath;
+  if (m_impl->basePackagePath.empty()) {
+    m_impl->basePackagePath =
+        (*m_impl->luaState)["package"]["path"].get_or(std::string{});
+  }
+
+  (*m_impl->luaState)["package"]["path"] =
+      paths.str() + m_impl->basePackagePath;
 }
 #endif
 

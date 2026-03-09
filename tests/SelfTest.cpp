@@ -310,6 +310,21 @@ bool TestSceneScriptingSystemResolvesAssetScripts() {
         return false;
     }
 
+    std::filesystem::remove(scriptPath, ec);
+    scriptingSystem.Update(0.016f);
+
+    if (engine.createdSources.size() != 2) {
+        std::cerr << "Missing script file should not recreate an invalid instance\n";
+        std::filesystem::remove_all(tempRoot, ec);
+        return false;
+    }
+
+    if (engine.destroyedInstances < 2) {
+        std::cerr << "Expected script instance to be destroyed when file disappears\n";
+        std::filesystem::remove_all(tempRoot, ec);
+        return false;
+    }
+
     scriptingSystem.UnbindScene();
     std::filesystem::remove_all(tempRoot, ec);
     return true;

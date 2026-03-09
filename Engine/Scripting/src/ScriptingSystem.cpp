@@ -85,12 +85,19 @@ ResolvedScriptSource ResolveScriptSource(
     return resolved;
   }
 
-  const auto finalizeFileResolution = [&](const std::filesystem::path &sourcePath) {
+  const auto finalizeFileResolution =
+      [&](const std::filesystem::path &sourcePath) {
+    std::error_code existsEc;
+    if (sourcePath.empty() || !std::filesystem::exists(sourcePath, existsEc)) {
+      return false;
+    }
+
     std::error_code ec;
     resolved.source = sourcePath.string();
     resolved.isFile = true;
     resolved.path = sourcePath;
     resolved.lastWriteTime = std::filesystem::last_write_time(sourcePath, ec);
+    return true;
   };
 
   const std::string &assetId = component.GetScriptAssetId();
@@ -99,8 +106,9 @@ ResolvedScriptSource ResolveScriptSource(
       if (const auto *entry = assetRegistry->FindEntry(assetId)) {
         if (auto sourcePath = ResolvePathCandidate(entry->path, assetsRoot);
             !sourcePath.empty()) {
-          finalizeFileResolution(sourcePath);
-          return resolved;
+          if (finalizeFileResolution(sourcePath)) {
+            return resolved;
+          }
         }
       }
     }
@@ -108,8 +116,9 @@ ResolvedScriptSource ResolveScriptSource(
     if (auto sourcePath =
             ResolvePathCandidate(std::filesystem::path(assetId), assetsRoot);
         !sourcePath.empty()) {
-      finalizeFileResolution(sourcePath);
-      return resolved;
+      if (finalizeFileResolution(sourcePath)) {
+        return resolved;
+      }
     }
   }
 
@@ -118,7 +127,7 @@ ResolvedScriptSource ResolveScriptSource(
     if (auto sourcePath =
             ResolvePathCandidate(std::filesystem::path(pathSource), assetsRoot);
         !sourcePath.empty()) {
-      finalizeFileResolution(sourcePath);
+      (void)finalizeFileResolution(sourcePath);
     }
   }
 
@@ -291,6 +300,9 @@ void ScriptingSystem::Update(float deltaTime) {
     if (!entityExists || !shouldRemainConfigured) {
       for (auto &script : it->second) {
         if (script.instance) {
+          if (!entityExists) {
+            script.instance->SetEntity(nullptr);
+          }
           script.instance->OnDestroy();
         }
       }

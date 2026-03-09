@@ -208,51 +208,59 @@ void LuaBindings::RegisterComponents(sol::state &lua) {
 
 void LuaBindings::RegisterEntity(sol::state &lua, Scene::Scene *scene) {
 #ifdef AETHERION_ENABLE_LUA
-  lua.new_usertype<Scene::Entity>(
-      "Entity", sol::no_constructor, "getId", &Scene::Entity::GetId, "getName",
-      &Scene::Entity::GetName, "setName", &Scene::Entity::SetName,
-      "getTransform",
-      [](Scene::Entity &e) {
-        return e.GetComponent<Scene::TransformComponent>();
-      },
-      "getMeshRenderer",
-      [](Scene::Entity &e) {
-        return e.GetComponent<Scene::MeshRendererComponent>();
-      },
-      "getLight",
-      [](Scene::Entity &e) { return e.GetComponent<Scene::LightComponent>(); },
-      "getCamera",
-      [](Scene::Entity &e) { return e.GetComponent<Scene::CameraComponent>(); },
-      "getRigidbody",
-      [](Scene::Entity &e) {
-        return e.GetComponent<Scene::RigidbodyComponent>();
-      },
-      "getCollider",
-      [](Scene::Entity &e) {
-        return e.GetComponent<Scene::ColliderComponent>();
-      },
-      "getAudioSource",
-      [](Scene::Entity &e) {
-        return e.GetComponent<Scene::AudioSourceComponent>();
-      });
+  if (!lua["Entity"].valid()) {
+    lua.new_usertype<Scene::Entity>(
+        "Entity", sol::no_constructor, "getId", &Scene::Entity::GetId,
+        "getName", &Scene::Entity::GetName, "setName",
+        &Scene::Entity::SetName, "getTransform",
+        [](Scene::Entity &e) {
+          return e.GetComponent<Scene::TransformComponent>();
+        },
+        "getMeshRenderer",
+        [](Scene::Entity &e) {
+          return e.GetComponent<Scene::MeshRendererComponent>();
+        },
+        "getLight",
+        [](Scene::Entity &e) { return e.GetComponent<Scene::LightComponent>(); },
+        "getCamera",
+        [](Scene::Entity &e) { return e.GetComponent<Scene::CameraComponent>(); },
+        "getRigidbody",
+        [](Scene::Entity &e) {
+          return e.GetComponent<Scene::RigidbodyComponent>();
+        },
+        "getCollider",
+        [](Scene::Entity &e) {
+          return e.GetComponent<Scene::ColliderComponent>();
+        },
+        "getAudioSource",
+        [](Scene::Entity &e) {
+          return e.GetComponent<Scene::AudioSourceComponent>();
+        });
+  }
 
   // Aetherion entity access functions
-  if (scene) {
-    lua["aetherion"]["getEntity"] = [scene](uint64_t id) -> Scene::Entity * {
-      auto entity = scene->GetEntityById(static_cast<Core::EntityId>(id));
-      return entity.get();
-    };
-
-    lua["aetherion"]["findEntity"] =
-        [scene](const std::string &name) -> Scene::Entity * {
-      for (const auto &e : scene->GetEntities()) {
-        if (e && e->GetName() == name) {
-          return e.get();
-        }
-      }
+  lua["aetherion"]["getEntity"] = [scene](uint64_t id) -> Scene::Entity * {
+    if (!scene) {
       return nullptr;
-    };
-  }
+    }
+
+    auto entity = scene->GetEntityById(static_cast<Core::EntityId>(id));
+    return entity.get();
+  };
+
+  lua["aetherion"]["findEntity"] =
+      [scene](const std::string &name) -> Scene::Entity * {
+    if (!scene) {
+      return nullptr;
+    }
+
+    for (const auto &e : scene->GetEntities()) {
+      if (e && e->GetName() == name) {
+        return e.get();
+      }
+    }
+    return nullptr;
+  };
 #else
   (void)lua;
   (void)scene;
@@ -261,13 +269,14 @@ void LuaBindings::RegisterEntity(sol::state &lua, Scene::Scene *scene) {
 
 void LuaBindings::RegisterSceneQueries(sol::state &lua, Scene::Scene *scene) {
 #ifdef AETHERION_ENABLE_LUA
-  if (!scene)
-    return;
-
   lua["aetherion"]["scene"] = lua.create_table();
 
   lua["aetherion"]["scene"]["getAllEntities"] = [scene]() {
     std::vector<Scene::Entity *> result;
+    if (!scene) {
+      return result;
+    }
+
     for (const auto &e : scene->GetEntities()) {
       if (e)
         result.push_back(e.get());
@@ -276,10 +285,15 @@ void LuaBindings::RegisterSceneQueries(sol::state &lua, Scene::Scene *scene) {
   };
 
   lua["aetherion"]["scene"]["getEntityCount"] = [scene]() {
+    if (!scene) {
+      return size_t{0};
+    }
     return scene->GetEntities().size();
   };
 
-  lua["aetherion"]["scene"]["getName"] = [scene]() { return scene->GetName(); };
+  lua["aetherion"]["scene"]["getName"] = [scene]() {
+    return scene ? scene->GetName() : std::string{};
+  };
 #else
   (void)lua;
   (void)scene;

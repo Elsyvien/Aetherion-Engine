@@ -107,6 +107,14 @@ bool LuaScriptInstance::LoadScript() {
 
 void LuaScriptInstance::SetEntity(Scene::Entity *entity) {
   m_entity = entity;
+#ifdef AETHERION_ENABLE_LUA
+  if (!m_entity && m_valid && m_luaState) {
+    m_scriptData->scriptTable["entity_id"] = sol::lua_nil;
+    m_scriptData->scriptTable["entity_name"] = sol::lua_nil;
+    m_scriptData->scriptTable["position"] = sol::lua_nil;
+    return;
+  }
+#endif
   BindEntityToLua();
 }
 

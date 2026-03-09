@@ -2130,11 +2130,8 @@ void EditorInspectorPanel::RebuildUi() {
         "QPushButton:pressed { background-color: #e3572f; }");
     form->addRow(applyBtn);
 
-    auto updateScriptEditorState = [scriptComp, scriptAssetEdit, codeEditor]() {
-      const bool fileBacked =
-          scriptComp->GetSourceMode() ==
-              Scene::ScriptComponent::SourceMode::FileReference ||
-          !scriptAssetEdit->text().trimmed().isEmpty();
+    auto updateScriptEditorState = [scriptAssetEdit, codeEditor]() {
+      const bool fileBacked = !scriptAssetEdit->text().trimmed().isEmpty();
       codeEditor->setEnabled(!fileBacked);
       if (fileBacked) {
         codeEditor->setPlaceholderText(
