@@ -2163,15 +2163,31 @@ void EditorMainWindow::ApplySettings(const EditorSettings &settings,
 
 void EditorMainWindow::ApplyRuntimeAISettings() {
   auto ctx = m_runtimeApp ? m_runtimeApp->GetContext() : nullptr;
-  if (!ctx) {
+  if (!ctx && !m_copilotProcessor) {
     return;
   }
 
   Assets::LLMConfig config;
   if (BuildAIConfig(m_settings.llm, config)) {
-    ctx->SetAIConfig(std::move(config), true);
+    if (ctx) {
+      ctx->SetAIConfig(config, true);
+    }
+    if (m_copilotProcessor) {
+      CopilotLLMConfig copilotConfig;
+      copilotConfig.endpoint = config.endpoint;
+      copilotConfig.model = config.model;
+      copilotConfig.apiKey = config.apiKey;
+      copilotConfig.enabled = true;
+      m_copilotProcessor->ConfigureLLM(copilotConfig);
+      m_copilotProcessor->SetLLMEnabled(true);
+    }
   } else {
-    ctx->ClearAIConfig();
+    if (ctx) {
+      ctx->ClearAIConfig();
+    }
+    if (m_copilotProcessor) {
+      m_copilotProcessor->SetLLMEnabled(false);
+    }
   }
 }
 

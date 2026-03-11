@@ -31,6 +31,7 @@ struct Message {
 struct AgentConfig {
   std::string model{"gpt-oss:20b"}; // Common local Ollama default
   std::string endpoint{"http://127.0.0.1:11434/api/generate"};
+  std::string apiKey;
   float temperature{0.7f};
   int maxTokens{2048};
   int contextWindow{4096};

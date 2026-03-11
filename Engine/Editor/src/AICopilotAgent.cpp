@@ -197,6 +197,11 @@ std::string AICopilotAgent::CallLLM(const std::string &prompt) {
   // Use Qt's QNetworkAccessManager for HTTP request
   QNetworkRequest httpRequest(QUrl(QString::fromStdString(requestUrl)));
   httpRequest.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+  if (!m_config.apiKey.empty()) {
+    httpRequest.setRawHeader(
+        QByteArrayLiteral("Authorization"),
+        QByteArray::fromStdString("Bearer " + m_config.apiKey));
+  }
 
   qDebug() << "[AICopilot] Sending request to:"
            << QString::fromStdString(requestUrl);

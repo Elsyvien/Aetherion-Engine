@@ -340,6 +340,7 @@ void AICopilotProcessor::InitializeAgent() {
     AgentConfig config;
     config.endpoint = m_llmConfig.endpoint;
     config.model = m_llmConfig.model;
+    config.apiKey = m_llmConfig.apiKey;
     config.temperature = m_llmConfig.temperature;
     config.maxTokens = m_llmConfig.maxTokens;
     m_agent->Configure(config);
@@ -351,6 +352,7 @@ void AICopilotProcessor::ConfigureLLM(const CopilotLLMConfig& config) {
         AgentConfig agentConfig;
         agentConfig.endpoint = config.endpoint;
         agentConfig.model = config.model;
+        agentConfig.apiKey = config.apiKey;
         agentConfig.temperature = config.temperature;
         agentConfig.maxTokens = config.maxTokens;
         m_agent->Configure(agentConfig);
