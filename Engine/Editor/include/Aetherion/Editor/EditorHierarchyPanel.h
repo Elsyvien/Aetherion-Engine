@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QString>
 #include <QWidget>
+#include <memory>
 
 #include "Aetherion/Core/Types.h"
 

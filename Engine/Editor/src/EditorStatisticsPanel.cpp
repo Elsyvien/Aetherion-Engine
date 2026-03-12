@@ -1,4 +1,5 @@
 #include "Aetherion/Editor/EditorStatisticsPanel.h"
+#include "Aetherion/Editor/EditorTheme.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -259,6 +260,36 @@ QString FormatLightTypes(int directional, int point, int spot) {
       .arg(spot);
 }
 
+QString BudgetStatusColor(float ratio) {
+  if (ratio > 1.3f) {
+    return EditorTheme::Hex(EditorTheme::Semantic::Error);
+  }
+  if (ratio > 1.0f) {
+    return EditorTheme::Hex(EditorTheme::Semantic::Warning);
+  }
+  return EditorTheme::Hex(EditorTheme::Semantic::Success);
+}
+
+QString StabilityStatusColor(int stabilityPercent) {
+  if (stabilityPercent < 60) {
+    return EditorTheme::Hex(EditorTheme::Semantic::Error);
+  }
+  if (stabilityPercent < 80) {
+    return EditorTheme::Hex(EditorTheme::Semantic::Warning);
+  }
+  return EditorTheme::Hex(EditorTheme::Semantic::Success);
+}
+
+QString ComplexityStatusColor(float complexityScore) {
+  if (complexityScore >= 70.0f) {
+    return EditorTheme::Hex(EditorTheme::Semantic::Error);
+  }
+  if (complexityScore >= 20.0f) {
+    return EditorTheme::Hex(EditorTheme::Semantic::Warning);
+  }
+  return EditorTheme::Hex(EditorTheme::Semantic::Success);
+}
+
 QString FormatRigidbodyCounts(int total, int statics, int kinematics,
                               int dynamics) {
   return QString("%1 (S %2 / K %3 / D %4)")
@@ -427,12 +458,7 @@ void EditorStatisticsPanel::RefreshStats() {
                              .arg(budgetPercent)
                              .arg(m_targetFrameTimeMs, 0, 'f', 1));
 
-  QString budgetColor = "#3ccf91";
-  if (budgetRatio > 1.3f) {
-    budgetColor = "#f65b5b";
-  } else if (budgetRatio > 1.0f) {
-    budgetColor = "#f2b84b";
-  }
+  const QString budgetColor = BudgetStatusColor(budgetRatio);
   m_budgetBar->setStyleSheet(
       QString("QProgressBar::chunk { background-color: %1; }")
           .arg(budgetColor));
@@ -446,12 +472,7 @@ void EditorStatisticsPanel::RefreshStats() {
   m_stabilityBar->setValue(stabilityPercent);
   m_stabilityBar->setFormat(QString("%1% stable").arg(stabilityPercent));
 
-  QString stabilityColor = "#3ccf91";
-  if (stabilityPercent < 60) {
-    stabilityColor = "#f65b5b";
-  } else if (stabilityPercent < 80) {
-    stabilityColor = "#f2b84b";
-  }
+  const QString stabilityColor = StabilityStatusColor(stabilityPercent);
   m_stabilityBar->setStyleSheet(
       QString("QProgressBar::chunk { background-color: %1; }")
           .arg(stabilityColor));
@@ -717,16 +738,13 @@ void EditorStatisticsPanel::RefreshStats() {
       0.0f, 100.0f);
 
   QString complexityRating = tr("Low");
-  QString complexityColor = "#3ccf91";
+  QString complexityColor = ComplexityStatusColor(complexityScore);
   if (complexityScore >= 70.0f) {
     complexityRating = tr("Extreme");
-    complexityColor = "#f65b5b";
   } else if (complexityScore >= 40.0f) {
     complexityRating = tr("High");
-    complexityColor = "#f28b4b";
   } else if (complexityScore >= 20.0f) {
     complexityRating = tr("Moderate");
-    complexityColor = "#f2b84b";
   }
 
   m_complexityBar->setValue(static_cast<int>(complexityScore));

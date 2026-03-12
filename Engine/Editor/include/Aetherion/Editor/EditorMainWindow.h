@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <array>
 #include <deque>
+#include <vector>
 
 #include <QByteArray>
 #include <QElapsedTimer>

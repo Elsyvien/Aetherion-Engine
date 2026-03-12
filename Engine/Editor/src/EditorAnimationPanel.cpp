@@ -1,4 +1,5 @@
 #include "Aetherion/Editor/EditorAnimationPanel.h"
+#include "Aetherion/Editor/EditorTheme.h"
 #include "Aetherion/Scene/Entity.h"
 #include "Aetherion/Scene/AnimatorComponent.h"
 #include "Aetherion/Assets/Animation.h"
@@ -43,7 +44,7 @@ void EditorAnimationPanel::SetupUI()
     auto* infoLayout = new QGridLayout(infoGroup);
     
     m_entityLabel = new QLabel(tr("No entity selected"), this);
-    m_entityLabel->setStyleSheet("font-weight: bold;");
+    m_entityLabel->setObjectName("panelHeading");
     infoLayout->addWidget(new QLabel(tr("Entity:"), this), 0, 0);
     infoLayout->addWidget(m_entityLabel, 0, 1);
 
