@@ -1,4 +1,5 @@
 #include "Aetherion/Editor/EditorInspectorPanel.h"
+#include "Aetherion/Editor/EditorTheme.h"
 
 #include <QAction>
 #include <QCheckBox>
@@ -58,12 +59,7 @@ public:
     auto *headerBtn = new QPushButton(title, this);
     headerBtn->setCheckable(true);
     headerBtn->setChecked(true);
-    headerBtn->setStyleSheet(
-        "QPushButton { text-align: left; font-weight: 600; padding: 6px 8px; "
-        "background-color: #1b2230; border: 1px solid #2a3140; "
-        "border-radius: 4px; color: #e6e3dc; }"
-        "QPushButton:checked { background-color: #2a3344; "
-        "border-color: #3a465b; }");
+    headerBtn->setStyleSheet(EditorTheme::ComponentToggleStyleSheet());
 
     layout->addWidget(headerBtn);
     layout->addWidget(m_content);
@@ -656,9 +652,7 @@ void EditorInspectorPanel::RebuildUi() {
     auto *headerContainer = new QWidget();
     auto *headerLayout = new QHBoxLayout(headerContainer);
     headerLayout->setContentsMargins(5, 5, 5, 5);
-    headerContainer->setStyleSheet(
-        "background-color: #1b2230; border: 1px solid #2a3140; "
-        "border-radius: 6px;");
+    headerContainer->setStyleSheet(EditorTheme::ComponentHeaderFrameStyleSheet());
 
     auto *toggleBtn = new QToolButton(headerContainer);
     toggleBtn->setArrowType(Qt::DownArrow);
@@ -667,15 +661,12 @@ void EditorInspectorPanel::RebuildUi() {
     toggleBtn->setChecked(true);
 
     auto *label = new QLabel(title, headerContainer);
-    label->setStyleSheet("font-weight: bold;");
+    label->setObjectName("panelHeading");
 
     auto *removeBtn = new QPushButton("X", headerContainer);
     removeBtn->setFixedSize(20, 20);
-    removeBtn->setStyleSheet(
-        "QPushButton { border-radius: 10px; color: #aeb6c2; "
-        "background-color: #1b2230; border: 1px solid #2a3140; }"
-        "QPushButton:hover { background-color: #f65b5b; color: #141824; "
-        "border-color: #f65b5b; }");
+    removeBtn->setObjectName("dangerButton");
+    removeBtn->setStyleSheet(EditorTheme::DangerButtonStyleSheet());
     removeBtn->setToolTip(tr("Remove Component"));
 
     headerLayout->addWidget(toggleBtn);
@@ -1119,7 +1110,7 @@ void EditorInspectorPanel::RebuildUi() {
 
     auto *hintLabel = new QLabel(
         tr("Direction uses Transform rotation (X=Pitch, Y=Yaw)."), m_content);
-    hintLabel->setStyleSheet("color: #aeb6c2;");
+    hintLabel->setObjectName("secondaryText");
     form->addRow(hintLabel);
 
     m_lightEnabled = new QCheckBox(m_content);
@@ -2112,22 +2103,15 @@ void EditorInspectorPanel::RebuildUi() {
     codeEditor->setPlainText(QString::fromStdString(scriptCodeValue));
     codeEditor->setMinimumHeight(200);
     codeEditor->setFont(QFont("Consolas", 10));
-    codeEditor->setStyleSheet(
-        "QTextEdit { background-color: #0f131b; color: #f4f3ef; "
-        "border: 1px solid #2a3140; border-radius: 6px; "
-        "font-family: Consolas, 'Courier New', monospace; }");
+    codeEditor->setStyleSheet(EditorTheme::CodeEditorStyleSheet());
     codeEditor->setTabStopDistance(QFontMetricsF(codeEditor->font()).horizontalAdvance(' ') * 4);
     codeEditor->setLineWrapMode(QTextEdit::NoWrap);
     form->addRow(codeEditor);
 
     // Apply button
     auto *applyBtn = new QPushButton(tr("Apply Script"), formHost);
-    applyBtn->setStyleSheet(
-        "QPushButton { background-color: #ff6b3d; color: #141824; "
-        "border-radius: 6px; padding: 6px 12px; font-weight: 600; "
-        "border: 1px solid #ff8b66; }"
-        "QPushButton:hover { background-color: #ff7b52; }"
-        "QPushButton:pressed { background-color: #e3572f; }");
+    applyBtn->setObjectName("accentButton");
+    applyBtn->setStyleSheet(EditorTheme::AccentButtonStyleSheet());
     form->addRow(applyBtn);
 
     auto updateScriptEditorState = [scriptAssetEdit, codeEditor]() {

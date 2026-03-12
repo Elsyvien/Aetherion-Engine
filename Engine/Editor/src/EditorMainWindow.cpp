@@ -23,9 +23,8 @@
 #include <QFileDialog>
 #include <QFileSystemWatcher>
 #include <QFormLayout>
-#include <QFont>
-#include <QFontInfo>
 #include <QGraphicsDropShadowEffect>
+#include <QIcon>
 #include <QInputDialog>
 #include <QEasingCurve>
 #include <QKeyEvent>
@@ -41,7 +40,9 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QStyle>
 #include <QSysInfo>
+#include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
@@ -49,7 +50,6 @@
 #include <QVariantAnimation>
 #include <QVBoxLayout>
 #include <QSet>
-#include <QStyleFactory>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -73,6 +73,7 @@
 #include "Aetherion/Editor/EditorMeshPreview.h"
 #include "Aetherion/Editor/EditorSelection.h"
 #include "Aetherion/Editor/EditorSettingsDialog.h"
+#include "Aetherion/Editor/EditorTheme.h"
 #include "Aetherion/Editor/EditorViewport.h"
 #include "Aetherion/Editor/TabPanelManager.h"
 #include "Aetherion/Rendering/RenderView.h"
@@ -95,185 +96,11 @@
 
 namespace Aetherion::Editor {
 namespace {
-QString BuildEditorTheme() {
-  return QStringLiteral(R"(
-    QMainWindow, QDialog, QWidget {
-      background-color: #131722;
-      color: #e6e3dc;
-    }
-    QLabel {
-      color: #e6e3dc;
-    }
-    QMenuBar {
-      background-color: #121621;
-      color: #d6d2c7;
-      border-bottom: 1px solid #242c3a;
-    }
-    QMenuBar::item:selected {
-      background-color: #1f2836;
-      color: #f4f3ef;
-    }
-    QMenu {
-      background-color: #141924;
-      color: #e6e3dc;
-      border: 1px solid #2a3140;
-    }
-    QMenu::item:selected {
-      background-color: #ff6b3d;
-      color: #141824;
-    }
-    QToolBar {
-      background-color: #121621;
-      border-bottom: 1px solid #242c3a;
-      spacing: 6px;
-    }
-    QToolButton {
-      background-color: #1b2230;
-      color: #e6e3dc;
-      border: 1px solid #2a3140;
-      border-radius: 6px;
-      padding: 4px 10px;
-    }
-    QToolButton:hover {
-      background-color: #263042;
-      border-color: #ff6b3d;
-    }
-    QToolButton:checked {
-      background-color: #ff6b3d;
-      color: #141824;
-      border-color: #ff8b66;
-    }
-    QStatusBar {
-      background-color: #121621;
-      color: #aeb6c2;
-      border-top: 1px solid #242c3a;
-    }
-    QStatusBar::item {
-      border: none;
-    }
-    QDockWidget::title {
-      background-color: #1b2230;
-      padding: 6px 8px;
-      border-bottom: 1px solid #2a3140;
-    }
-    QGroupBox {
-      border: 1px solid #262d3a;
-      border-radius: 6px;
-      margin-top: 10px;
-      padding-top: 8px;
-    }
-    QGroupBox::title {
-      subcontrol-origin: margin;
-      subcontrol-position: top left;
-      padding: 0 6px;
-      color: #aeb6c2;
-    }
-    QLineEdit, QTextEdit, QPlainTextEdit {
-      background-color: #0f131b;
-      border: 1px solid #2a3140;
-      border-radius: 6px;
-      color: #f4f3ef;
-      padding: 6px;
-    }
-    QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
-      border-color: #ff6b3d;
-    }
-    QComboBox {
-      background-color: #0f131b;
-      border: 1px solid #2a3140;
-      border-radius: 6px;
-      padding: 4px 8px;
-      color: #f4f3ef;
-    }
-    QComboBox::drop-down {
-      subcontrol-origin: padding;
-      subcontrol-position: top right;
-      width: 20px;
-      border-left: 1px solid #2a3140;
-    }
-    QComboBox QAbstractItemView {
-      background-color: #141924;
-      border: 1px solid #2a3140;
-      selection-background-color: #ff6b3d;
-      color: #f4f3ef;
-    }
-    QPushButton {
-      background-color: #1b2230;
-      color: #e6e3dc;
-      border: 1px solid #2a3140;
-      border-radius: 6px;
-      padding: 6px 12px;
-    }
-    QPushButton:hover {
-      background-color: #263042;
-      border-color: #ff6b3d;
-    }
-    QPushButton:pressed {
-      background-color: #121825;
-    }
-    QPushButton:disabled {
-      color: #7d8592;
-      background-color: #1a1f2c;
-      border-color: #2a3140;
-    }
-    QTreeWidget, QListWidget, QTableWidget {
-      background-color: #0f131b;
-      border: 1px solid #2a3140;
-      color: #e6e3dc;
-    }
-    QTreeWidget::item:selected, QListWidget::item:selected, QTableWidget::item:selected {
-      background-color: #2a3344;
-      color: #f4f3ef;
-    }
-    QHeaderView::section {
-      background-color: #1b2230;
-      color: #aeb6c2;
-      border: 1px solid #2a3140;
-      padding: 4px;
-    }
-    QScrollBar:vertical {
-      background-color: #131722;
-      width: 10px;
-      margin: 0px;
-    }
-    QScrollBar::handle:vertical {
-      background-color: #2a3344;
-      min-height: 20px;
-      border-radius: 5px;
-      margin: 2px;
-    }
-    QScrollBar::handle:vertical:hover {
-      background-color: #364158;
-    }
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-      height: 0px;
-    }
-    QProgressBar {
-      background-color: #0f131b;
-      border: 1px solid #2a3140;
-      border-radius: 6px;
-      text-align: center;
-      color: #f4f3ef;
-    }
-    QProgressBar::chunk {
-      background-color: #3ccf91;
-      border-radius: 6px;
-    }
-  )");
+void ApplyEditorTheme() {
+  EditorTheme::ApplyApplicationTheme();
 }
 
-void ApplyEditorTheme() {
-  QApplication::setStyle(QStyleFactory::create("Fusion"));
-  QFont appFont("Bahnschrift", 9);
-  if (!QFontInfo(appFont).exactMatch()) {
-    appFont = QApplication::font();
-    appFont.setPointSize(9);
-  }
-  QApplication::setFont(appFont);
-  if (qApp) {
-    qApp->setStyleSheet(BuildEditorTheme());
-  }
-}
+constexpr int kLayoutSchemaVersion = 3;
 
 class SubtleUiMotionFilter final : public QObject {
 public:
@@ -371,7 +198,9 @@ private:
       effect->setObjectName("AetherionGlowEffect");
       effect->setOffset(0, 0);
       effect->setBlurRadius(0.0);
-      effect->setColor(QColor(255, 107, 61, 0));
+      QColor baseColor = EditorTheme::Color(EditorTheme::Semantic::AccentHover);
+      baseColor.setAlpha(0);
+      effect->setColor(baseColor);
       widget->setGraphicsEffect(effect);
     } else if (effect->objectName() != "AetherionGlowEffect") {
       return;
@@ -400,7 +229,8 @@ private:
     anim->setDuration(enable ? config.durationIn : config.durationOut);
     anim->setEasingCurve(QEasingCurve::OutCubic);
 
-    const QColor baseColor(255, 107, 61);
+    const QColor baseColor =
+        EditorTheme::Color(EditorTheme::Semantic::AccentHover);
     connect(anim, &QVariantAnimation::valueChanged, widget,
             [effect, startBlur, endBlur, startAlpha, endAlpha,
              baseColor](const QVariant &value) {
@@ -432,6 +262,7 @@ public:
     layout->setSpacing(8);
 
     auto *title = new QLabel(tr("Quick Info"), this);
+    title->setObjectName("panelHeading");
     QFont titleFont = title->font();
     titleFont.setBold(true);
     title->setFont(titleFont);
@@ -467,7 +298,7 @@ public:
                                 "camera · Ctrl+F focus asset filter"),
                              this);
     hints->setWordWrap(true);
-    hints->setStyleSheet("color: gray; font-style: italic;");
+    hints->setObjectName("hintText");
     layout->addWidget(hints);
 
     layout->addStretch(1);
@@ -2001,12 +1832,25 @@ void EditorMainWindow::CreateToolBarContent() {
   toolBar->setObjectName("MainToolBar");
   toolBar->setMovable(false);
   toolBar->setAllowedAreas(Qt::TopToolBarArea);
+  toolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
   addToolBar(Qt::TopToolBarArea, toolBar);
+
+  auto makeSectionLabel = [toolBar](const QString &text) {
+    auto *label = new QLabel(text, toolBar);
+    label->setObjectName("toolbarSectionLabel");
+    return label;
+  };
+
+  toolBar->addWidget(makeSectionLabel(tr("Simulation")));
 
   m_playAction = toolBar->addAction(tr("Play"));
   m_pauseAction = toolBar->addAction(tr("Pause"));
   m_stepAction = toolBar->addAction(tr("Step"));
   m_resetAction = toolBar->addAction(tr("Reset"));
+  m_playAction->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+  m_pauseAction->setIcon(style()->standardIcon(QStyle::SP_MediaPause));
+  m_stepAction->setIcon(style()->standardIcon(QStyle::SP_MediaSkipForward));
+  m_resetAction->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
 
   m_playAction->setCheckable(true);
   m_pauseAction->setCheckable(true);
@@ -2029,6 +1873,7 @@ void EditorMainWindow::CreateToolBarContent() {
                         tr("Reset the play session"));
 
   toolBar->addSeparator();
+  toolBar->addWidget(makeSectionLabel(tr("Workspace")));
 
   m_modeActionGroup = new QActionGroup(toolBar);
   m_modeActionGroup->setExclusive(true);
@@ -2060,6 +1905,7 @@ void EditorMainWindow::CreateToolBarContent() {
                         tr("Switch to UI layout mode"));
 
   toolBar->addSeparator();
+  toolBar->addWidget(makeSectionLabel(tr("Transform")));
 
   m_gizmoActionGroup = new QActionGroup(toolBar);
   m_gizmoActionGroup->setExclusive(true);
@@ -3766,6 +3612,23 @@ void EditorMainWindow::LoadLayout() {
     }
   }
 
+  const int storedLayoutVersion =
+      settings.value("layout/schemaVersion", 0).toInt();
+  if (storedLayoutVersion != kLayoutSchemaVersion) {
+    settings.setValue("layout/schemaVersion", kLayoutSchemaVersion);
+    if (!m_defaultLayoutGeometry.isEmpty()) {
+      restoreGeometry(m_defaultLayoutGeometry);
+    }
+    if (!m_defaultLayoutState.isEmpty()) {
+      restoreState(m_defaultLayoutState);
+    }
+    if (m_panelManager) {
+      m_panelManager->ApplyDefaultPanelState();
+    }
+    SaveLayout();
+    return;
+  }
+
   const QByteArray geometry =
       settings.value("layout/mainWindowGeometry").toByteArray();
   if (!geometry.isEmpty()) {
@@ -3794,6 +3657,7 @@ void EditorMainWindow::LoadLayout() {
 
 void EditorMainWindow::SaveLayout() const {
   QSettings settings("Aetherion", "Editor");
+  settings.setValue("layout/schemaVersion", kLayoutSchemaVersion);
   settings.setValue("layout/mainWindow", saveState());
   settings.setValue("layout/mainWindowGeometry", saveGeometry());
   if (m_panelManager) {
@@ -3989,8 +3853,8 @@ void EditorMainWindow::CreateTabPanels() {
   // Left panel tabs
   m_assetBrowser = new EditorAssetBrowser(m_panelManager);
   m_hierarchyPanel = new EditorHierarchyPanel(m_panelManager);
-  m_panelManager->AddToLeftPanel(m_assetBrowser, tr("Assets"));
   m_panelManager->AddToLeftPanel(m_hierarchyPanel, tr("Hierarchy"));
+  m_panelManager->AddToLeftPanel(m_assetBrowser, tr("Assets"));
 
   // Bookmarks tab (right side)
   auto *bookmarkContainer = new QWidget(m_panelManager);
@@ -4064,9 +3928,6 @@ void EditorMainWindow::CreateTabPanels() {
   m_panelManager->AddToRightPanel(m_inspectorPanel, tr("Inspector"));
   m_panelManager->AddToRightPanel(m_meshPreview, tr("Mesh Preview"));
   m_panelManager->AddToRightPanel(m_cameraPreview, tr("Camera Preview"));
-  m_panelManager->AddToRightPanel(m_copilotPanel, tr("AI Copilot"));
-  m_panelManager->AddToRightPanel(m_logicCopilotPanel, tr("Logic Copilot"));
-  m_panelManager->AddToRightPanel(m_assetGenPanel, tr("Asset Generation"));
   m_panelManager->AddToRightPanel(bookmarkContainer, tr("Bookmarks"));
   m_panelManager->AddToRightPanel(m_auxPanel, tr("Quick Info"));
 
@@ -4074,6 +3935,46 @@ void EditorMainWindow::CreateTabPanels() {
   m_console = new EditorConsole(m_panelManager);
   m_panelManager->AddToBottomPanel(m_console, tr("Console"));
   m_panelManager->AddToBottomPanel(m_statsPanel, tr("Statistics"));
+  m_panelManager->AddToBottomPanel(m_copilotPanel, tr("AI Copilot"));
+  m_panelManager->AddToBottomPanel(m_logicCopilotPanel, tr("Logic Copilot"));
+  m_panelManager->AddToBottomPanel(m_assetGenPanel, tr("Asset Generation"));
+
+  auto assignTabIcon = [](QTabWidget *tabs, QWidget *widget, const QIcon &icon) {
+    if (!tabs || !widget || icon.isNull()) {
+      return;
+    }
+    const int index = tabs->indexOf(widget);
+    if (index >= 0) {
+      tabs->setTabIcon(index, icon);
+    }
+  };
+
+  assignTabIcon(m_panelManager->GetLeftPanel(), m_hierarchyPanel,
+                QIcon(":/aetherion/icons/entity.svg"));
+  assignTabIcon(m_panelManager->GetLeftPanel(), m_assetBrowser,
+                QIcon(":/aetherion/icons/folder.svg"));
+  assignTabIcon(m_panelManager->GetRightPanel(), m_inspectorPanel,
+                QIcon(":/aetherion/icons/transform.svg"));
+  assignTabIcon(m_panelManager->GetRightPanel(), m_meshPreview,
+                QIcon(":/aetherion/icons/mesh.svg"));
+  assignTabIcon(m_panelManager->GetRightPanel(), m_cameraPreview,
+                QIcon(":/aetherion/icons/camera.svg"));
+  assignTabIcon(m_panelManager->GetRightPanel(), bookmarkContainer,
+                QIcon(":/aetherion/icons/bookmark.svg"));
+  assignTabIcon(m_panelManager->GetRightPanel(), m_auxPanel,
+                style()->standardIcon(QStyle::SP_MessageBoxInformation));
+  assignTabIcon(m_panelManager->GetBottomPanel(), m_console,
+                QIcon(":/aetherion/icons/console.svg"));
+  assignTabIcon(m_panelManager->GetBottomPanel(), m_statsPanel,
+                QIcon(":/aetherion/icons/chart.svg"));
+  assignTabIcon(m_panelManager->GetBottomPanel(), m_copilotPanel,
+                QIcon(":/aetherion/icons/spark.svg"));
+  assignTabIcon(m_panelManager->GetBottomPanel(), m_logicCopilotPanel,
+                QIcon(":/aetherion/icons/spark.svg"));
+  assignTabIcon(m_panelManager->GetBottomPanel(), m_assetGenPanel,
+                QIcon(":/aetherion/icons/spark.svg"));
+
+  m_panelManager->ApplyDefaultPanelState();
 
   connect(m_addBookmarkBtn, &QPushButton::clicked, this,
           &EditorMainWindow::AddBookmarkFromCamera);
@@ -4124,10 +4025,16 @@ void EditorMainWindow::CreateTabPanels() {
 }
 
 void EditorMainWindow::ConfigureStatusBar() {
-  statusBar()->showMessage(tr("Aetherion scaffolding - runtime disconnected"));
+  statusBar()->showMessage(tr("Editor workspace ready"));
+  if (!m_modeStatusLabel) {
+    m_modeStatusLabel = new QLabel(tr("Mode: Edit"), this);
+    m_modeStatusLabel->setObjectName("statusTag");
+    statusBar()->addPermanentWidget(m_modeStatusLabel);
+  }
   if (!m_fpsLabel) {
     m_fpsLabel = new QLabel(tr("FPS: --"), this);
     m_fpsLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_fpsLabel->setObjectName("statusTag");
     statusBar()->addPermanentWidget(m_fpsLabel);
   }
 }
@@ -4373,6 +4280,9 @@ void EditorMainWindow::ActivateModeTab(int index) {
   const QString label = (index == 0)   ? tr("Edit")
                         : (index == 1) ? tr("Playtest")
                                        : tr("UI Layout");
+  if (m_modeStatusLabel) {
+    m_modeStatusLabel->setText(tr("Mode: %1").arg(label));
+  }
   QString detail;
   if (label == tr("Edit")) {
     detail = tr("Edit workspace (placeholder) ready for scene tools");

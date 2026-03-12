@@ -1,4 +1,5 @@
 #include "Aetherion/Editor/EditorAssetGenerationPanel.h"
+#include "Aetherion/Editor/EditorTheme.h"
 
 #include <QComboBox>
 #include <QFormLayout>
@@ -215,31 +216,22 @@ void EditorAssetGenerationPanel::setupUI() {
     
     m_generateBtn = new QPushButton(tr("Generate"), m_centralWidget);
     m_generateBtn->setMinimumHeight(32);
-    m_generateBtn->setStyleSheet(
-        "QPushButton { background-color: #ff6b3d; color: #141824; font-weight: 600; "
-        "padding: 6px 12px; border: 1px solid #ff8b66; border-radius: 6px; }"
-        "QPushButton:hover { background-color: #ff7b52; }"
-        "QPushButton:pressed { background-color: #e3572f; }"
-        "QPushButton:disabled { background-color: #2a3140; color: #7d8592; "
-        "border-color: #2a3140; }");
+    m_generateBtn->setObjectName("accentButton");
+    m_generateBtn->setStyleSheet(EditorTheme::AccentButtonStyleSheet());
     connect(m_generateBtn, &QPushButton::clicked, this,
             &EditorAssetGenerationPanel::startGeneration);
     
     m_cancelBtn = new QPushButton(tr("Cancel"), m_centralWidget);
     m_cancelBtn->setMinimumHeight(32);
     m_cancelBtn->setEnabled(false);
-    m_cancelBtn->setStyleSheet(
-        "QPushButton { padding: 6px 12px; border-radius: 6px; }"
-        "QPushButton:disabled { color: #7d8592; }");
+    m_cancelBtn->setStyleSheet(EditorTheme::NeutralButtonStyleSheet());
     connect(m_cancelBtn, &QPushButton::clicked, this,
             &EditorAssetGenerationPanel::cancelSelected);
     
     m_retryBtn = new QPushButton(tr("Retry"), m_centralWidget);
     m_retryBtn->setMinimumHeight(32);
     m_retryBtn->setEnabled(false);
-    m_retryBtn->setStyleSheet(
-        "QPushButton { padding: 6px 12px; border-radius: 6px; }"
-        "QPushButton:disabled { color: #7d8592; }");
+    m_retryBtn->setStyleSheet(EditorTheme::NeutralButtonStyleSheet());
     connect(m_retryBtn, &QPushButton::clicked, this,
             &EditorAssetGenerationPanel::retrySelected);
     
@@ -262,7 +254,7 @@ void EditorAssetGenerationPanel::setupUI() {
     progressLayout->addWidget(m_progressBar);
     
     m_statusLabel = new QLabel(tr("Ready"), progressGroup);
-    m_statusLabel->setStyleSheet("color: #aeb6c2;");
+    m_statusLabel->setStyleSheet(EditorTheme::SecondaryTextStyle());
     progressLayout->addWidget(m_statusLabel);
     
     m_mainLayout->addWidget(progressGroup);
@@ -301,7 +293,7 @@ void EditorAssetGenerationPanel::setupUI() {
     m_detailsLabel = new QLabel(tr("Select a generation from history to see details."),
                                detailsGroup);
     m_detailsLabel->setWordWrap(true);
-    m_detailsLabel->setStyleSheet("color: #aeb6c2;");
+    m_detailsLabel->setStyleSheet(EditorTheme::SecondaryTextStyle());
     detailsLayout->addWidget(m_detailsLabel);
     
     m_mainLayout->addWidget(detailsGroup);
@@ -345,7 +337,9 @@ void EditorAssetGenerationPanel::startGeneration() {
     m_currentRequestId = requestId;
     m_progressBar->setValue(0);
     m_statusLabel->setText(tr("Queued: %1").arg(QString::fromStdString(requestId)));
-    m_statusLabel->setStyleSheet("color: #ff6b3d;");
+    m_statusLabel->setStyleSheet(
+        QStringLiteral("color: %1;")
+            .arg(EditorTheme::Hex(EditorTheme::Semantic::Accent)));
     
     // Add to history
     auto *item = new QListWidgetItem(
@@ -390,7 +384,9 @@ void EditorAssetGenerationPanel::cancelSelected() {
             m_historyList->currentItem()->setText(
                 "❌ " + m_historyList->currentItem()->text().mid(2));
             m_statusLabel->setText(tr("Cancelled"));
-            m_statusLabel->setStyleSheet("color: #f2b84b;");
+            m_statusLabel->setStyleSheet(
+                QStringLiteral("color: %1;")
+                    .arg(EditorTheme::Hex(EditorTheme::Semantic::Warning)));
             if (m_assetRegistry) {
                 auto it = m_requestAssetIds.find(requestId.toStdString());
                 if (it != m_requestAssetIds.end()) {
@@ -413,7 +409,9 @@ void EditorAssetGenerationPanel::retrySelected() {
             m_historyList->currentItem()->setText(
                 "🔄 " + m_historyList->currentItem()->text().mid(2));
             m_statusLabel->setText(tr("Retrying..."));
-            m_statusLabel->setStyleSheet("color: #ff6b3d;");
+            m_statusLabel->setStyleSheet(
+                QStringLiteral("color: %1;")
+                    .arg(EditorTheme::Hex(EditorTheme::Semantic::Accent)));
             if (m_assetRegistry) {
                 auto it = m_requestAssetIds.find(requestId.toStdString());
                 if (it != m_requestAssetIds.end()) {
@@ -515,7 +513,9 @@ void EditorAssetGenerationPanel::onProgressUpdate(const QString &requestId,
     if (requestId.toStdString() == m_currentRequestId) {
         m_progressBar->setValue(static_cast<int>(progress * 100));
         m_statusLabel->setText(message);
-        m_statusLabel->setStyleSheet("color: #ff6b3d;");
+        m_statusLabel->setStyleSheet(
+            QStringLiteral("color: %1;")
+                .arg(EditorTheme::Hex(EditorTheme::Semantic::Accent)));
     }
 
     // Update history item
@@ -556,7 +556,10 @@ void EditorAssetGenerationPanel::onGenerationComplete(const QString &requestId,
     if (requestId.toStdString() == m_currentRequestId) {
         m_progressBar->setValue(success ? 100 : 0);
         m_statusLabel->setText(message);
-        m_statusLabel->setStyleSheet(success ? "color: #3ccf91;" : "color: #f65b5b;");
+        m_statusLabel->setStyleSheet(
+            QStringLiteral("color: %1;")
+                .arg(EditorTheme::Hex(success ? EditorTheme::Semantic::Success
+                                              : EditorTheme::Semantic::Error)));
     }
     
     if (success) {

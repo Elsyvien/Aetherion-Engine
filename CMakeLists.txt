@@ -348,6 +348,7 @@ set(EDITOR_SOURCES
     Engine/Editor/src/EditorLogicCopilotPanel.cpp
     Engine/Editor/src/EditorSettings.cpp
     Engine/Editor/src/EditorSettingsDialog.cpp
+    Engine/Editor/src/EditorTheme.cpp
     Engine/Editor/src/TabPanelManager.cpp
     Engine/Editor/resources/AetherionEditor.qrc
 )
@@ -374,6 +375,7 @@ target_sources(AetherionEditor
         Engine/Editor/include/Aetherion/Editor/EditorLogicCopilotPanel.h
         Engine/Editor/include/Aetherion/Editor/EditorSettings.h
         Engine/Editor/include/Aetherion/Editor/EditorSettingsDialog.h
+        Engine/Editor/include/Aetherion/Editor/EditorTheme.h
         Engine/Editor/include/Aetherion/Editor/TabPanelManager.h
 )
 target_include_directories(AetherionEditor

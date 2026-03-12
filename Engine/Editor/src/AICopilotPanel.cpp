@@ -1,4 +1,5 @@
 #include "Aetherion/Editor/AICopilotPanel.h"
+#include "Aetherion/Editor/EditorTheme.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -220,215 +221,7 @@ void AICopilotPanel::SetupAnimations() {
 }
 
 void AICopilotPanel::SetupStyles() {
-    setStyleSheet(R"(
-        /* Main container */
-        AICopilotPanel {
-            background-color: #131722;
-        }
-
-        /* Activity Frame */
-        #activityFrame {
-            background-color: #1b2230;
-            border-bottom: 1px solid #2a3140;
-        }
-
-        #activityIcon {
-            color: #3ccf91;
-            font-size: 12px;
-        }
-
-        #activityLabel {
-            color: #f4f3ef;
-            font-weight: 600;
-            font-size: 12px;
-        }
-
-        #activityDetails {
-            color: #a1a8b3;
-            font-size: 11px;
-        }
-
-        /* Current Tool */
-        #currentToolFrame {
-            background-color: #1f2836;
-            border-radius: 6px;
-            margin: 2px 0px;
-            border: 1px solid #2a3140;
-        }
-
-        #toolNameLabel {
-            color: #ff6b3d;
-            font-weight: 600;
-            font-size: 11px;
-        }
-
-        #toolParamsLabel {
-            color: #c2c7d0;
-            font-size: 10px;
-            font-family: Consolas, monospace;
-        }
-
-        /* Activity Log */
-        #activityLogFrame {
-            background-color: #141924;
-            border-bottom: 1px solid #2a3140;
-        }
-
-        #logHeader {
-            color: #a1a8b3;
-            font-size: 10px;
-        }
-
-        #activityLog {
-            background-color: #0f131b;
-            color: #8c94a0;
-            font-size: 10px;
-            font-family: Consolas, monospace;
-            border: 1px solid #202735;
-            border-radius: 4px;
-        }
-
-        /* Chat Area */
-        #chatFrame {
-            background-color: #131722;
-        }
-
-        #chatHistory {
-            background-color: #131722;
-            border: none;
-            color: #f4f3ef;
-            font-size: 13px;
-            padding: 8px;
-        }
-
-        /* Code Viewer */
-        #codeViewerFrame {
-            background-color: #141924;
-            border-left: 2px solid #ff6b3d;
-        }
-
-        #codeViewerHeader {
-            background-color: #1b2230;
-            border-bottom: 1px solid #2a3140;
-        }
-
-        #codeViewerTitle {
-            color: #ff6b3d;
-            font-weight: 600;
-            font-size: 11px;
-        }
-
-        #codeViewer {
-            background-color: #0f131b;
-            color: #d6d2c7;
-            border: 1px solid #202735;
-            selection-background-color: #2a3344;
-        }
-
-        #copyCodeBtn {
-            background-color: #1f2b21;
-            color: #9fe6c3;
-            border: 1px solid #2b3a2f;
-            border-radius: 4px;
-            padding: 4px 8px;
-            font-size: 10px;
-        }
-
-        #copyCodeBtn:hover {
-            background-color: #283b2c;
-        }
-
-        #closeCodeBtn {
-            background-color: transparent;
-            color: #a1a8b3;
-            border: none;
-            font-size: 14px;
-        }
-
-        #closeCodeBtn:hover {
-            color: #ff6b3d;
-        }
-
-        /* Input Area */
-        #inputFrame {
-            background-color: #1b2230;
-            border-top: 1px solid #2a3140;
-        }
-
-        #inputField {
-            background-color: #0f131b;
-            border: 1px solid #2a3140;
-            border-radius: 6px;
-            color: #f4f3ef;
-            padding: 8px 12px;
-            font-size: 13px;
-        }
-
-        #inputField:focus {
-            border-color: #ff6b3d;
-        }
-
-        #inputField:disabled {
-            background-color: #1a1f2c;
-            color: #7d8592;
-        }
-
-        #submitButton {
-            background-color: #ff6b3d;
-            color: #141824;
-            border: none;
-            border-radius: 6px;
-            padding: 8px 16px;
-            font-weight: 700;
-            font-size: 12px;
-            min-width: 90px;
-        }
-
-        #submitButton:hover {
-            background-color: #ff845d;
-        }
-
-        #submitButton:pressed {
-            background-color: #e4572d;
-        }
-
-        #submitButton:disabled {
-            background-color: #3a404c;
-            color: #8b92a0;
-        }
-
-        /* Splitter */
-        #mainSplitter::handle {
-            background-color: #2a3140;
-            width: 2px;
-        }
-
-        #mainSplitter::handle:hover {
-            background-color: #ff6b3d;
-        }
-
-        /* Scrollbars */
-        QScrollBar:vertical {
-            background-color: #131722;
-            width: 10px;
-            margin: 0px;
-        }
-
-        QScrollBar::handle:vertical {
-            background-color: #2a3344;
-            min-height: 20px;
-            border-radius: 5px;
-            margin: 2px;
-        }
-
-        QScrollBar::handle:vertical:hover {
-            background-color: #364158;
-        }
-
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-            height: 0px;
-        }
-    )");
+    setStyleSheet(EditorTheme::BuildCopilotPanelStyleSheet());
 }
 
 void AICopilotPanel::setActivityOpacity(float opacity) {
@@ -448,14 +241,14 @@ void AICopilotPanel::SetActivity(ActivityType type, const QString& details) {
     };
     
     static const QMap<ActivityType, ActivityInfo> activityMap = {
-        {ActivityType::Idle,              {"●", "#3ccf91", "Ready"}},
-        {ActivityType::Thinking,          {"◐", "#f2b84b", "Thinking"}},
-        {ActivityType::ExecutingTool,     {"⚡", "#ff6b3d", "Executing Tool"}},
-        {ActivityType::GeneratingCode,    {"⌨", "#7bb7ff", "Generating Code"}},
-        {ActivityType::HighlightingEntity,{"👁", "#f28b4b", "Highlighting Entity"}},
-        {ActivityType::ModifyingScene,    {"🔧", "#63d3a6", "Modifying Scene"}},
-        {ActivityType::ReadingFile,       {"📖", "#9ab6ff", "Reading File"}},
-        {ActivityType::WritingFile,       {"💾", "#ff8b66", "Writing File"}}
+        {ActivityType::Idle,              {"●", EditorTheme::Hex(EditorTheme::Semantic::Success), "Ready"}},
+        {ActivityType::Thinking,          {"◐", EditorTheme::Hex(EditorTheme::Semantic::Warning), "Thinking"}},
+        {ActivityType::ExecutingTool,     {"⚡", EditorTheme::Hex(EditorTheme::Semantic::Accent), "Executing Tool"}},
+        {ActivityType::GeneratingCode,    {"⌨", EditorTheme::Hex(EditorTheme::Semantic::AccentHover), "Generating Code"}},
+        {ActivityType::HighlightingEntity,{"👁", EditorTheme::Hex(EditorTheme::Semantic::AccentHover), "Highlighting Entity"}},
+        {ActivityType::ModifyingScene,    {"🔧", EditorTheme::Hex(EditorTheme::Semantic::Success), "Modifying Scene"}},
+        {ActivityType::ReadingFile,       {"📖", EditorTheme::Hex(EditorTheme::Semantic::Accent), "Reading File"}},
+        {ActivityType::WritingFile,       {"💾", EditorTheme::Hex(EditorTheme::Semantic::AccentHover), "Writing File"}}
     };
     
     auto info = activityMap.value(type, activityMap[ActivityType::Idle]);
@@ -538,9 +331,10 @@ void AICopilotPanel::ClearCodeViewer() {
 void AICopilotPanel::AddActivityLogEntry(const QString& action, const QString& details) {
     QString timestamp = QTime::currentTime().toString("HH:mm:ss");
     QString entry = QString("<span style='color:#7c8696;'>[%1]</span> "
-                           "<span style='color:#ff6b3d;'>%2</span> "
+                           "<span style='color:%4;'>%2</span> "
                            "<span style='color:#9aa3af;'>%3</span><br>")
-                    .arg(timestamp, action, details);
+                    .arg(timestamp, action, details,
+                         EditorTheme::Hex(EditorTheme::Semantic::Accent));
     m_activityLog->insertHtml(entry);
     m_activityLog->verticalScrollBar()->setValue(m_activityLog->verticalScrollBar()->maximum());
 }
@@ -564,11 +358,13 @@ void AICopilotPanel::AppendMessage(const QString& sender, const QString& message
     if (sender == "User") {
         formatted = QString(
             "<div style='margin: 6px 0px; padding: 8px; text-align: left; "
-            "background-color: #1b2433; border-left: 3px solid #ff6b3d;'>"
-            "<span style='color: #ff6b3d; font-weight: bold;'>User:</span> "
-            "<span style='color: #f4f3ef;'>%1</span>"
+            "background-color: #24303d; border-left: 3px solid %2;'>"
+            "<span style='color: %2; font-weight: bold;'>User:</span> "
+            "<span style='color: %3;'>%1</span>"
             "</div>"
-        ).arg(message.toHtmlEscaped());
+        ).arg(message.toHtmlEscaped(),
+              EditorTheme::Hex(EditorTheme::Semantic::Accent),
+              EditorTheme::Hex(EditorTheme::Semantic::PrimaryText));
     } else if (sender == "System") {
         formatted = QString(
             "<div style='margin: 4px 0px; padding: 6px; text-align: left; "
@@ -580,11 +376,13 @@ void AICopilotPanel::AppendMessage(const QString& sender, const QString& message
         // Copilot message
         formatted = QString(
             "<div style='margin: 6px 0px; padding: 8px; text-align: left; "
-            "background-color: #1a2a23; border-left: 3px solid #3ccf91;'>"
-            "<span style='color: #3ccf91; font-weight: bold;'>Copilot:</span> "
-            "<span style='color: #f4f3ef;'>%1</span>"
+            "background-color: #202b37; border-left: 3px solid %2;'>"
+            "<span style='color: %2; font-weight: bold;'>Copilot:</span> "
+            "<span style='color: %3;'>%1</span>"
             "</div>"
-        ).arg(message.toHtmlEscaped());
+        ).arg(message.toHtmlEscaped(),
+              EditorTheme::Hex(EditorTheme::Semantic::AccentHover),
+              EditorTheme::Hex(EditorTheme::Semantic::PrimaryText));
     }
     
     m_chatHistory->append(formatted);
@@ -664,9 +462,11 @@ void AICopilotPanel::OnSubmit() {
 }
 
 QString AICopilotPanel::FormatCodeBlock(const QString& code, const QString& language) {
-    return QString("<pre style='background-color: #1e1e1e; padding: 8px; border-radius: 4px; "
-                  "font-family: Consolas, monospace; font-size: 12px; color: #d4d4d4; "
-                  "overflow-x: auto;'>%1</pre>").arg(code.toHtmlEscaped());
+    return QString("<pre style='background-color: #151a20; padding: 8px; border-radius: 4px; "
+                  "font-family: Consolas, monospace; font-size: 12px; color: %2; "
+                  "overflow-x: auto;'>%1</pre>")
+        .arg(code.toHtmlEscaped(),
+             EditorTheme::Hex(EditorTheme::Semantic::PrimaryText));
 }
 
 } // namespace Aetherion::Editor

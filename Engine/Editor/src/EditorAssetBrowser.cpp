@@ -109,6 +109,7 @@ EditorAssetBrowser::EditorAssetBrowser(QWidget* parent)
     headerLayout->setContentsMargins(0, 0, 0, 0);
 
     auto* header = new QLabel(tr("Asset Browser"), headerRow);
+    header->setObjectName("panelHeading");
     
     m_backButton = new QToolButton(headerRow);
     m_backButton->setText(tr("<"));

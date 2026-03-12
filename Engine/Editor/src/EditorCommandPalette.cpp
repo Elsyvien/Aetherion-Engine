@@ -45,7 +45,7 @@ EditorCommandPalette::EditorCommandPalette(QWidget* parent)
     layout->addWidget(m_list, 1);
 
     m_hintLabel = new QLabel(tr("Enter to run · Esc to close"), this);
-    m_hintLabel->setStyleSheet("color: gray; font-style: italic;");
+    m_hintLabel->setObjectName("hintText");
     layout->addWidget(m_hintLabel);
 
     setLayout(layout);

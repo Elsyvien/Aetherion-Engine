@@ -1,13 +1,12 @@
 #include "Aetherion/Editor/TabPanelManager.h"
 
-#include <QApplication>
 #include <QGraphicsOpacityEffect>
 #include <QMainWindow>
 #include <QParallelAnimationGroup>
 #include <QPropertyAnimation>
 #include <QSettings>
 #include <QSplitter>
-#include <QStyleFactory>
+#include <QTabBar>
 #include <QVariantAnimation>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -45,48 +44,44 @@ bool HasNativeChild(QWidget* widget)
 }
 } // namespace
 
-
 TabPanelManager::TabPanelManager(QWidget* parent)
     : QWidget(parent)
 {
-    // Main layout for the panel groups
     auto* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
+    setObjectName("EditorWorkspace");
 
-    // Vertical splitter separates main area and bottom panel
     m_verticalSplitter = new QSplitter(Qt::Vertical, this);
-    m_verticalSplitter->setStyleSheet(
-        "QSplitter::handle { background: #2a3140; height: 4px; }");
-    m_verticalSplitter->setHandleWidth(4);
+    m_verticalSplitter->setObjectName("WorkspaceVerticalSplitter");
+    m_verticalSplitter->setHandleWidth(5);
 
-    // Horizontal splitter for left / center / right
     m_horizontalSplitter = new QSplitter(Qt::Horizontal, m_verticalSplitter);
-    m_horizontalSplitter->setStyleSheet(
-        "QSplitter::handle { background: #2a3140; width: 4px; }");
-    m_horizontalSplitter->setHandleWidth(4);
+    m_horizontalSplitter->setObjectName("WorkspaceHorizontalSplitter");
+    m_horizontalSplitter->setHandleWidth(5);
 
-    // Left panel (Assets & Hierarchy)
     m_leftPanel = new QTabWidget(this);
+    m_leftPanel->setObjectName("LeftPanelTabs");
+    m_leftPanel->setProperty("panelRole", "left");
     m_leftPanel->setTabPosition(QTabWidget::North);
     m_leftPanel->setDocumentMode(true);
-    m_leftPanel->setMinimumWidth(200);
+    m_leftPanel->setMinimumWidth(220);
     m_leftPanel->setMaximumWidth(600);
 
-    // Center container (viewport goes here)
     m_centerContainer = new QWidget(this);
+    m_centerContainer->setObjectName("ViewportHost");
     auto* centerLayout = new QVBoxLayout(m_centerContainer);
     centerLayout->setContentsMargins(0, 0, 0, 0);
     centerLayout->setSpacing(0);
 
-    // Right panel (Inspector & Previews & Copilot)
     m_rightPanel = new QTabWidget(this);
+    m_rightPanel->setObjectName("RightPanelTabs");
+    m_rightPanel->setProperty("panelRole", "right");
     m_rightPanel->setTabPosition(QTabWidget::North);
     m_rightPanel->setDocumentMode(true);
-    m_rightPanel->setMinimumWidth(250);
+    m_rightPanel->setMinimumWidth(260);
     m_rightPanel->setMaximumWidth(800);
 
-    // Assemble horizontal splitter
     m_horizontalSplitter->addWidget(m_leftPanel);
     m_horizontalSplitter->addWidget(m_centerContainer);
     m_horizontalSplitter->addWidget(m_rightPanel);
@@ -97,14 +92,14 @@ TabPanelManager::TabPanelManager(QWidget* parent)
     m_horizontalSplitter->setCollapsible(1, false);
     m_horizontalSplitter->setCollapsible(2, true);
 
-    // Bottom panel (Console & Statistics & Animation & Logic Copilot)
     m_bottomPanel = new QTabWidget(this);
+    m_bottomPanel->setObjectName("BottomPanelTabs");
+    m_bottomPanel->setProperty("panelRole", "bottom");
     m_bottomPanel->setTabPosition(QTabWidget::North);
     m_bottomPanel->setDocumentMode(true);
-    m_bottomPanel->setMinimumHeight(150);
+    m_bottomPanel->setMinimumHeight(170);
     m_bottomPanel->setMaximumHeight(500);
 
-    // Assemble vertical splitter
     m_verticalSplitter->addWidget(m_horizontalSplitter);
     m_verticalSplitter->addWidget(m_bottomPanel);
     m_verticalSplitter->setStretchFactor(0, 3);
@@ -114,9 +109,8 @@ TabPanelManager::TabPanelManager(QWidget* parent)
     mainLayout->addWidget(m_verticalSplitter);
 
     SetupPanelStyle();
+    ApplyDefaultPanelState();
     SetupPanelAnimations();
-
-    setLayout(mainLayout);
 }
 
 TabPanelManager::~TabPanelManager() = default;
@@ -126,35 +120,7 @@ void TabPanelManager::CreatePanelGroups(QMainWindow* mainWindow)
     if (!mainWindow) {
         return;
     }
-
-    // Configure tab widgets styling
-    for (auto* tabWidget : { m_leftPanel, m_rightPanel, m_bottomPanel }) {
-        if (tabWidget) {
-            tabWidget->setStyleSheet(
-                "QTabWidget::pane { border-top: 1px solid #242c3a; background: #131722; } "
-                "QTabBar::tab { "
-                "    background-color: #1b2230; "
-                "    color: #b6beca; "
-                "    padding: 8px 16px; "
-                "    border: 1px solid #2a3140; "
-                "    border-bottom: none; "
-                "    border-top-left-radius: 6px; "
-                "    border-top-right-radius: 6px; "
-                "    margin-right: 4px; "
-                "    min-width: 88px; "
-                "} "
-                "QTabBar::tab:selected { "
-                "    background-color: #ff6b3d; "
-                "    color: #141824; "
-                "    border-color: #ff8b66; "
-                "} "
-                "QTabBar::tab:hover:!selected { "
-                "    background-color: #2a3344; "
-                "    color: #e6e3dc; "
-                "}"
-            );
-        }
-    }
+    ApplyDefaultPanelState();
 }
 
 void TabPanelManager::SetupPanelAnimations()
@@ -432,6 +398,28 @@ bool TabPanelManager::IsBottomPanelVisible() const
     return m_bottomPanel && m_bottomPanel->isVisible();
 }
 
+void TabPanelManager::ApplyDefaultPanelState()
+{
+    if (m_horizontalSplitter) {
+        m_horizontalSplitter->setSizes({280, 1080, 360});
+    }
+
+    if (m_verticalSplitter) {
+        m_verticalSplitter->setSizes({760, 240});
+    }
+
+    if (m_leftPanel && m_leftPanel->count() > 0) {
+        m_leftPanel->setCurrentIndex(0);
+    }
+    if (m_rightPanel && m_rightPanel->count() > 0) {
+        m_rightPanel->setCurrentIndex(0);
+    }
+    if (m_bottomPanel && m_bottomPanel->count() > 0) {
+        m_bottomPanel->setCurrentIndex(0);
+        m_bottomPanel->setVisible(true);
+    }
+}
+
 void TabPanelManager::SavePanelState(QSettings& settings, const QString& group) const
 {
     settings.beginGroup(group);
@@ -501,37 +489,18 @@ void TabPanelManager::RestorePanelState(QSettings& settings, const QString& grou
 
 void TabPanelManager::SetupPanelStyle()
 {
-    // Apply a clean, modern stylesheet to all panels
-    for (auto* tabWidget : { m_leftPanel, m_rightPanel, m_bottomPanel }) {
-        if (tabWidget) {
-            tabWidget->setStyleSheet(
-                "QTabWidget::pane { "
-                "    border-top: 1px solid #242c3a; "
-                "    background-color: #131722; "
-                "} "
-                "QTabBar::tab { "
-                "    background-color: #1b2230; "
-                "    color: #b6beca; "
-                "    padding: 8px 16px; "
-                "    border: 1px solid #2a3140; "
-                "    border-bottom: none; "
-                "    border-top-left-radius: 6px; "
-                "    border-top-right-radius: 6px; "
-                "    margin-right: 4px; "
-                "    min-width: 88px; "
-                "} "
-                "QTabBar::tab:hover { "
-                "    background-color: #2a3344; "
-                "    color: #e6e3dc; "
-                "} "
-                "QTabBar::tab:selected { "
-                "    background-color: #ff6b3d; "
-                "    color: #141824; "
-                "    border-color: #ff8b66; "
-                "}"
-            );
+    for (auto* tabWidget : {m_leftPanel, m_rightPanel, m_bottomPanel}) {
+        if (!tabWidget) {
+            continue;
         }
+        tabWidget->tabBar()->setExpanding(false);
+        tabWidget->tabBar()->setUsesScrollButtons(true);
+        tabWidget->tabBar()->setDrawBase(false);
     }
+
+    setStyleSheet(QStringLiteral(
+        "#ViewportHost { background-color: #151A20; }"
+        "#LeftPanelTabs::pane, #RightPanelTabs::pane, #BottomPanelTabs::pane { margin-top: 0px; }"));
 }
 
 } // namespace Aetherion::Editor

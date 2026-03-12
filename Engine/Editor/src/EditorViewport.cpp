@@ -70,12 +70,6 @@ EditorViewport::EditorViewport(QWidget* parent)
     m_overlayWidget->setObjectName("viewportOverlay");
     m_overlayWidget->setAttribute(Qt::WA_TranslucentBackground, true);
     m_overlayWidget->setFocusPolicy(Qt::NoFocus);
-    m_overlayWidget->setStyleSheet(
-        "QWidget#viewportOverlay { background-color: rgba(18, 20, 26, 185); "
-        "border: 1px solid rgba(255, 255, 255, 40); border-radius: 8px; }"
-        "QToolButton { color: #f2f2f2; background: transparent; padding: 2px 6px; }"
-        "QLabel#focusHint { color: #f4f3ef; background-color: rgba(255, 255, 255, 30); "
-        "padding: 1px 4px; border-radius: 3px; }");
 
     auto* overlayLayout = new QHBoxLayout(m_overlayWidget);
     overlayLayout->setContentsMargins(6, 4, 6, 4);
@@ -83,19 +77,20 @@ EditorViewport::EditorViewport(QWidget* parent)
 
     m_focusButton = new QToolButton(m_overlayWidget);
     m_focusButton->setText(tr("Focus"));
+    m_focusButton->setObjectName("viewportOverlayButton");
     m_focusButton->setToolTip(tr("Focus on selection (F)"));
     m_focusButton->setFocusPolicy(Qt::NoFocus);
 
     m_focusHint = new QLabel(tr("F"), m_overlayWidget);
-    m_focusHint->setObjectName("focusHint");
+    m_focusHint->setObjectName("viewportHudKey");
     m_focusHint->setFocusPolicy(Qt::NoFocus);
 
     m_speedLabel = new QLabel(tr("1x"), m_overlayWidget);
-    m_speedLabel->setStyleSheet("color: #e0e0e0; padding-left: 8px; font-weight: bold;");
+    m_speedLabel->setObjectName("viewportHudPrimary");
     m_speedLabel->setFocusPolicy(Qt::NoFocus);
 
     m_aiHudLabel = new QLabel(tr("AI: --"), m_overlayWidget);
-    m_aiHudLabel->setStyleSheet("color: #9fe6c3; padding-left: 8px; font-weight: bold;");
+    m_aiHudLabel->setObjectName("viewportHudAccent");
     m_aiHudLabel->setFocusPolicy(Qt::NoFocus);
 
     overlayLayout->addWidget(m_focusButton);
@@ -110,10 +105,6 @@ EditorViewport::EditorViewport(QWidget* parent)
     m_metricsWidget->setObjectName("viewportMetrics");
     m_metricsWidget->setAttribute(Qt::WA_TranslucentBackground, true);
     m_metricsWidget->setFocusPolicy(Qt::NoFocus);
-    m_metricsWidget->setStyleSheet(
-        "QWidget#viewportMetrics { background-color: rgba(18, 20, 26, 185); "
-        "border: 1px solid rgba(255, 255, 255, 30); border-radius: 8px; }"
-        "QLabel#perfHudLabel { color: #f4f3ef; font-weight: 600; }");
 
     auto* metricsLayout = new QVBoxLayout(m_metricsWidget);
     metricsLayout->setContentsMargins(8, 6, 8, 6);

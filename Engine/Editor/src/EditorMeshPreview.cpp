@@ -45,10 +45,11 @@ EditorMeshPreview::EditorMeshPreview(QWidget* parent)
     layout->setSpacing(4);
 
     m_header = new QLabel(tr("Mesh Preview"), this);
+    m_header->setObjectName("panelHeading");
     layout->addWidget(m_header);
 
     m_assetLabel = new QLabel(tr("No mesh selected"), this);
-    m_assetLabel->setStyleSheet("color: gray; font-style: italic;");
+    m_assetLabel->setObjectName("hintText");
     layout->addWidget(m_assetLabel);
 
     // Viewport container
@@ -113,7 +114,7 @@ void EditorMeshPreview::SetMeshAsset(const QString& assetId)
     }
 
     m_assetLabel->setText(assetId);
-    m_assetLabel->setStyleSheet("color: white;");
+    m_assetLabel->setObjectName("secondaryText");
 
     // Reset camera for new mesh
     m_rotationY = 0.0f;
@@ -131,7 +132,7 @@ void EditorMeshPreview::ClearPreview()
 {
     m_currentAssetId.clear();
     m_assetLabel->setText(tr("No mesh selected"));
-    m_assetLabel->setStyleSheet("color: gray; font-style: italic;");
+    m_assetLabel->setObjectName("hintText");
     
     shutdownRenderer();
 }
@@ -338,7 +339,7 @@ void EditorMeshPreview::initializeRenderer()
     catch (const std::exception& ex)
     {
         m_assetLabel->setText(tr("Render error: %1").arg(QString::fromStdString(ex.what())));
-        m_assetLabel->setStyleSheet("color: red;");
+        m_assetLabel->setObjectName("statusErrorText");
     }
 }
 

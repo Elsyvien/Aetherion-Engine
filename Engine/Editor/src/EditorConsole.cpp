@@ -1,4 +1,5 @@
 #include "Aetherion/Editor/EditorConsole.h"
+#include "Aetherion/Editor/EditorTheme.h"
 
 #include <QColor>
 #include <QMetaObject>
@@ -67,6 +68,7 @@ EditorConsole::EditorConsole(QWidget* parent)
 
     // --- Output Area ---
     m_output = new QTextEdit(this);
+    m_output->setObjectName("consoleOutput");
     m_output->setReadOnly(true);
     m_output->setPlaceholderText(tr("Console output will appear here..."));
     
@@ -118,16 +120,16 @@ void EditorConsole::AddMessageToView(const ConsoleMessage& msg)
 
     switch (msg.severity) {
         case ConsoleSeverity::Error:
-            color = QColor(230, 70, 70);
+            color = EditorTheme::Color(EditorTheme::Semantic::Error);
             prefix = "[Error]";
             break;
         case ConsoleSeverity::Warning:
-            color = QColor(255, 165, 0);
+            color = EditorTheme::Color(EditorTheme::Semantic::Warning);
             prefix = "[Warn] "; // Extra space for alignment roughly
             break;
         case ConsoleSeverity::Info:
         default:
-            color = QColor(255, 255, 255);
+            color = EditorTheme::Color(EditorTheme::Semantic::PrimaryText);
             prefix = "[Info] ";
             break;
     }
@@ -143,7 +145,7 @@ void EditorConsole::AddMessageToView(const ConsoleMessage& msg)
     m_output->setTextColor(color);
     m_output->append(formattedMsg);
     m_output->moveCursor(QTextCursor::End);
-    m_output->setTextColor(Qt::white); // Reset to default
+    m_output->setTextColor(EditorTheme::Color(EditorTheme::Semantic::PrimaryText));
 
     if (m_autoScroll->isChecked()) {
         sb->setValue(sb->maximum());

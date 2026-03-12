@@ -8,6 +8,9 @@
         <file alias="icons/light.svg">../../../assets/icons/light.svg</file>
         <file alias="icons/mesh.svg">../../../assets/icons/mesh.svg</file>
         <file alias="icons/transform.svg">../../../assets/icons/transform.svg</file>
-        <file>style.qss</file>
+        <file alias="icons/bookmark.svg">../../../assets/icons/bookmark.svg</file>
+        <file alias="icons/chart.svg">../../../assets/icons/chart.svg</file>
+        <file alias="icons/console.svg">../../../assets/icons/console.svg</file>
+        <file alias="icons/spark.svg">../../../assets/icons/spark.svg</file>
     </qresource>
 </RCC>

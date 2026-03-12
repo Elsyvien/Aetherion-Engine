@@ -135,6 +135,7 @@ private:
     QFileSystemWatcher* m_assetFileWatcher = nullptr;
     QElapsedTimer m_frameTimer;
     QLabel* m_fpsLabel = nullptr;
+    QLabel* m_modeStatusLabel = nullptr;
     QElapsedTimer m_fpsTimer;
     int m_fpsFrameCounter{0};
     QAction* m_validationMenuAction = nullptr;

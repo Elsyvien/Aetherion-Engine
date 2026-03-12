@@ -41,10 +41,11 @@ EditorCameraPreview::EditorCameraPreview(QWidget* parent)
     layout->setSpacing(4);
 
     m_header = new QLabel(tr("Camera Preview"), this);
+    m_header->setObjectName("panelHeading");
     layout->addWidget(m_header);
 
     m_statusLabel = new QLabel(tr("No camera selected"), this);
-    m_statusLabel->setStyleSheet("color: gray; font-style: italic;");
+    m_statusLabel->setObjectName("hintText");
     layout->addWidget(m_statusLabel);
 
     m_viewportContainer = new QWidget(this);
@@ -254,7 +255,7 @@ void EditorCameraPreview::initializeRenderer()
         if (m_statusLabel)
         {
             m_statusLabel->setText(tr("Render error: %1").arg(QString::fromStdString(ex.what())));
-            m_statusLabel->setStyleSheet("color: red;");
+            m_statusLabel->setObjectName("statusErrorText");
         }
     }
 }
@@ -302,5 +303,7 @@ void EditorCameraPreview::UpdateStatusLabel()
     }
 
     m_statusLabel->setText(label);
+    m_statusLabel->setObjectName(
+        m_selectedCameraId != 0 ? "secondaryText" : "hintText");
 }
 } // namespace Aetherion::Editor

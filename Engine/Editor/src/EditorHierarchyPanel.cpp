@@ -1,4 +1,5 @@
 #include "Aetherion/Editor/EditorHierarchyPanel.h"
+#include "Aetherion/Editor/EditorTheme.h"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -84,15 +85,12 @@ EditorHierarchyPanel::EditorHierarchyPanel(QWidget* parent)
     layout->setSpacing(4);
 
     auto* header = new QLabel(tr("Hierarchy"), this);
+    header->setObjectName("panelHeading");
     
     // Search box for filtering entities
     m_searchBox = new QLineEdit(this);
     m_searchBox->setPlaceholderText(tr("Search entities..."));
     m_searchBox->setClearButtonEnabled(true);
-    m_searchBox->setStyleSheet(
-        "QLineEdit { padding: 6px 8px; border: 1px solid #2a3140; border-radius: 6px; "
-        "background-color: #0f131b; color: #f4f3ef; }"
-        "QLineEdit:focus { border-color: #ff6b3d; }");
     connect(m_searchBox, &QLineEdit::textChanged, this, &EditorHierarchyPanel::onSearchTextChanged);
     
     m_tree = new HierarchyTreeWidget(this);
@@ -591,7 +589,9 @@ void EditorHierarchyPanel::applyFilter(const QString& filter)
         // Highlight matching items
         if (matches && !filter.isEmpty())
         {
-            item->setBackground(0, QColor(0, 120, 212, 40));
+            QColor accent = EditorTheme::Color(EditorTheme::Semantic::Accent);
+            accent.setAlpha(48);
+            item->setBackground(0, accent);
         }
         else
         {

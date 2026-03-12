@@ -69,6 +69,7 @@ public:
     // Panel visibility
     void SetBottomPanelVisible(bool visible);
     bool IsBottomPanelVisible() const;
+    void ApplyDefaultPanelState();
 
 private:
     QSplitter* m_verticalSplitter = nullptr;
