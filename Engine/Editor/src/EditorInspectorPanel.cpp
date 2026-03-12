@@ -59,7 +59,8 @@ public:
     auto *headerBtn = new QPushButton(title, this);
     headerBtn->setCheckable(true);
     headerBtn->setChecked(true);
-    headerBtn->setStyleSheet(EditorTheme::ComponentToggleStyleSheet());
+    headerBtn->setStyleSheet(
+      Aetherion::Editor::EditorTheme::ComponentToggleStyleSheet());
 
     layout->addWidget(headerBtn);
     layout->addWidget(m_content);
